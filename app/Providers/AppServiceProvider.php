@@ -2,25 +2,12 @@
 
 namespace App\Providers;
 
-use App\Models\AidDistribution;
 use App\Models\Constant;
 use App\Models\Currency;
-use App\Models\Executive;
-use App\Models\Institution;
-use App\Models\Office;
-use App\Models\Project;
 use App\Models\User;
-use App\Observers\AidDistributionObserver;
 use App\Observers\ConstantObserver;
 use App\Observers\CurrencyObserver;
-use App\Observers\ExecutiveObserver;
-use App\Observers\InstitutionObserver;
-use App\Observers\OfficeObserver;
-use App\Observers\ProjectObserver;
 use App\Observers\UserObserver;
-use App\Policies\AidDistributionPolicy;
-use App\Policies\InstitutionPolicy;
-use App\Policies\ProjectPolicy;
 use Illuminate\Pagination\Paginator;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
