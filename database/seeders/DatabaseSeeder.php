@@ -25,5 +25,10 @@ class DatabaseSeeder extends Seeder
             'avatar'  => null,
             'super_admin'  => 1,
         ]);
+
+        $this->call([
+            ConstantsSeeder::class,
+            OrganizationalSeeder::class,
+        ]);
     }
 }
