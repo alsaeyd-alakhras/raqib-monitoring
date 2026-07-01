@@ -11,6 +11,7 @@ use App\Http\Controllers\Dashboard\CurrencyController;
 use App\Http\Controllers\Dashboard\DepartmentController;
 use App\Http\Controllers\Dashboard\FunderController;
 use App\Http\Controllers\Dashboard\HomeController;
+use App\Http\Controllers\Dashboard\MonitoringActivityController;
 use App\Http\Controllers\Dashboard\PersonController;
 use App\Http\Controllers\Dashboard\SectionController;
 use App\Http\Controllers\Dashboard\UserController;
@@ -65,6 +66,11 @@ Route::group([
         'sections' => SectionController::class,
         'people' => PersonController::class,
         'funders' => FunderController::class,
+    ], ['except' => ['show']]);
+
+    // Monitoring activities ************************
+    Route::resources([
+        'monitoring-activities' => MonitoringActivityController::class,
     ], ['except' => ['show']]);
 
     /* ********************************************************** */

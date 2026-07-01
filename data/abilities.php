@@ -56,6 +56,18 @@ return [
         'update' => 'تعديل',
         'delete' => 'حذف',
     ],
+    'monitoringactivities' => [
+        'name' => 'النشاطات الرقابية',
+        'view' => 'عرض',
+        'create' => 'اضافة',
+        'update' => 'تعديل',
+        'delete' => 'حذف',
+        'assign_monitor' => 'تعيين مراقب',
+        'set_monitoring_info' => 'تحديد طريقة/مرحلة المراقبة',
+        'confirm_completion' => 'تأكيد اكتمال المرور',
+        'edit_ratings' => 'تعديل قيم التقييم',
+    ],
+
     'activitylogs' => [
         'name' => 'العمليات',
         'view' => 'عرض',

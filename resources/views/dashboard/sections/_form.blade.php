@@ -1,14 +1,15 @@
 <div class="row g-3">
     <div class="col-md-6">
         @php
-            $departmentOptions = $departments->mapWithKeys(fn ($d) => [
-                $d->id => $d->name . ($d->center ? ' - ' . $d->center->name : ''),
+            $departmentOptions = $departments->map(fn ($d) => (object) [
+                'id' => $d->id,
+                'name' => $d->name . ($d->center ? ' - ' . $d->center->name : ''),
             ]);
         @endphp
         <x-form.select
             name="department_id"
             label="القسم"
-            :options="$departmentOptions"
+            :optionsId="$departmentOptions"
             :value="old('department_id', $section->department_id ?? '')"
             required
         />
