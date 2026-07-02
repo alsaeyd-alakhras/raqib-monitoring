@@ -4,43 +4,44 @@ namespace App\Http\Controllers\Dashboard;
 
 use App\Http\Controllers\Controller;
 use App\Models\Constant;
-use App\Models\Employee;
-use App\Models\WorkData;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\View\View;
 
 class ConstantController extends Controller
 {
-    /**
-     * Display a listing of the resource.
-     */
-    public function index()
+    public function index(): View
     {
+        $this->authorize('view', Constant::class);
+
         $constants = Constant::get();
-        return view('dashboard.pages.constants',compact('constants'));
+
+        return view('dashboard.pages.constants', compact('constants'));
     }
-    /**
-     * Store a newly created resource in storage.
-     */
-    public function store(Request $request)
+
+    public function store(Request $request): RedirectResponse
     {
-        foreach($request->except('_token') as $key => $value){
+        $this->authorize('update', Constant::class);
+
+        foreach ($request->except('_token') as $key => $value) {
             Constant::updateOrCreate([
                 'key' => $key,
-            ],[
+            ], [
                 'value' => $value,
             ]);
         }
-        return redirect()->route('dashboard.constants.index')->with('success','تم تحديث القيم');
+
+        return redirect()->route('dashboard.constants.index')->with('success', 'تم تحديث القيم');
     }
 
-    /**
-     * Remove the specified resource from storage.
-     */
-    public function destroy(Request $request)
+    public function destroy(Request $request): RedirectResponse
     {
-        if($request->state_effectiveness){
+        $this->authorize('update', Constant::class);
+
+        if ($request->state_effectiveness) {
             Constant::findOrFail($request->state_effectiveness)->delete();
         }
-        return redirect()->route('dashboard.constants.index')->with('danger','تم حذف القيمة المحددة');
+
+        return redirect()->route('dashboard.constants.index')->with('danger', 'تم حذف القيمة المحددة');
     }
 }

@@ -29,6 +29,7 @@ class DatabaseSeeder extends Seeder
         $this->call([
             ConstantsSeeder::class,
             OrganizationalSeeder::class,
+            ChecklistSeeder::class,
         ]);
     }
 }

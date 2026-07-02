@@ -59,17 +59,28 @@ class ProjectController extends Controller
             ->with('success', 'تم إنشاء المشروع بنجاح.');
     }
 
-    public function show(Project $project): View
+    public function show(Project $project): View|RedirectResponse
     {
         $this->authorize('view', Project::class);
 
-        $project->load(['center', 'department', 'section', 'funder', 'projectManager', 'coordinator', 'monitorPerson', 'primaryMonitoringActivity']);
+        if ($this->shouldRedirectMonitorToWork($project)) {
+            return redirect()->route('dashboard.projects.monitor-work', $project);
+        }
+
+        $project->load(['center', 'department', 'section', 'funder', 'projectManager', 'monitorPerson', 'primaryMonitoringActivity']);
+
+        if (! $this->canViewCoordinatorData()) {
+            $project->unsetRelation('coordinator');
+            $project->makeHidden(['coordinator_id', 'coordinator_readiness_pct']);
+        } else {
+            $project->load('coordinator');
+        }
 
         $groups = $this->activeChecklistGroups();
         $values = $project->checklistValues()->get()->keyBy('checklist_item_id');
         $people = Person::orderBy('name')->get();
 
-        return view('dashboard.projects.show', compact('project', 'groups', 'values', 'people'));
+        return view('dashboard.projects.show', $this->showViewData($project, $groups, $values, $people));
     }
 
     public function edit(Project $project): View
@@ -176,7 +187,7 @@ class ProjectController extends Controller
 
     public function setMonitoringInfo(Request $request, Project $project): RedirectResponse
     {
-        $this->authorize('update', Project::class);
+        $this->authorize('set_monitoring_info', MonitoringActivity::class);
         $this->guardStatus($project, ['pending_monitoring_manager']);
 
         $validated = $request->validate([
@@ -198,8 +209,14 @@ class ProjectController extends Controller
 
     public function assignMonitor(Request $request, Project $project): RedirectResponse
     {
-        $this->authorize('update', Project::class);
+        $this->authorize('assign_monitor', MonitoringActivity::class);
         $this->guardStatus($project, ['pending_monitoring_manager']);
+
+        if (! $project->center_id || ! $project->department_id) {
+            return back()->withErrors([
+                'center_id' => 'يجب تحديد المركز والدائرة في بيانات المشروع قبل تعيين المراقب.',
+            ]);
+        }
 
         $validated = $request->validate([
             'monitor_person_id' => ['required', 'exists:people,id'],
@@ -382,7 +399,63 @@ class ProjectController extends Controller
             'funders' => Funder::orderBy('name')->get(),
             'people' => Person::orderBy('name')->get(),
             'projectTypes' => $this->constantOptions('project_types'),
+            'monitoringMethods' => $this->constantOptions('monitoring_methods'),
+            'monitoringStages' => $this->constantOptions('monitoring_stages'),
         ];
+    }
+
+    private function showViewData(Project $project, $groups, $values, $people): array
+    {
+        return [
+            'project' => $project,
+            'groups' => $groups,
+            'values' => $values,
+            'people' => $people,
+            'canViewCoordinatorData' => $this->canViewCoordinatorData(),
+            'canSetMonitoringInfo' => auth()->user()?->can('set_monitoring_info', MonitoringActivity::class),
+            'canAssignMonitor' => auth()->user()?->can('assign_monitor', MonitoringActivity::class),
+            'monitoringMethods' => $this->constantOptions('monitoring_methods'),
+            'monitoringStages' => $this->constantOptions('monitoring_stages'),
+        ];
+    }
+
+    private function shouldRedirectMonitorToWork(Project $project): bool
+    {
+        if ($project->workflow_status !== 'monitoring_in_progress') {
+            return false;
+        }
+
+        $user = auth()->user();
+        if (! $user || $user->super_admin) {
+            return false;
+        }
+
+        if (! $user->can('fill_monitor', Project::class)) {
+            return false;
+        }
+
+        if ($user->can('fill_coordinator', Project::class) || $user->can('update', Project::class)) {
+            return false;
+        }
+
+        return true;
+    }
+
+    private function canViewCoordinatorData(): bool
+    {
+        $user = auth()->user();
+        if (! $user) {
+            return false;
+        }
+
+        if ($user->super_admin) {
+            return true;
+        }
+
+        return $user->can('fill_coordinator', Project::class)
+            || $user->can('approve_department', Project::class)
+            || $user->can('update', Project::class)
+            || $user->can('reject', Project::class);
     }
 
     private function constantOptions(string $key): array

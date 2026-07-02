@@ -73,6 +73,26 @@ class MonitoringActivity extends Model
         return $this->belongsTo(Funder::class);
     }
 
+    public function project(): BelongsTo
+    {
+        return $this->belongsTo(Project::class, 'source_id');
+    }
+
+    public static function workflowStatusLabels(): array
+    {
+        return [
+            'pending_monitor' => 'بانتظار تعيين مراقب',
+            'in_progress' => 'المراقب يعمل',
+            'pending_confirmation' => 'بانتظار التأكيد',
+            'completed' => 'مكتمل',
+        ];
+    }
+
+    public function getWorkflowStatusLabelAttribute(): string
+    {
+        return self::workflowStatusLabels()[$this->workflow_status] ?? $this->workflow_status;
+    }
+
     public function getDayNameAttribute(): ?string
     {
         return $this->activity_date?->locale('ar')->dayName;
@@ -165,8 +185,8 @@ class MonitoringActivity extends Model
 
     protected function isValidHierarchy(): bool
     {
-        if (! $this->department_id || ! $this->center_id) {
-            return true;
+        if (! $this->center_id || ! $this->department_id) {
+            return false;
         }
 
         $department = $this->relationLoaded('department')
@@ -200,12 +220,16 @@ class MonitoringActivity extends Model
             'responsible_person_id' => 'المسؤول عن النشاط',
             'activity_type' => 'نوع النشاط',
             'subject' => 'الموضوع',
+            'execution_value' => 'التنفيذ',
+            'quality_value' => 'الجودة',
+            'closure_value' => 'الإغلاق',
+            'deduction_value' => 'الخصم',
         ];
 
         $missingFields = [];
 
         foreach ($requiredFields as $field => $label) {
-            if (empty($this->{$field})) {
+            if ($this->{$field} === null || $this->{$field} === '') {
                 $missingFields[] = $label;
             }
         }

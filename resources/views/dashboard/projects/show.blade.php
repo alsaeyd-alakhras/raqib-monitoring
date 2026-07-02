@@ -43,7 +43,9 @@
                 <div class="col-md-3"><strong>الممول:</strong> {{ $project->funder?->name ?? '-' }}</div>
                 <div class="col-md-3"><strong>المركز/الدائرة/القسم:</strong> {{ $project->center?->name }} / {{ $project->department?->name }} / {{ $project->section?->name }}</div>
                 <div class="col-md-3"><strong>مدير المشروع:</strong> {{ $project->projectManager?->name ?? '-' }}</div>
-                <div class="col-md-3"><strong>المنسق:</strong> {{ $project->coordinator?->name ?? '-' }}</div>
+                @if ($canViewCoordinatorData)
+                    <div class="col-md-3"><strong>المنسق:</strong> {{ $project->coordinator?->name ?? '-' }}</div>
+                @endif
                 <div class="col-md-3"><strong>المراقب:</strong> {{ $project->monitorPerson?->name ?? '-' }}</div>
                 <div class="col-md-3"><strong>المستفيدون المستهدفون:</strong> {{ $project->target_beneficiaries ?? '-' }}</div>
             </div>
@@ -83,22 +85,35 @@
                 </form>
             @endif
 
-            @if ($project->workflow_status === 'pending_monitoring_manager' && $canUpdate)
+            @if ($project->workflow_status === 'pending_monitoring_manager' && ($canSetMonitoringInfo || $canAssignMonitor))
+                @if ($canSetMonitoringInfo)
                 <form action="{{ route('dashboard.projects.set-monitoring-info', $project) }}" method="post" class="row g-2 align-items-end mb-3">
                     @csrf
                     <div class="col-md-3">
                         <label class="form-label">طريقة المراقبة</label>
-                        <input type="text" name="monitoring_method" class="form-control" value="{{ $project->monitoring_method }}">
+                        <select name="monitoring_method" class="form-select">
+                            <option value="">إختر القيمة</option>
+                            @foreach ($monitoringMethods as $method)
+                                <option value="{{ $method }}" @selected($project->monitoring_method === $method)>{{ $method }}</option>
+                            @endforeach
+                        </select>
                     </div>
                     <div class="col-md-3">
                         <label class="form-label">مرحلة المراقبة</label>
-                        <input type="text" name="monitoring_stage" class="form-control" value="{{ $project->monitoring_stage }}">
+                        <select name="monitoring_stage" class="form-select">
+                            <option value="">إختر القيمة</option>
+                            @foreach ($monitoringStages as $stage)
+                                <option value="{{ $stage }}" @selected($project->monitoring_stage === $stage)>{{ $stage }}</option>
+                            @endforeach
+                        </select>
                     </div>
                     <div class="col-md-3">
                         <button type="submit" class="btn btn-outline-primary">حفظ طريقة/مرحلة المراقبة</button>
                     </div>
                 </form>
+                @endif
 
+                @if ($canAssignMonitor)
                 <form action="{{ route('dashboard.projects.assign-monitor', $project) }}" method="post" class="row g-2 align-items-end">
                     @csrf
                     <div class="col-md-4">
@@ -118,6 +133,7 @@
                         <button type="submit" class="btn btn-success">تعيين وبدء المراقبة</button>
                     </div>
                 </form>
+                @endif
             @endif
 
             @if ($project->workflow_status === 'monitoring_in_progress')
@@ -177,6 +193,7 @@
     </div>
 
     {{-- قائمة التحقق — عمود المنسق --}}
+    @if ($canViewCoordinatorData)
     <div class="card mb-4">
         <div class="card-header d-flex justify-content-between align-items-center">
             <h5 class="mb-0">قائمة التحقق — عمود المنسق</h5>
@@ -235,6 +252,7 @@
             @endif
         </div>
     </div>
+    @endif
 
     {{-- قائمة التحقق — عمود المراقب (عرض فقط هنا، التعديل من شاشة المراقب المعزولة) --}}
     <div class="card mb-4">

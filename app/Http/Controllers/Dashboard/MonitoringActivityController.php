@@ -5,24 +5,39 @@ namespace App\Http\Controllers\Dashboard;
 use App\Http\Controllers\Controller;
 use App\Models\Center;
 use App\Models\Constant;
+use App\Models\Department;
 use App\Models\Funder;
 use App\Models\MonitoringActivity;
 use App\Models\Person;
+use App\Models\Project;
+use App\Models\Section;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 
 class MonitoringActivityController extends Controller
 {
-    public function index(): View
+    public function index(Request $request): View
     {
         $this->authorize('view', MonitoringActivity::class);
 
-        $activities = MonitoringActivity::with(['center', 'department', 'section', 'monitorPerson', 'responsiblePerson'])
-            ->orderBy('created_at', 'desc')
-            ->paginate(15);
+        $query = MonitoringActivity::with(['center', 'department', 'section', 'monitorPerson', 'responsiblePerson']);
+        $query = $this->applyMonitorScope($query);
+        $query = $this->applyFilters($query, $request);
 
-        return view('dashboard.monitoring-activities.index', compact('activities'));
+        $activities = $query
+            ->orderBy('created_at', 'desc')
+            ->paginate(15)
+            ->withQueryString();
+
+        return view('dashboard.monitoring-activities.index', [
+            'activities' => $activities,
+            'filters' => $request->only(['source_type', 'workflow_status', 'monitor_person_id', 'date_from', 'date_to']),
+            'sourceTypes' => $this->sourceTypeLabels(),
+            'workflowStatusLabels' => MonitoringActivity::workflowStatusLabels(),
+            'people' => Person::orderBy('name')->get(),
+        ]);
     }
 
     public function create(): View
@@ -59,7 +74,10 @@ class MonitoringActivityController extends Controller
 
         return view(
             'dashboard.monitoring-activities.edit',
-            $this->formData() + ['activity' => $monitoring_activity]
+            $this->formData() + [
+                'activity' => $monitoring_activity,
+                'canConfirmCompletion' => auth()->user()?->can('confirm_completion', MonitoringActivity::class),
+            ]
         );
     }
 
@@ -94,6 +112,21 @@ class MonitoringActivityController extends Controller
             ->with('success', 'تم حذف النشاط الرقابي بنجاح.');
     }
 
+    public function confirmPassage(MonitoringActivity $monitoring_activity): RedirectResponse
+    {
+        $this->authorize('confirm_completion', MonitoringActivity::class);
+
+        $monitoring_activity->update([
+            'is_passage_complete' => true,
+            'passage_completed_at' => now(),
+            'passage_completed_by' => auth()->id(),
+            'workflow_status' => 'completed',
+            'updated_by' => auth()->id(),
+        ]);
+
+        return back()->with('success', 'تم تأكيد اكتمال المرور على النشاط.');
+    }
+
     private function authorizeEditAfterClosure(MonitoringActivity $monitoringActivity): void
     {
         if ($monitoringActivity->workflow_status === 'completed' && ! auth()->user()?->can('edit_ratings', MonitoringActivity::class)) {
@@ -101,22 +134,86 @@ class MonitoringActivityController extends Controller
         }
     }
 
+    private function applyMonitorScope(Builder $query): Builder
+    {
+        $user = auth()->user();
+
+        if (! $user || $user->super_admin) {
+            return $query;
+        }
+
+        $hasBroadAccess = $user->can('create', MonitoringActivity::class)
+            || $user->can('assign_monitor', MonitoringActivity::class)
+            || $user->can('set_monitoring_info', MonitoringActivity::class)
+            || $user->can('confirm_completion', MonitoringActivity::class)
+            || $user->can('edit_ratings', MonitoringActivity::class);
+
+        if ($hasBroadAccess) {
+            return $query;
+        }
+
+        $personId = Person::where('user_id', $user->id)->value('id');
+
+        if ($personId) {
+            return $query->where('monitor_person_id', $personId);
+        }
+
+        return $query->whereRaw('1 = 0');
+    }
+
+    private function applyFilters(Builder $query, Request $request): Builder
+    {
+        if ($request->filled('source_type')) {
+            $query->where('source_type', $request->string('source_type'));
+        }
+
+        if ($request->filled('workflow_status')) {
+            $query->where('workflow_status', $request->string('workflow_status'));
+        }
+
+        if ($request->filled('monitor_person_id')) {
+            $query->where('monitor_person_id', $request->integer('monitor_person_id'));
+        }
+
+        if ($request->filled('date_from')) {
+            $query->whereDate('activity_date', '>=', $request->string('date_from'));
+        }
+
+        if ($request->filled('date_to')) {
+            $query->whereDate('activity_date', '<=', $request->string('date_to'));
+        }
+
+        return $query;
+    }
+
     private function formData(): array
     {
+        $projects = Project::orderBy('project_name')->get()->map(fn (Project $project) => (object) [
+            'id' => $project->id,
+            'name' => ($project->project_number ? $project->project_number . ' — ' : '') . $project->project_name,
+        ]);
+
         return [
             'centers' => Center::orderBy('name')->get(),
-            'departments' => \App\Models\Department::with('center')->orderBy('name')->get(),
-            'sections' => \App\Models\Section::with('department')->orderBy('name')->get(),
+            'departments' => Department::with('center')->orderBy('name')->get(),
+            'sections' => Section::with('department')->orderBy('name')->get(),
             'funders' => Funder::orderBy('name')->get(),
             'people' => Person::orderBy('name')->get(),
-            'sourceTypes' => [
-                'project' => 'مشروع',
-                'external' => 'خارجي',
-                'meeting' => 'محضر اجتماع',
-            ],
+            'projects' => $projects,
+            'sourceTypes' => $this->sourceTypeLabels(),
             'activityTypes' => $this->constantOptions('activity_types'),
             'monitoringMethods' => $this->constantOptions('monitoring_methods'),
             'monitoringStages' => $this->constantOptions('monitoring_stages'),
+            'workflowStatusLabels' => MonitoringActivity::workflowStatusLabels(),
+        ];
+    }
+
+    private function sourceTypeLabels(): array
+    {
+        return [
+            'project' => 'مشروع',
+            'external' => 'خارجي',
+            'meeting' => 'محضر اجتماع',
         ];
     }
 
@@ -135,9 +232,10 @@ class MonitoringActivityController extends Controller
         return [
             'reference_code' => ['nullable', 'string', 'max:255', $uniqueRule],
             'source_type' => ['required', 'in:project,external,meeting'],
+            'source_id' => ['nullable', 'integer', 'exists:projects,id', 'required_if:source_type,project'],
             'activity_role' => ['required', 'in:primary,secondary'],
-            'center_id' => ['required', 'exists:centers,id'],
-            'department_id' => ['required', 'exists:departments,id'],
+            'center_id' => ['nullable', 'exists:centers,id', 'required_without:source_id'],
+            'department_id' => ['nullable', 'exists:departments,id', 'required_without:source_id'],
             'section_id' => ['nullable', 'exists:sections,id'],
             'responsible_person_id' => ['nullable', 'exists:people,id'],
             'monitor_person_id' => ['nullable', 'exists:people,id'],

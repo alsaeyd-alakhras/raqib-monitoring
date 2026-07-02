@@ -7,120 +7,143 @@
                     <div data-i18n="home">الرئيسية</div>
                 </a>
             </li>
-            {{-- @can('view','App\\Models\AccreditationProject')
-            <li class="menu-item {{ request()->is('accreditations/*') || request()->is('accreditations') ? 'active' : '' }}">
-                <a href="#" class="menu-link">
-                    <i class="fa-solid fa-check-circle me-2"></i>
-                    <div data-i18n="accreditations">الإعتمادية</div>
-                </a>
-            </li>
-            @endcan --}}
-            @can('view','App\\Models\AidDistribution')
-            @if (Route::has('dashboard.aid-distributions.index'))
-            <li class="menu-item {{ request()->is('aid-distributions/*') || request()->is('aid-distributions') ? 'active' : '' }}">
-                <a href="{{ route('dashboard.aid-distributions.index') }}" class="menu-link">
-                    <i class="fa-solid fa-hand-holding-heart me-2"></i>
-                    <div data-i18n="aid_distributions">سجل المساعدات</div>
-                </a>
-            </li>
-            @endif
-            @endcan
-            {{-- @can('view','App\\Models\Executive')
-            <li class="menu-item {{ request()->is('executives/*') || request()->is('executives') ? 'active' : '' }}">
-                <a href="#" class="menu-link">
-                    <i class="fa-solid fa-users-cog me-2"></i>
-                    <div data-i18n="executives">التنفيذات</div>
-                </a>
-            </li>
-            @endcan --}}
-            {{-- @can('reports.view')
-            <li class="menu-item {{ request()->is('reports/*') || request()->is('reports') ? 'active' : '' }}">
-                <a href="{{ route('dashboard.reports.index') }}" class="menu-link">
-                    <i class="fa-solid fa-file-alt me-2"></i>
-                    <div data-i18n="reports">التقارير</div>
-                </a>
-            </li>
-            @endcan --}}
-            <li class="menu-item">
+            {{-- الرقابة والمتابعة --}}
+            @if (
+                auth()->user()?->can('view', 'App\Models\MonitoringActivity')
+                || auth()->user()?->can('view', 'App\Models\Project')
+            )
+            <li class="menu-item {{ request()->is('monitoring-activities*') || request()->is('projects*') ? 'active open' : '' }}">
                 <a href="javascript:void(0)" class="menu-link menu-toggle">
-                    <i class="fa-solid fa-database me-2"></i>
-
-                    <div data-i18n="Pages">البيانات</div>
+                    <i class="fa-solid fa-clipboard-check me-2"></i>
+                    <div data-i18n="monitoring">الرقابة والمتابعة</div>
                 </a>
                 <ul class="menu-sub">
-                    @can('view','App\\Models\Office')
-                    @if (Route::has('dashboard.offices.index'))
-                    <li class="menu-item {{ request()->is('offices/*') || request()->is('offices') ? 'active' : '' }}">
-                        <a href="{{ route('dashboard.offices.index') }}" class="menu-link">
-                            <i class="fa-solid fa-building me-2"></i>
-                            <div data-i18n="offices">المكاتب</div>
+                    @can('view', 'App\Models\MonitoringActivity')
+                    <li class="menu-item {{ request()->is('monitoring-activities*') ? 'active' : '' }}">
+                        <a href="{{ route('dashboard.monitoring-activities.index') }}" class="menu-link">
+                            <i class="fa-solid fa-list-check me-2"></i>
+                            <div data-i18n="monitoring_activities">النشاطات الرقابية</div>
                         </a>
                     </li>
-                    @endif
                     @endcan
-                    @can('view','App\\Models\Institution')
-                    @if (Route::has('dashboard.institutions.index'))
-                    <li class="menu-item {{ request()->is('institutions/*') || request()->is('institutions') ? 'active' : '' }}">
-                        <a href="{{ route('dashboard.institutions.index') }}" class="menu-link">
-                            <i class="fa-solid fa-landmark me-2"></i>
-                            <div data-i18n="institutions">المؤسسات</div>
-                        </a>
-                    </li>
-                    @endif
-                    @endcan
-                    @can('view','App\\Models\Project')
-                    <li class="menu-item {{ request()->is('projects/*') || request()->is('projects') ? 'active' : '' }}">
+                    @can('view', 'App\Models\Project')
+                    <li class="menu-item {{ request()->is('projects*') ? 'active' : '' }}">
                         <a href="{{ route('dashboard.projects.index') }}" class="menu-link">
                             <i class="fa-solid fa-diagram-project me-2"></i>
                             <div data-i18n="projects">المشاريع</div>
                         </a>
                     </li>
                     @endcan
-                    @can('view','App\\Models\AidItem')
-                    @if (Route::has('dashboard.aid-items.index'))
-                    <li class="menu-item {{ request()->is('aid-items/*') || request()->is('aid-items') ? 'active' : '' }}">
-                        <a href="{{ route('dashboard.aid-items.index') }}" class="menu-link">
-                            <i class="fa-solid fa-boxes me-2"></i>
-                            <div data-i18n="items">أنواع المساعدات</div>
+                </ul>
+            </li>
+            @endif
+
+            {{-- البيانات الأساسية --}}
+            @if (
+                auth()->user()?->can('view', 'App\Models\Center')
+                || auth()->user()?->can('view', 'App\Models\Department')
+                || auth()->user()?->can('view', 'App\Models\Section')
+                || auth()->user()?->can('view', 'App\Models\Person')
+                || auth()->user()?->can('view', 'App\Models\Funder')
+            )
+            <li class="menu-item {{ request()->is('centers*') || request()->is('departments*') || request()->is('sections*') || request()->is('people*') || request()->is('funders*') ? 'active open' : '' }}">
+                <a href="javascript:void(0)" class="menu-link menu-toggle">
+                    <i class="fa-solid fa-database me-2"></i>
+                    <div data-i18n="foundation">البيانات الأساسية</div>
+                </a>
+                <ul class="menu-sub">
+                    @can('view', 'App\Models\Center')
+                    <li class="menu-item {{ request()->is('centers*') ? 'active' : '' }}">
+                        <a href="{{ route('dashboard.centers.index') }}" class="menu-link">
+                            <i class="fa-solid fa-building me-2"></i>
+                            <div data-i18n="centers">المراكز</div>
                         </a>
                     </li>
-                    @endif
+                    @endcan
+                    @can('view', 'App\Models\Department')
+                    <li class="menu-item {{ request()->is('departments*') ? 'active' : '' }}">
+                        <a href="{{ route('dashboard.departments.index') }}" class="menu-link">
+                            <i class="fa-solid fa-sitemap me-2"></i>
+                            <div data-i18n="departments">الدوائر</div>
+                        </a>
+                    </li>
+                    @endcan
+                    @can('view', 'App\Models\Section')
+                    <li class="menu-item {{ request()->is('sections*') ? 'active' : '' }}">
+                        <a href="{{ route('dashboard.sections.index') }}" class="menu-link">
+                            <i class="fa-solid fa-layer-group me-2"></i>
+                            <div data-i18n="sections">الأقسام</div>
+                        </a>
+                    </li>
+                    @endcan
+                    @can('view', 'App\Models\Person')
+                    <li class="menu-item {{ request()->is('people*') ? 'active' : '' }}">
+                        <a href="{{ route('dashboard.people.index') }}" class="menu-link">
+                            <i class="fa-solid fa-user-group me-2"></i>
+                            <div data-i18n="people">الأشخاص</div>
+                        </a>
+                    </li>
+                    @endcan
+                    @can('view', 'App\Models\Funder')
+                    <li class="menu-item {{ request()->is('funders*') ? 'active' : '' }}">
+                        <a href="{{ route('dashboard.funders.index') }}" class="menu-link">
+                            <i class="fa-solid fa-hand-holding-dollar me-2"></i>
+                            <div data-i18n="funders">الممولون</div>
+                        </a>
+                    </li>
                     @endcan
                 </ul>
             </li>
-            <li class="menu-item">
+            @endif
+
+            {{-- الإعدادات --}}
+            @if (
+                auth()->user()?->can('view', 'App\Models\User')
+                || auth()->user()?->can('view', 'App\Models\Constant')
+                || auth()->user()?->can('checklist_admin.manage')
+                || auth()->user()?->can('view', 'App\Models\ActivityLog')
+            )
+            <li class="menu-item {{ request()->is('users*') || request()->is('constants*') || request()->is('checklist-admin*') || request()->is('logs*') ? 'active open' : '' }}">
                 <a href="javascript:void(0)" class="menu-link menu-toggle">
                     <i class="fa-solid fa-gear me-2"></i>
-
-                    <div data-i18n="Pages">الإعدادات</div>
+                    <div data-i18n="settings">الإعدادات</div>
                 </a>
                 <ul class="menu-sub">
-                    @can('view','App\\Models\User')
-                    <li class="menu-item {{ request()->is('users/*') || request()->is('users') ? 'active' : '' }}">
+                    @can('view', 'App\Models\User')
+                    <li class="menu-item {{ request()->is('users*') ? 'active' : '' }}">
                         <a href="{{ route('dashboard.users.index') }}" class="menu-link">
                             <i class="fa-solid fa-users me-2"></i>
                             <div data-i18n="users">المستخدمين</div>
                         </a>
                     </li>
                     @endcan
-                    @can('view','App\\Models\ActivityLog')
-                    <li class="menu-item {{ request()->is('logs/*') || request()->is('logs') ? 'active' : '' }}">
+                    @can('view', 'App\Models\Constant')
+                    <li class="menu-item {{ request()->is('constants*') ? 'active' : '' }}">
+                        <a href="{{ route('dashboard.constants.index') }}" class="menu-link">
+                            <i class="fa-solid fa-sliders me-2"></i>
+                            <div data-i18n="constants">ثوابت النظام</div>
+                        </a>
+                    </li>
+                    @endcan
+                    @can('checklist_admin.manage')
+                    <li class="menu-item {{ request()->is('checklist-admin*') ? 'active' : '' }}">
+                        <a href="{{ route('dashboard.checklist-admin.index') }}" class="menu-link">
+                            <i class="fa-solid fa-list-ul me-2"></i>
+                            <div data-i18n="checklist_admin">إدارة قائمة التحقق</div>
+                        </a>
+                    </li>
+                    @endcan
+                    @can('view', 'App\Models\ActivityLog')
+                    <li class="menu-item {{ request()->is('logs*') ? 'active' : '' }}">
                         <a href="{{ route('dashboard.logs.index') }}" class="menu-link">
                             <i class="fa-solid fa-calendar-days me-2"></i>
                             <div data-i18n="logs">الأحداث</div>
                         </a>
                     </li>
                     @endcan
-                    @can('view','App\\Models\Currency')
-                    <li class="menu-item {{ request()->is('currencies/*') || request()->is('currencies') ? 'active' : '' }}">
-                        <a href="{{ route('dashboard.currencies.index') }}" class="menu-link">
-                            <i class="fa-solid fa-coins me-2"></i>
-                            <div data-i18n="currencies">العملات</div>
-                        </a>
-                    </li>
-                    @endcan
                 </ul>
             </li>
+            @endif
             {{-- <!-- Apps -->
             <li class="menu-item active">
                 <a href="javascript:void(0)" class="menu-link menu-toggle">

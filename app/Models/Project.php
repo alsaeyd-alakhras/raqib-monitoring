@@ -152,6 +152,8 @@ class Project extends Model
             $denominator = $total - $notRequired;
 
             if ($denominator <= 0) {
+                $groupPercentages[] = 100;
+
                 continue;
             }
 
@@ -173,7 +175,10 @@ class Project extends Model
      */
     public function getReadinessStatusAttribute(): ?string
     {
-        $monitorValues = $this->checklistValues()->pluck('monitor_value');
+        $monitorValues = $this->checklistValues()
+            ->whereHas('checklistItem', fn ($query) => $query->where('is_active', true)->whereHas('group', fn ($groupQuery) => $groupQuery->where('is_active', true)))
+            ->pluck('monitor_value')
+            ->filter(fn ($value) => $value !== null && $value !== '');
 
         if ($monitorValues->isEmpty()) {
             return null;

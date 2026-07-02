@@ -42,11 +42,20 @@
                 />
             </div>
             <div class="mb-4 col-md-4">
-                <x-form.input
-                    name="project_type"
-                    label="نوع المشروع"
-                    :value="$project->project_type ?? ''"
-                />
+                @if (! empty($projectTypes))
+                    <x-form.select
+                        name="project_type"
+                        label="نوع المشروع"
+                        :options="$projectTypes"
+                        :value="$project->project_type ?? ''"
+                    />
+                @else
+                    <x-form.input
+                        name="project_type"
+                        label="نوع المشروع"
+                        :value="$project->project_type ?? ''"
+                    />
+                @endif
             </div>
             <div class="mb-4 col-md-4">
                 <x-form.select

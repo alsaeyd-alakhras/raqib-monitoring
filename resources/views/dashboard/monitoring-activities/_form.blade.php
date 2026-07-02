@@ -19,6 +19,18 @@
     </div>
 @endif
 
+@if (isset($activity))
+    <div class="alert alert-{{ $activity->is_verified ? 'success' : 'warning' }} d-flex justify-content-between align-items-center">
+        <span><strong>حالة التحقق:</strong> {{ $activity->verification_status }}</span>
+        @if (! empty($canConfirmCompletion) && ! $activity->is_passage_complete)
+            <form action="{{ route('dashboard.monitoring-activities.confirm-passage', $activity) }}" method="post" onsubmit="return confirm('تأكيد اكتمال المرور على هذا النشاط؟');">
+                @csrf
+                <button type="submit" class="btn btn-sm btn-success">تأكيد اكتمال المرور</button>
+            </form>
+        @endif
+    </div>
+@endif
+
 <div class="card mb-4">
     <div class="card-header">
         <h5 class="mb-0">هوية ومصدر</h5>
@@ -48,6 +60,14 @@
                     :options="['primary' => 'أساسي', 'secondary' => 'تابع']"
                     :value="$activity->activity_role ?? 'primary'"
                     required
+                />
+            </div>
+            <div class="mb-4 col-md-4" id="source-id-field">
+                <x-form.select
+                    name="source_id"
+                    label="المشروع المرتبط"
+                    :optionsId="$projects"
+                    :value="$activity->source_id ?? ''"
                 />
             </div>
         </div>
@@ -269,12 +289,7 @@
                 <x-form.select
                     name="workflow_status"
                     label="حالة سير العمل"
-                    :options="[
-                        'pending_monitor' => 'بانتظار تعيين مراقب',
-                        'in_progress' => 'المراقب يعمل',
-                        'pending_confirmation' => 'بانتظار التأكيد',
-                        'completed' => 'مكتمل',
-                    ]"
+                    :options="$workflowStatusLabels"
                     :value="$activity->workflow_status ?? 'pending_monitor'"
                     required
                 />
@@ -302,3 +317,25 @@
         إلغاء
     </a>
 </div>
+
+@push('scripts')
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const sourceTypeSelect = document.querySelector('select[name="source_type"]');
+        const sourceIdField = document.getElementById('source-id-field');
+
+        function toggleSourceIdField() {
+            if (!sourceTypeSelect || !sourceIdField) {
+                return;
+            }
+
+            sourceIdField.style.display = sourceTypeSelect.value === 'project' ? '' : 'none';
+        }
+
+        if (sourceTypeSelect) {
+            sourceTypeSelect.addEventListener('change', toggleSourceIdField);
+            toggleSourceIdField();
+        }
+    });
+</script>
+@endpush
