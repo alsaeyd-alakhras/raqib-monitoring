@@ -117,7 +117,7 @@
                     type="date"
                     name="activity_date"
                     label="التاريخ"
-                    :value="$activity->activity_date ? $activity->activity_date->format('Y-m-d') : ''"
+                    :value="isset($activity) && $activity->activity_date ? $activity->activity_date->format('Y-m-d') : ''"
                 />
             </div>
             <div class="mb-4 col-md-3">
