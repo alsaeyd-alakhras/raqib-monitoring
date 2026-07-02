@@ -16,12 +16,14 @@
             </li>
             @endcan --}}
             @can('view','App\\Models\AidDistribution')
+            @if (Route::has('dashboard.aid-distributions.index'))
             <li class="menu-item {{ request()->is('aid-distributions/*') || request()->is('aid-distributions') ? 'active' : '' }}">
                 <a href="{{ route('dashboard.aid-distributions.index') }}" class="menu-link">
                     <i class="fa-solid fa-hand-holding-heart me-2"></i>
                     <div data-i18n="aid_distributions">سجل المساعدات</div>
                 </a>
             </li>
+            @endif
             @endcan
             {{-- @can('view','App\\Models\Executive')
             <li class="menu-item {{ request()->is('executives/*') || request()->is('executives') ? 'active' : '' }}">
@@ -47,20 +49,24 @@
                 </a>
                 <ul class="menu-sub">
                     @can('view','App\\Models\Office')
+                    @if (Route::has('dashboard.offices.index'))
                     <li class="menu-item {{ request()->is('offices/*') || request()->is('offices') ? 'active' : '' }}">
                         <a href="{{ route('dashboard.offices.index') }}" class="menu-link">
                             <i class="fa-solid fa-building me-2"></i>
                             <div data-i18n="offices">المكاتب</div>
                         </a>
                     </li>
+                    @endif
                     @endcan
                     @can('view','App\\Models\Institution')
+                    @if (Route::has('dashboard.institutions.index'))
                     <li class="menu-item {{ request()->is('institutions/*') || request()->is('institutions') ? 'active' : '' }}">
                         <a href="{{ route('dashboard.institutions.index') }}" class="menu-link">
                             <i class="fa-solid fa-landmark me-2"></i>
                             <div data-i18n="institutions">المؤسسات</div>
                         </a>
                     </li>
+                    @endif
                     @endcan
                     @can('view','App\\Models\Project')
                     <li class="menu-item {{ request()->is('projects/*') || request()->is('projects') ? 'active' : '' }}">
@@ -71,12 +77,14 @@
                     </li>
                     @endcan
                     @can('view','App\\Models\AidItem')
+                    @if (Route::has('dashboard.aid-items.index'))
                     <li class="menu-item {{ request()->is('aid-items/*') || request()->is('aid-items') ? 'active' : '' }}">
                         <a href="{{ route('dashboard.aid-items.index') }}" class="menu-link">
                             <i class="fa-solid fa-boxes me-2"></i>
                             <div data-i18n="items">أنواع المساعدات</div>
                         </a>
                     </li>
+                    @endif
                     @endcan
                 </ul>
             </li>

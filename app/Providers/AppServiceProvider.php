@@ -71,6 +71,17 @@ class AppServiceProvider extends ServiceProvider
                 return false;
             }
         });
+        // checklist_admin has no dedicated Eloquent model (it manages checklist_groups +
+        // checklist_items together), so it can't rely on ModelPolicy's class-name-derived
+        // ability string — defined explicitly here instead, same pattern as reports.view.
+        Gate::define('checklist_admin.manage', function ($user) {
+            if($user instanceof User) {
+                if($user->roles->contains('role_name', 'checklist_admin.manage')) {
+                    return true;
+                }
+                return false;
+            }
+        });
 
 
 

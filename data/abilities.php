@@ -68,6 +68,22 @@ return [
         'edit_ratings' => 'تعديل قيم التقييم',
     ],
 
+    'projects' => [
+        'name' => 'المشاريع',
+        'view' => 'عرض',
+        'create' => 'اضافة',
+        'update' => 'تعديل',
+        'delete' => 'حذف',
+        'approve_department' => 'موافقة مدير الدائرة',
+        'fill_coordinator' => 'تعبئة عمود المنسق',
+        'fill_monitor' => 'تعبئة عمود المراقب',
+        'reject' => 'رفض المشروع',
+    ],
+    'checklist_admin' => [
+        'name' => 'إدارة قائمة التحقق',
+        'manage' => 'إدارة المجموعات والبنود',
+    ],
+
     'activitylogs' => [
         'name' => 'العمليات',
         'view' => 'عرض',
