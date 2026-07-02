@@ -145,6 +145,7 @@
                 <div class="alert alert-danger">
                     <div><strong>سبب الرفض:</strong> {{ $project->rejection_reason }}</div>
                     <div><strong>مسؤولية النقص:</strong> {{ $project->gap_owner }}</div>
+                    <div><strong>رُفض بواسطة:</strong> {{ $project->rejectedByUser?->name ?? '-' }}</div>
                     <div><strong>رُفض بتاريخ:</strong> {{ $project->rejected_at }}</div>
                 </div>
                 @if ($canReject)

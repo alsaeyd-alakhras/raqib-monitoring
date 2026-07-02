@@ -22,13 +22,52 @@
 @if (isset($activity))
     <div class="alert alert-{{ $activity->is_verified ? 'success' : 'warning' }} d-flex justify-content-between align-items-center">
         <span><strong>حالة التحقق:</strong> {{ $activity->verification_status }}</span>
-        @if (! empty($canConfirmCompletion) && ! $activity->is_passage_complete)
+        @if (! empty($canConfirmCompletion) && ! $activity->is_passage_complete && in_array($activity->workflow_status, ['pending_confirmation', 'in_progress']))
             <form action="{{ route('dashboard.monitoring-activities.confirm-passage', $activity) }}" method="post" onsubmit="return confirm('تأكيد اكتمال المرور على هذا النشاط؟');">
                 @csrf
                 <button type="submit" class="btn btn-sm btn-success">تأكيد اكتمال المرور</button>
             </form>
         @endif
     </div>
+
+    @if ($activity->rejection_reason)
+        <div class="alert alert-danger">
+            <div><strong>سبب الرفض:</strong> {{ $activity->rejection_reason }}</div>
+            <div><strong>مسؤولية النقص:</strong> {{ $activity->gap_owner }}</div>
+            <div><strong>رُفض بواسطة:</strong> {{ $activity->rejectedByUser?->name ?? '-' }}</div>
+            <div><strong>رُفض بتاريخ:</strong> {{ $activity->rejected_at }}</div>
+        </div>
+    @endif
+
+    @if (! empty($canReject) && ! $activity->is_passage_complete)
+        <div class="card mb-4 border-danger">
+            <div class="card-header">
+                <h5 class="mb-0 text-danger">رفض النشاط</h5>
+            </div>
+            <div class="card-body">
+                <form action="{{ route('dashboard.monitoring-activities.reject', $activity) }}" method="post" onsubmit="return confirm('هل أنت متأكد من رفض هذا النشاط؟');">
+                    @csrf
+                    <div class="row g-2">
+                        <div class="col-md-5">
+                            <label class="form-label">سبب الرفض</label>
+                            <textarea name="rejection_reason" class="form-control" required></textarea>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">مسؤولية النقص</label>
+                            <select name="gap_owner" class="form-select" required>
+                                <option value="coordinator">المنسق</option>
+                                <option value="dept_manager">مدير الدائرة</option>
+                                <option value="other">أخرى</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3 d-flex align-items-end">
+                            <button type="submit" class="btn btn-danger">رفض النشاط</button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    @endif
 @endif
 
 <div class="card mb-4">

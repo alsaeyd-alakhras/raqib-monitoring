@@ -62,6 +62,14 @@ class ConstantsSeeder extends Seeder
             'monitoring_stages' => [
                 'أثناء التنفيذ',
             ],
+            'project_types' => [
+                'تنموي',
+                'إغاثي',
+                'طبي',
+                'تعليمي',
+                'إنشائي',
+                'خدمات',
+            ],
             'checklist_options' => [
                 'جاهز',
                 'جزئي',

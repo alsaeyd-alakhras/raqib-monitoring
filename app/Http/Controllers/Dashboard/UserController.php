@@ -4,7 +4,6 @@ namespace App\Http\Controllers\Dashboard;
 
 use App\Http\Controllers\Controller;
 use App\Models\ActivityLog;
-use App\Models\Office;
 use App\Models\RoleUser;
 use App\Models\User;
 use App\Services\ActivityLogService;
@@ -38,8 +37,7 @@ class UserController extends Controller
     {
         $this->authorize('create', User::class);
         $user = new User();
-        $offices = Office::get();
-        return view('dashboard.users.create', compact('user', 'offices'));
+        return view('dashboard.users.create', compact('user'));
     }
 
     /**
@@ -54,7 +52,6 @@ class UserController extends Controller
             'username' => 'required|string|unique:users,username',
             'password' => 'required|same:confirm_password',
             'confirm_password' => 'required|same:password',
-            'office_id' => 'sometimes|exists:offices,id',
             'user_type' => 'required|in:admin,employee',
             'is_active' => 'required|boolean',
         ], [
@@ -114,8 +111,7 @@ class UserController extends Controller
         }
         $btn_label = "تعديل";
         $settings_profile = true;
-        $offices = Office::get();
-        return view('dashboard.users.settings', compact('user', 'btn_label', 'settings_profile', 'offices'));
+        return view('dashboard.users.settings', compact('user', 'btn_label', 'settings_profile'));
     }
     /**
      * Show the form for editing the specified resource.
@@ -124,8 +120,7 @@ class UserController extends Controller
     {
         $this->authorize('update', User::class);
         $btn_label = "تعديل";
-        $offices = Office::get();
-        return view('dashboard.users.edit', compact('user', 'btn_label', 'offices'));
+        return view('dashboard.users.edit', compact('user', 'btn_label'));
     }
 
     /**
@@ -167,7 +162,6 @@ class UserController extends Controller
                 'username' => $request->username,
                 'email' => $request->email,
                 'avatar' => $avatar ?? null,
-                'office_id' => $request->office_id ?? $user->office_id,
                 'user_type' => $nextUserType,
                 'is_active' => $request->is_active ?? $user->is_active,
             ]);

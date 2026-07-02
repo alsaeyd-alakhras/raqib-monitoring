@@ -20,6 +20,7 @@ class MonitoringActivity extends Model
         'kpi_value', 'kpi_rating',
         'monitoring_method', 'monitoring_stage', 'workflow_status', 'is_passage_complete',
         'passage_completed_at', 'passage_completed_by',
+        'rejection_reason', 'rejected_by', 'rejected_at', 'gap_owner',
         'created_by', 'updated_by',
     ];
 
@@ -33,6 +34,7 @@ class MonitoringActivity extends Model
         'deduction_value' => 'float',
         'kpi_value' => 'float',
         'passage_completed_at' => 'datetime',
+        'rejected_at' => 'datetime',
     ];
 
     protected static function booted(): void
@@ -76,6 +78,11 @@ class MonitoringActivity extends Model
     public function project(): BelongsTo
     {
         return $this->belongsTo(Project::class, 'source_id');
+    }
+
+    public function rejectedByUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'rejected_by');
     }
 
     public static function workflowStatusLabels(): array
@@ -154,6 +161,11 @@ class MonitoringActivity extends Model
             return '✗ هرم';
         }
 
+        $invalidLists = $this->collectInvalidListValues();
+        if ($invalidLists !== []) {
+            return '✗ قوائم: ' . implode('، ', $invalidLists);
+        }
+
         $deductionValue = $this->deduction_value;
         $hasDeduction = $deductionValue !== null && (float) $deductionValue !== 0.0;
 
@@ -175,29 +187,31 @@ class MonitoringActivity extends Model
             return '✗ ناقص: ' . implode('، ', $missingFields);
         }
 
-        return '✓';
+        return '✓ تحقق';
     }
 
     public function getIsVerifiedAttribute(): bool
     {
-        return $this->verification_status === '✓';
+        return $this->verification_status === '✓ تحقق';
     }
 
     protected function isValidHierarchy(): bool
     {
-        if (! $this->center_id || ! $this->department_id) {
-            return false;
-        }
+        if ($this->center_id && $this->department_id) {
+            $department = $this->relationLoaded('department')
+                ? $this->department
+                : Department::find($this->department_id);
 
-        $department = $this->relationLoaded('department')
-            ? $this->department
-            : Department::find($this->department_id);
-
-        if (! $department || (int) $department->center_id !== (int) $this->center_id) {
-            return false;
+            if (! $department || (int) $department->center_id !== (int) $this->center_id) {
+                return false;
+            }
         }
 
         if ($this->section_id) {
+            if (! $this->department_id) {
+                return false;
+            }
+
             $section = $this->relationLoaded('section')
                 ? $this->section
                 : Section::find($this->section_id);
@@ -215,9 +229,6 @@ class MonitoringActivity extends Model
         $requiredFields = [
             'activity_date' => 'التاريخ',
             'activity_time' => 'الوقت',
-            'center_id' => 'المركز',
-            'department_id' => 'الدائرة',
-            'responsible_person_id' => 'المسؤول عن النشاط',
             'activity_type' => 'نوع النشاط',
             'subject' => 'الموضوع',
             'execution_value' => 'التنفيذ',
@@ -225,6 +236,15 @@ class MonitoringActivity extends Model
             'closure_value' => 'الإغلاق',
             'deduction_value' => 'الخصم',
         ];
+
+        if ($this->source_type !== 'project') {
+            $requiredFields['center_id'] = 'المركز';
+            $requiredFields['department_id'] = 'الدائرة';
+            $requiredFields['responsible_person_id'] = 'المسؤول عن النشاط';
+        } elseif (! $this->source_id) {
+            $requiredFields['center_id'] = 'المركز';
+            $requiredFields['department_id'] = 'الدائرة';
+        }
 
         $missingFields = [];
 
@@ -235,5 +255,32 @@ class MonitoringActivity extends Model
         }
 
         return $missingFields;
+    }
+
+    protected function collectInvalidListValues(): array
+    {
+        $invalid = [];
+
+        if ($this->activity_type && ! in_array($this->activity_type, $this->getConstantValues('activity_types'), true)) {
+            $invalid[] = 'نوع النشاط';
+        }
+
+        if ($this->monitoring_method && ! in_array($this->monitoring_method, $this->getConstantValues('monitoring_methods'), true)) {
+            $invalid[] = 'طريقة المراقبة';
+        }
+
+        if ($this->monitoring_stage && ! in_array($this->monitoring_stage, $this->getConstantValues('monitoring_stages'), true)) {
+            $invalid[] = 'مرحلة المراقبة';
+        }
+
+        return $invalid;
+    }
+
+    protected function getConstantValues(string $key): array
+    {
+        $value = Constant::where('key', $key)->value('value');
+        $decoded = is_string($value) ? json_decode($value, true) : $value;
+
+        return is_array($decoded) ? $decoded : [];
     }
 }

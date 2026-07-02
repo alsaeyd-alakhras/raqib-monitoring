@@ -77,6 +77,8 @@ Route::group([
 
     Route::post('monitoring-activities/{monitoring_activity}/confirm-passage', [MonitoringActivityController::class, 'confirmPassage'])
         ->name('monitoring-activities.confirm-passage');
+    Route::post('monitoring-activities/{monitoring_activity}/reject', [MonitoringActivityController::class, 'reject'])
+        ->name('monitoring-activities.reject');
 
     // Projects ************************
     Route::resources([
@@ -92,6 +94,7 @@ Route::group([
         Route::post('assign-monitor', [ProjectController::class, 'assignMonitor'])->name('assign-monitor');
         Route::get('monitor-work', [ProjectController::class, 'monitorWork'])->name('monitor-work');
         Route::post('fill-monitor', [ProjectController::class, 'fillMonitor'])->name('fill-monitor');
+        Route::post('confirm-monitoring', [ProjectController::class, 'confirmMonitoring'])->name('confirm-monitoring');
         Route::post('reject', [ProjectController::class, 'reject'])->name('reject');
         Route::post('reroute', [ProjectController::class, 'reroute'])->name('reroute');
     });

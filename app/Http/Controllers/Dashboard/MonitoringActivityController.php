@@ -72,11 +72,14 @@ class MonitoringActivityController extends Controller
         $this->authorize('update', MonitoringActivity::class);
         $this->authorizeEditAfterClosure($monitoring_activity);
 
+        $monitoring_activity->load('rejectedByUser');
+
         return view(
             'dashboard.monitoring-activities.edit',
             $this->formData() + [
                 'activity' => $monitoring_activity,
                 'canConfirmCompletion' => auth()->user()?->can('confirm_completion', MonitoringActivity::class),
+                'canReject' => auth()->user()?->can('reject', MonitoringActivity::class),
             ]
         );
     }
@@ -116,6 +119,10 @@ class MonitoringActivityController extends Controller
     {
         $this->authorize('confirm_completion', MonitoringActivity::class);
 
+        if (! in_array($monitoring_activity->workflow_status, ['pending_confirmation', 'in_progress'], true)) {
+            abort(422, 'حالة النشاط الحالية لا تسمح بتأكيد اكتمال المرور.');
+        }
+
         $monitoring_activity->update([
             'is_passage_complete' => true,
             'passage_completed_at' => now(),
@@ -125,6 +132,24 @@ class MonitoringActivityController extends Controller
         ]);
 
         return back()->with('success', 'تم تأكيد اكتمال المرور على النشاط.');
+    }
+
+    public function reject(Request $request, MonitoringActivity $monitoring_activity): RedirectResponse
+    {
+        $this->authorize('reject', MonitoringActivity::class);
+
+        $validated = $request->validate([
+            'rejection_reason' => ['required', 'string'],
+            'gap_owner' => ['required', 'in:coordinator,dept_manager,other'],
+        ]);
+
+        $monitoring_activity->update($validated + [
+            'rejected_by' => auth()->id(),
+            'rejected_at' => now(),
+            'updated_by' => auth()->id(),
+        ]);
+
+        return back()->with('success', 'تم رفض النشاط الرقابي.');
     }
 
     private function authorizeEditAfterClosure(MonitoringActivity $monitoringActivity): void

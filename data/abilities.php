@@ -66,6 +66,7 @@ return [
         'set_monitoring_info' => 'تحديد طريقة/مرحلة المراقبة',
         'confirm_completion' => 'تأكيد اكتمال المرور',
         'edit_ratings' => 'تعديل قيم التقييم',
+        'reject' => 'رفض النشاط',
     ],
 
     'projects' => [

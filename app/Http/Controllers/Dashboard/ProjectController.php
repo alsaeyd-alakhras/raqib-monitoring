@@ -67,7 +67,7 @@ class ProjectController extends Controller
             return redirect()->route('dashboard.projects.monitor-work', $project);
         }
 
-        $project->load(['center', 'department', 'section', 'funder', 'projectManager', 'monitorPerson', 'primaryMonitoringActivity']);
+        $project->load(['center', 'department', 'section', 'funder', 'projectManager', 'monitorPerson', 'primaryMonitoringActivity', 'rejectedByUser']);
 
         if (! $this->canViewCoordinatorData()) {
             $project->unsetRelation('coordinator');
@@ -265,7 +265,7 @@ class ProjectController extends Controller
         $this->guardStatus($project, ['monitoring_in_progress']);
 
         // عزل بيانات المنسق على مستوى الاستعلام: لا يُحمَّل coordinator_id ولا coordinator_value إطلاقاً
-        $project->loadMissing(['center', 'department', 'section', 'funder']);
+        $project->loadMissing(['center', 'department', 'section', 'funder', 'primaryMonitoringActivity']);
 
         $groups = $this->activeChecklistGroups();
         $values = $project->checklistValues()
@@ -301,6 +301,29 @@ class ProjectController extends Controller
             ->with('success', 'تم حفظ عمود المراقب.');
     }
 
+    public function confirmMonitoring(Project $project): RedirectResponse
+    {
+        $this->authorize('fill_monitor', Project::class);
+        $this->guardStatus($project, ['monitoring_in_progress']);
+
+        $activity = $project->primaryMonitoringActivity;
+
+        if (! $activity) {
+            return back()->withErrors(['monitor' => 'لا يوجد نشاط رقابي أساسي مرتبط بهذا المشروع.']);
+        }
+
+        if ($activity->workflow_status !== 'in_progress') {
+            abort(422, 'حالة النشاط الحالية لا تسمح بتأكيد إنهاء المراقبة.');
+        }
+
+        $activity->update([
+            'workflow_status' => 'pending_confirmation',
+            'updated_by' => auth()->id(),
+        ]);
+
+        return back()->with('success', 'تم تأكيد إنهاء المراقبة، بانتظار تأكيد مدير الرقابة.');
+    }
+
     /* ===================== الرفض وإعادة التوجيه ===================== */
 
     public function reject(Request $request, Project $project): RedirectResponse
@@ -309,7 +332,7 @@ class ProjectController extends Controller
 
         $validated = $request->validate([
             'rejection_reason' => ['required', 'string'],
-            'gap_owner' => ['required', 'string'],
+            'gap_owner' => ['required', 'in:coordinator,dept_manager,other'],
         ]);
 
         $project->update($validated + [

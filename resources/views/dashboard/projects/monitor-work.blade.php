@@ -75,6 +75,16 @@
 
                 <button type="submit" class="btn btn-primary mt-3">حفظ عمود المراقب</button>
             </form>
+
+            @php $primaryActivity = $project->primaryMonitoringActivity; @endphp
+            @if ($primaryActivity?->workflow_status === 'in_progress')
+                <form action="{{ route('dashboard.projects.confirm-monitoring', $project) }}" method="post" class="mt-3" onsubmit="return confirm('تأكيد إنهاء المراقبة وإرسالها لمدير الرقابة؟');">
+                    @csrf
+                    <button type="submit" class="btn btn-success">تأكيد إنهاء المراقبة</button>
+                </form>
+            @elseif ($primaryActivity?->workflow_status === 'pending_confirmation')
+                <div class="alert alert-info mt-3 mb-0">تم تأكيد إنهاء المراقبة — بانتظار تأكيد مدير الرقابة العامة.</div>
+            @endif
         </div>
     </div>
 </x-front-layout>

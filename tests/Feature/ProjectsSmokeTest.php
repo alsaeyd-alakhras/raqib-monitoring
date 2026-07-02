@@ -105,6 +105,18 @@ class ProjectsSmokeTest extends TestCase
         $this->assertEquals(50.0, (float) $project->monitor_readiness_pct);
         $this->assertEquals(50.0, (float) $activity->execution_value);
         $this->assertSame(['ملاحظة1', 'ملاحظة2'], $project->monitor_notes);
+        $this->assertSame('in_progress', $activity->workflow_status);
+
+        // 7) monitor confirms completion -> pending_confirmation
+        $this->post(route('dashboard.projects.confirm-monitoring', $project))->assertRedirect();
+        $activity->refresh();
+        $this->assertSame('pending_confirmation', $activity->workflow_status);
+
+        // 8) monitoring manager confirms passage -> completed
+        $this->post(route('dashboard.monitoring-activities.confirm-passage', $activity))->assertRedirect();
+        $activity->refresh();
+        $this->assertSame('completed', $activity->workflow_status);
+        $this->assertTrue($activity->is_passage_complete);
 
         // cleanup (avoid polluting shared dev database across test runs)
         $project->update(['primary_monitoring_activity_id' => null]);

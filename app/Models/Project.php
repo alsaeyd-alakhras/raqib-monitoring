@@ -109,6 +109,11 @@ class Project extends Model
         return $this->belongsTo(MonitoringActivity::class, 'primary_monitoring_activity_id');
     }
 
+    public function rejectedByUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'rejected_by');
+    }
+
     public function checklistValues(): HasMany
     {
         return $this->hasMany(ProjectChecklistValue::class);
