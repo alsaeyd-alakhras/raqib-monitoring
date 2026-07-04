@@ -131,6 +131,17 @@ class MonitoringActivityController extends Controller
             'updated_by' => auth()->id(),
         ]);
 
+        if ($monitoring_activity->source_type === 'project' && $monitoring_activity->source_id) {
+            $project = Project::find($monitoring_activity->source_id);
+
+            if ($project && $project->primary_monitoring_activity_id === $monitoring_activity->id) {
+                $project->update([
+                    'workflow_status' => 'passage_complete',
+                    'updated_by' => auth()->id(),
+                ]);
+            }
+        }
+
         return back()->with('success', 'تم تأكيد اكتمال المرور على النشاط.');
     }
 
@@ -220,8 +231,6 @@ class MonitoringActivityController extends Controller
 
         return [
             'centers' => Center::orderBy('name')->get(),
-            'departments' => Department::with('center')->orderBy('name')->get(),
-            'sections' => Section::with('department')->orderBy('name')->get(),
             'funders' => Funder::orderBy('name')->get(),
             'people' => Person::orderBy('name')->get(),
             'projects' => $projects,

@@ -1,13 +1,5 @@
 @php
-    $statusLabels = [
-        'draft' => 'مسودة',
-        'pending_coordinator' => 'بانتظار المنسق',
-        'coordinator_filling' => 'المنسق يعمل',
-        'pending_dept_manager' => 'بانتظار مدير الدائرة',
-        'pending_monitoring_manager' => 'بانتظار مدير الرقابة العامة',
-        'monitoring_in_progress' => 'قيد المراقبة',
-        'rejected' => 'مرفوض',
-    ];
+    $statusLabels = \App\Models\Project::workflowStatusLabels();
     $valueLabels = [
         'ready' => 'جاهز',
         'partial' => 'جزئي',
@@ -15,9 +7,9 @@
         'not_required' => 'غير مطلوب',
     ];
     $readinessStatusLabels = [
-        'stopped' => '🔴 موقوف — يحتاج مراجعة',
-        'partially_ready' => '🔶 جاهز جزئياً — يحتاج متابعة',
-        'ready' => '✅ جاهز للتنفيذ — موصى بالمتابعة',
+        'stopped' => '🔴 يحتاج مراجعة (بند غير جاهز)',
+        'partially_ready' => '🔶 جاهز جزئياً',
+        'ready' => '✅ جاهز للتنفيذ',
     ];
     $canFillCoordinator = auth()->user()?->can('fill_coordinator', 'App\Models\Project');
     $canApproveDept = auth()->user()?->can('approve_department', 'App\Models\Project');
@@ -32,31 +24,17 @@
     <div class="card mb-4">
         <div class="card-header d-flex justify-content-between align-items-center">
             <h5 class="mb-0">{{ $project->project_name }}</h5>
-            <span class="badge bg-label-{{ $project->workflow_status === 'rejected' ? 'danger' : 'info' }} fs-6">
+            <span class="badge bg-label-{{ match($project->workflow_status) {
+                'rejected' => 'danger',
+                'passage_complete' => 'success',
+                'pending_monitoring_confirmation' => 'warning',
+                default => 'info',
+            } }} fs-6">
                 {{ $statusLabels[$project->workflow_status] ?? $project->workflow_status }}
             </span>
         </div>
-        <div class="card-body">
-            <div class="row">
-                <div class="col-md-3"><strong>رقم المشروع:</strong> {{ $project->project_number ?? '-' }}</div>
-                <div class="col-md-3"><strong>النوع:</strong> {{ $project->project_type ?? '-' }}</div>
-                <div class="col-md-3"><strong>الممول:</strong> {{ $project->funder?->name ?? '-' }}</div>
-                <div class="col-md-3"><strong>المركز/الدائرة/القسم:</strong> {{ $project->center?->name }} / {{ $project->department?->name }} / {{ $project->section?->name }}</div>
-                <div class="col-md-3"><strong>مدير المشروع:</strong> {{ $project->projectManager?->name ?? '-' }}</div>
-                @if ($canViewCoordinatorData)
-                    <div class="col-md-3"><strong>المنسق:</strong> {{ $project->coordinator?->name ?? '-' }}</div>
-                @endif
-                <div class="col-md-3"><strong>المراقب:</strong> {{ $project->monitorPerson?->name ?? '-' }}</div>
-                <div class="col-md-3"><strong>المستفيدون المستهدفون:</strong> {{ $project->target_beneficiaries ?? '-' }}</div>
-            </div>
-            <div class="mt-3">
-                @can('update', 'App\Models\Project')
-                    <a href="{{ route('dashboard.projects.edit', $project) }}" class="btn btn-sm btn-outline-primary">تعديل بيانات المشروع</a>
-                @endcan
-                @if ($project->primaryMonitoringActivity)
-                    <a href="{{ route('dashboard.monitoring-activities.edit', $project->primaryMonitoringActivity) }}" class="btn btn-sm btn-outline-secondary">النشاط الرقابي الأساسي ({{ $project->primaryMonitoringActivity->reference_code }})</a>
-                @endif
-            </div>
+        <div class="card-body pt-3">
+            @include('dashboard.projects._project_summary')
         </div>
     </div>
 
@@ -64,6 +42,16 @@
     <div class="card mb-4">
         <div class="card-header"><h5 class="mb-0">سير العمل</h5></div>
         <div class="card-body">
+            @if ($project->workflow_status === 'pending_dept_manager')
+                <div class="alert alert-info py-2 mb-3">
+                    المشروع بانتظار موافقة
+                    <strong>{{ $approverDepartmentManagerLabel }}</strong>
+                    @if ($projectManagerDepartmentName)
+                        — مدير دائرة «{{ $projectManagerDepartmentName }}» (دائرة مدير المشروع، وليست بالضرورة دائرة المشروع التنظيمية أعلاه).
+                    @endif
+                </div>
+            @endif
+
             @if ($project->workflow_status === 'draft' && $canUpdate)
                 <form action="{{ route('dashboard.projects.submit-to-coordinator', $project) }}" method="post" class="d-inline">
                     @csrf
@@ -78,11 +66,18 @@
                 </form>
             @endif
 
-            @if ($project->workflow_status === 'pending_dept_manager' && $canApproveDept)
-                <form action="{{ route('dashboard.projects.approve-department', $project) }}" method="post" class="d-inline">
-                    @csrf
-                    <button type="submit" class="btn btn-primary">موافقة وإرسال لمدير الرقابة العامة</button>
-                </form>
+            @if ($project->workflow_status === 'pending_dept_manager' && ($canApproveThisProject ?? false))
+                <div class="d-flex flex-wrap gap-2 mb-0">
+                    <form action="{{ route('dashboard.projects.approve-department', $project) }}" method="post" class="d-inline">
+                        @csrf
+                        <button type="submit" class="btn btn-primary">موافقة وإرسال لمدير الرقابة العامة</button>
+                    </form>
+                    @if ($canRejectThisProject ?? false)
+                        <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#projectRejectModal">
+                            رفض المشروع
+                        </button>
+                    @endif
+                </div>
             @endif
 
             @if ($project->workflow_status === 'pending_monitoring_manager' && ($canSetMonitoringInfo || $canAssignMonitor))
@@ -120,7 +115,7 @@
                         <label class="form-label">تعيين المراقب</label>
                         <select name="monitor_person_id" class="form-select" required>
                             <option value="">إختر القيمة</option>
-                            @foreach ($people as $person)
+                            @foreach ($monitors as $person)
                                 <option value="{{ $person->id }}" @selected($project->monitor_person_id == $person->id)>{{ $person->name }}</option>
                             @endforeach
                         </select>
@@ -136,15 +131,58 @@
                 @endif
             @endif
 
+            @if ($project->workflow_status === 'pending_monitoring_manager' && ($canRejectThisProject ?? false))
+                <div class="mt-3">
+                    <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#projectRejectModal">
+                        رفض المشروع
+                    </button>
+                </div>
+            @endif
+
             @if ($project->workflow_status === 'monitoring_in_progress')
-                <a href="{{ route('dashboard.projects.monitor-work', $project) }}" class="btn btn-outline-primary">شاشة عمل المراقب</a>
-                <span class="ms-3">حالة الجاهزية: {{ $readinessStatusLabels[$project->readiness_status] ?? '-' }}</span>
+                <div class="d-flex flex-wrap align-items-center gap-2">
+                    <a href="{{ route('dashboard.projects.monitor-work', $project) }}" class="btn btn-outline-primary">شاشة عمل المراقب</a>
+                    @if ($project->readiness_status)
+                        <span class="text-muted small">تقييم الجاهزية: {{ $readinessStatusLabels[$project->readiness_status] ?? '-' }}</span>
+                    @endif
+                    @if ($canRejectThisProject ?? false)
+                        <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#projectRejectModal">
+                            رفض المشروع
+                        </button>
+                    @endif
+                </div>
+            @endif
+
+            @if ($project->workflow_status === 'pending_monitoring_confirmation')
+                <div class="alert alert-warning py-2 mb-3">
+                    المراقب <strong>{{ $project->monitorPerson?->name ?? '—' }}</strong> أنهى عمله وأرسل المشروع — بانتظار تأكيد المرور من مدير الرقابة العامة.
+                </div>
+                @if ($canConfirmPassageThisProject ?? false)
+                    <form action="{{ route('dashboard.projects.confirm-passage', $project) }}" method="post" class="d-inline" onsubmit="return confirm('تأكيد المرور على المشروع وإغلاق دورة المراقبة؟');">
+                        @csrf
+                        <button type="submit" class="btn btn-success btn-lg">تأكيد المرور — إتمام المشروع</button>
+                    </form>
+                @endif
+                @if ($canRejectThisProject ?? false)
+                    <button type="button" class="btn btn-outline-danger ms-2" data-bs-toggle="modal" data-bs-target="#projectRejectModal">
+                        رفض المشروع
+                    </button>
+                @endif
+            @endif
+
+            @if ($project->workflow_status === 'passage_complete')
+                <div class="alert alert-success mb-0">
+                    <strong>تم المرور على المشروع بنجاح.</strong> دورة المراقبة مكتملة ولا يلزم أي إجراء إضافي.
+                    @if ($project->primaryMonitoringActivity?->passage_completed_at)
+                        <span class="d-block small mt-1">تاريخ التأكيد: {{ $project->primaryMonitoringActivity->passage_completed_at->format('Y-m-d H:i') }}</span>
+                    @endif
+                </div>
             @endif
 
             @if ($project->workflow_status === 'rejected')
                 <div class="alert alert-danger">
                     <div><strong>سبب الرفض:</strong> {{ $project->rejection_reason }}</div>
-                    <div><strong>مسؤولية النقص:</strong> {{ $project->gap_owner }}</div>
+                    <div><strong>مسؤولية النقص:</strong> {{ \App\Models\Project::gapOwnerLabel($project->gap_owner) }}</div>
                     <div><strong>رُفض بواسطة:</strong> {{ $project->rejectedByUser?->name ?? '-' }}</div>
                     <div><strong>رُفض بتاريخ:</strong> {{ $project->rejected_at }}</div>
                 </div>
@@ -166,90 +204,71 @@
                     </form>
                 @endif
             @endif
-
-            @if ($canReject && ! in_array($project->workflow_status, ['rejected', 'monitoring_in_progress']))
-                <hr>
-                <form action="{{ route('dashboard.projects.reject', $project) }}" method="post" onsubmit="return confirm('هل أنت متأكد من رفض المشروع؟');">
-                    @csrf
-                    <div class="row g-2">
-                        <div class="col-md-5">
-                            <label class="form-label">سبب الرفض</label>
-                            <textarea name="rejection_reason" class="form-control" required></textarea>
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label">مسؤولية النقص</label>
-                            <select name="gap_owner" class="form-select" required>
-                                <option value="coordinator">المنسق</option>
-                                <option value="dept_manager">مدير الدائرة</option>
-                                <option value="other">أخرى</option>
-                            </select>
-                        </div>
-                        <div class="col-md-3 d-flex align-items-end">
-                            <button type="submit" class="btn btn-outline-danger">رفض المشروع</button>
-                        </div>
-                    </div>
-                </form>
-            @endif
         </div>
     </div>
+
+    @include('dashboard.projects._reject_modal')
+
+    @if ($errors->has('rejection_reason') || $errors->has('gap_owner'))
+        @push('scripts')
+        <script>
+            document.addEventListener('DOMContentLoaded', function () {
+                const modalEl = document.getElementById('projectRejectModal');
+                if (modalEl && window.bootstrap?.Modal) {
+                    window.bootstrap.Modal.getOrCreateInstance(modalEl).show();
+                }
+            });
+        </script>
+        @endpush
+    @endif
 
     {{-- قائمة التحقق — عمود المنسق --}}
     @if ($canViewCoordinatorData)
     <div class="card mb-4">
-        <div class="card-header d-flex justify-content-between align-items-center">
+        <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
             <h5 class="mb-0">قائمة التحقق — عمود المنسق</h5>
-            <span>نسبة الجاهزية: {{ $project->coordinator_readiness_pct !== null ? $project->coordinator_readiness_pct . '%' : '-' }}</span>
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+                @if ($project->coordinator_filled_by)
+                    <span class="badge bg-label-warning">عُبّئ نيابةً: {{ $project->coordinatorFilledByUser?->name }}</span>
+                @elseif ($coordinatorFillActorLabel ?? null)
+                    <span class="badge bg-label-info">عُبّئ بواسطة: {{ $coordinatorFillActorLabel }}</span>
+                @endif
+                <span>نسبة الجاهزية: {{ $project->coordinator_readiness_pct !== null ? $project->coordinator_readiness_pct . '%' : '-' }}</span>
+            </div>
         </div>
         <div class="card-body">
-            @if (in_array($project->workflow_status, ['pending_coordinator', 'coordinator_filling']) && $canFillCoordinator)
+            @if ((
+                    in_array($project->workflow_status, ['pending_coordinator', 'coordinator_filling'])
+                    || ($showCoordinatorFillOnDraft ?? false)
+                ) && $canFillCoordinator)
                 <form action="{{ route('dashboard.projects.fill-coordinator', $project) }}" method="post">
                     @csrf
-                    @foreach ($groups as $group)
-                        <h6 class="mt-3">{{ $group->name }}</h6>
-                        <table class="table table-sm table-bordered">
-                            <tbody>
-                                @foreach ($group->items as $item)
-                                    @php $current = $values->get($item->id); @endphp
-                                    <tr>
-                                        <td class="align-middle">{{ $item->name }}</td>
-                                        <td style="max-width:220px">
-                                            <select name="checklist[{{ $item->id }}][value]" class="form-select form-select-sm">
-                                                <option value="">-</option>
-                                                @foreach ($valueLabels as $key => $label)
-                                                    <option value="{{ $key }}" @selected($current?->coordinator_value === $key)>{{ $label }}</option>
-                                                @endforeach
-                                            </select>
-                                        </td>
-                                        @if ($item->has_person_field)
-                                            <td style="max-width:220px">
-                                                <input type="text" name="checklist[{{ $item->id }}][person_name]" class="form-control form-control-sm" placeholder="اسم الشخص" value="{{ $current?->person_name }}">
-                                            </td>
-                                        @endif
-                                    </tr>
-                                @endforeach
-                            </tbody>
-                        </table>
-                    @endforeach
+                    @if ($requiresFillOnBehalfConfirm ?? false)
+                        <div class="alert alert-warning py-2 mb-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="fill_on_behalf" id="fill-on-behalf" value="1" @checked(old('fill_on_behalf')) required>
+                                <label class="form-check-label" for="fill-on-behalf">
+                                    أؤكّد أنني أعبّئ قائمة التحقق نيابةً عن المنسق:
+                                    <strong>{{ $project->coordinatorDisplayName() }}</strong>
+                                </label>
+                            </div>
+                            <div class="form-text mb-0">سيُسجَّل اسمك كمُعبّئ نيابةً عن المنسق في بيانات المشروع.</div>
+                        </div>
+                    @endif
+                    @include('dashboard.projects._checklist_edit', [
+                        'groups' => $groups,
+                        'values' => $values,
+                        'valueLabels' => $valueLabels,
+                    ])
                     <button type="submit" class="btn btn-primary">حفظ عمود المنسق</button>
                 </form>
             @else
-                @foreach ($groups as $group)
-                    <h6 class="mt-3">{{ $group->name }}</h6>
-                    <table class="table table-sm table-bordered">
-                        <tbody>
-                            @foreach ($group->items as $item)
-                                @php $current = $values->get($item->id); @endphp
-                                <tr>
-                                    <td>{{ $item->name }}</td>
-                                    <td>{{ $valueLabels[$current?->coordinator_value] ?? '-' }}</td>
-                                    @if ($item->has_person_field)
-                                        <td>{{ $current?->person_name ?? '-' }}</td>
-                                    @endif
-                                </tr>
-                            @endforeach
-                        </tbody>
-                    </table>
-                @endforeach
+                @include('dashboard.projects._checklist_display', [
+                    'groups' => $groups,
+                    'values' => $values,
+                    'valueLabels' => $valueLabels,
+                    'valueField' => 'coordinator_value',
+                ])
             @endif
         </div>
     </div>
@@ -262,20 +281,12 @@
             <span>نسبة الجاهزية: {{ $project->monitor_readiness_pct !== null ? $project->monitor_readiness_pct . '%' : '-' }}</span>
         </div>
         <div class="card-body">
-            @foreach ($groups as $group)
-                <h6 class="mt-3">{{ $group->name }}</h6>
-                <table class="table table-sm table-bordered">
-                    <tbody>
-                        @foreach ($group->items as $item)
-                            @php $current = $values->get($item->id); @endphp
-                            <tr>
-                                <td>{{ $item->name }}</td>
-                                <td>{{ $valueLabels[$current?->monitor_value] ?? '-' }}</td>
-                            </tr>
-                        @endforeach
-                    </tbody>
-                </table>
-            @endforeach
+            @include('dashboard.projects._checklist_display', [
+                'groups' => $groups,
+                'values' => $values,
+                'valueLabels' => $valueLabels,
+                'valueField' => 'monitor_value',
+            ])
             @if ($project->monitor_notes)
                 <div><strong>ملاحظات المراقب:</strong>
                     <ul>@foreach ($project->monitor_notes as $note)<li>{{ $note }}</li>@endforeach</ul>

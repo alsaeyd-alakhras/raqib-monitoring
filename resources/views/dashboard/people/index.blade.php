@@ -16,6 +16,8 @@
                     <thead class="table-light">
                         <tr>
                             <th>الاسم</th>
+                            <th>الدور</th>
+                            <th>الدائرة</th>
                             <th>الحساب المرتبط</th>
                             <th>المسمى الوظيفي</th>
                             <th>الجهة</th>
@@ -27,6 +29,8 @@
                         @forelse ($people as $person)
                             <tr>
                                 <td>{{ $person->name }}</td>
+                                <td>{{ $person->role_label }}</td>
+                                <td>{{ $person->department?->name ?? '-' }}</td>
                                 <td>{{ $person->user?->name ?? '-' }}</td>
                                 <td>{{ $person->job_title ?: '-' }}</td>
                                 <td>{{ $person->organization ?: '-' }}</td>
@@ -52,7 +56,7 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="6" class="text-center py-4">لا توجد بيانات متاحة.</td>
+                                <td colspan="8" class="text-center py-4">لا توجد بيانات متاحة.</td>
                             </tr>
                         @endforelse
                     </tbody>

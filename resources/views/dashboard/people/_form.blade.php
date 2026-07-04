@@ -25,6 +25,28 @@
 
             <div class="mb-4 col-md-6">
                 <x-form.select
+                    name="role"
+                    id="person-role"
+                    label="الدور الوظيفي"
+                    :options="$roleLabels"
+                    :value="$person->role ?? ''"
+                    required
+                />
+            </div>
+
+            <div class="mb-4 col-md-6" id="department-field">
+                <x-form.select
+                    name="department_id"
+                    id="person-department"
+                    label="الدائرة (اختياري)"
+                    :optionsId="$departments"
+                    :value="$person->department_id ?? null"
+                />
+                <div id="department-hint" class="form-text text-warning d-none"></div>
+            </div>
+
+            <div class="mb-4 col-md-6">
+                <x-form.select
                     name="user_id"
                     label="ربط بحساب مستخدم (اختياري)"
                     :optionsId="$users"
@@ -67,3 +89,79 @@
         </div>
     </div>
 </div>
+
+@push('scripts')
+<script>
+(function () {
+    const rolesRequiringDept = @json($rolesRequiringDepartment);
+    const occupiedManagers = @json($occupiedDepartmentManagers);
+    const occupiedByDeptId = Object.fromEntries(
+        occupiedManagers.map(item => [String(item.id), item.manager])
+    );
+
+    const roleSelect = document.getElementById('person-role');
+    const deptSelect = document.getElementById('person-department');
+    const deptField = document.getElementById('department-field');
+    const deptHint = document.getElementById('department-hint');
+    const deptLabel = deptField?.querySelector('label');
+
+    function syncDepartmentField() {
+        if (!roleSelect || !deptSelect) {
+            return;
+        }
+
+        const role = roleSelect.value;
+        const requiresDept = rolesRequiringDept.includes(role);
+        const isDeptManager = role === 'department_manager';
+
+        if (deptLabel) {
+            deptLabel.textContent = requiresDept ? 'الدائرة *' : 'الدائرة (اختياري)';
+        }
+
+        deptSelect.required = requiresDept;
+
+        Array.from(deptSelect.options).forEach(option => {
+            if (!option.value) {
+                option.disabled = false;
+                option.hidden = false;
+                return;
+            }
+
+            const occupiedBy = occupiedByDeptId[option.value];
+            const blockOption = isDeptManager && occupiedBy && deptSelect.value !== option.value;
+
+            option.disabled = blockOption;
+            option.hidden = blockOption;
+        });
+
+        updateDepartmentHint();
+    }
+
+    function updateDepartmentHint() {
+        if (!deptHint || !roleSelect || !deptSelect) {
+            return;
+        }
+
+        const role = roleSelect.value;
+        const deptId = deptSelect.value;
+        const occupiedBy = occupiedByDeptId[deptId];
+
+        deptHint.classList.add('d-none');
+        deptHint.textContent = '';
+
+        if (role === 'department_manager' && deptId && occupiedBy) {
+            deptHint.textContent = 'تنبيه: هذه الدائرة لديها مدير دائرة بالفعل (' + occupiedBy + ').';
+            deptHint.classList.remove('d-none');
+        } else if (rolesRequiringDept.includes(role) && !deptId) {
+            deptHint.textContent = 'الدائرة إلزامية لهذا الدور.';
+            deptHint.classList.remove('d-none');
+        }
+    }
+
+    roleSelect?.addEventListener('change', syncDepartmentField);
+    deptSelect?.addEventListener('change', syncDepartmentField);
+
+    syncDepartmentField();
+})();
+</script>
+@endpush

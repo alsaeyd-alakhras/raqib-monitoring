@@ -61,6 +61,7 @@ Route::group([
 
     // Foundation — organizational hierarchy + people + funders ************************
     Route::get('departments/by-center/{center}', [DepartmentController::class, 'byCenter'])->name('departments.by-center');
+    Route::get('sections/by-department/{department}', [SectionController::class, 'byDepartment'])->name('sections.by-department');
 
     Route::resources([
         'centers' => CenterController::class,
@@ -81,6 +82,9 @@ Route::group([
         ->name('monitoring-activities.reject');
 
     // Projects ************************
+    Route::get('projects/check-project-number', [ProjectController::class, 'checkProjectNumber'])
+        ->name('projects.check-project-number');
+
     Route::resources([
         'projects' => ProjectController::class,
     ]);
@@ -95,6 +99,7 @@ Route::group([
         Route::get('monitor-work', [ProjectController::class, 'monitorWork'])->name('monitor-work');
         Route::post('fill-monitor', [ProjectController::class, 'fillMonitor'])->name('fill-monitor');
         Route::post('confirm-monitoring', [ProjectController::class, 'confirmMonitoring'])->name('confirm-monitoring');
+        Route::post('confirm-passage', [ProjectController::class, 'confirmPassage'])->name('confirm-passage');
         Route::post('reject', [ProjectController::class, 'reject'])->name('reject');
         Route::post('reroute', [ProjectController::class, 'reroute'])->name('reroute');
     });

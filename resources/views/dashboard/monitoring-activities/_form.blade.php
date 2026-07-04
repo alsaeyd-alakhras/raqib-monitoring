@@ -1,12 +1,7 @@
 @php
-    $departmentOptions = $departments->map(fn ($d) => (object) [
-        'id' => $d->id,
-        'name' => $d->name . ($d->center ? ' - ' . $d->center->name : ''),
-    ]);
-    $sectionOptions = $sections->map(fn ($s) => (object) [
-        'id' => $s->id,
-        'name' => $s->name . ($s->department ? ' - ' . $s->department->name : ''),
-    ]);
+    $selectedCenterId = old('center_id', isset($activity) ? $activity->center_id : '');
+    $selectedDepartmentId = old('department_id', isset($activity) ? $activity->department_id : '');
+    $selectedSectionId = old('section_id', isset($activity) ? $activity->section_id : '');
 @endphp
 
 @if ($errors->any())
@@ -122,28 +117,39 @@
             <div class="mb-4 col-md-4">
                 <x-form.select
                     name="center_id"
+                    id="center_id"
                     label="المركز"
                     :optionsId="$centers"
-                    :value="$activity->center_id ?? ''"
+                    :value="$selectedCenterId"
                     required
                 />
             </div>
             <div class="mb-4 col-md-4">
-                <x-form.select
+                <label class="form-label" for="department_id">الدائرة</label>
+                <select
                     name="department_id"
-                    label="الدائرة"
-                    :optionsId="$departmentOptions"
-                    :value="$activity->department_id ?? ''"
+                    id="department_id"
+                    class="form-select @error('department_id') is-invalid @enderror"
                     required
-                />
+                >
+                    <option value="">إختر القيمة</option>
+                </select>
+                @error('department_id')
+                    <div class="invalid-feedback">{{ $message }}</div>
+                @enderror
             </div>
             <div class="mb-4 col-md-4">
-                <x-form.select
+                <label class="form-label" for="section_id">القسم (اختياري)</label>
+                <select
                     name="section_id"
-                    label="القسم (اختياري)"
-                    :optionsId="$sectionOptions"
-                    :value="$activity->section_id ?? ''"
-                />
+                    id="section_id"
+                    class="form-select @error('section_id') is-invalid @enderror"
+                >
+                    <option value="">إختر القيمة</option>
+                </select>
+                @error('section_id')
+                    <div class="invalid-feedback">{{ $message }}</div>
+                @enderror
             </div>
             <div class="mb-4 col-md-6">
                 <x-form.select
@@ -358,8 +364,19 @@
 </div>
 
 @push('scripts')
+<script src="{{ asset('js/org-cascade.js') }}"></script>
 <script>
     document.addEventListener('DOMContentLoaded', function () {
+        if (typeof window.initOrgCascade === 'function') {
+            window.initOrgCascade({
+                departmentsUrl: @json(route('dashboard.departments.by-center', ['center' => '__ID__'])),
+                sectionsUrl: @json(route('dashboard.sections.by-department', ['department' => '__ID__'])),
+                selectedCenterId: @json($selectedCenterId),
+                selectedDepartmentId: @json($selectedDepartmentId),
+                selectedSectionId: @json($selectedSectionId),
+            });
+        }
+
         const sourceTypeSelect = document.querySelector('select[name="source_type"]');
         const sourceIdField = document.getElementById('source-id-field');
 

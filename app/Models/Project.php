@@ -20,6 +20,7 @@ class Project extends Model
         'procurement_rep',
         'project_manager_id',
         'coordinator_id',
+        'coordinator_external_name',
         'center_id',
         'department_id',
         'section_id',
@@ -42,6 +43,7 @@ class Project extends Model
         'primary_monitoring_activity_id',
         'coordinator_submitted_at',
         'coordinator_submitted_by',
+        'coordinator_filled_by',
         'dept_manager_approved_at',
         'dept_manager_approved_by',
         'monitoring_manager_received_at',
@@ -82,6 +84,392 @@ class Project extends Model
     public function coordinator(): BelongsTo
     {
         return $this->belongsTo(Person::class, 'coordinator_id');
+    }
+
+    public function coordinatorFilledByUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'coordinator_filled_by');
+    }
+
+    public static function formatFromSequence(int $sequence): string
+    {
+        return 'P-' . max(1, $sequence);
+    }
+
+    public static function sequenceFromProjectNumber(?string $number): ?int
+    {
+        if (! $number || ! self::isValidProjectNumberFormat($number)) {
+            return null;
+        }
+
+        return (int) substr(self::normalizeProjectNumber($number), 2);
+    }
+
+    public static function normalizeProjectNumber(string $number): string
+    {
+        return strtoupper(trim($number));
+    }
+
+    public static function isValidProjectNumberFormat(string $number): bool
+    {
+        return (bool) preg_match('/^P-\d+$/', self::normalizeProjectNumber($number));
+    }
+
+    public function coordinatorFilledByLabel(): ?string
+    {
+        if ($this->coordinator_filled_by) {
+            return ($this->coordinatorFilledByUser?->name ?? '-') . ' (نيابةً عن المنسق)';
+        }
+
+        if ($this->isSelfCoordinator() && $this->coordinator_readiness_pct !== null) {
+            return $this->projectManager?->name . ' (مدير المشروع / منسق)';
+        }
+
+        if ($this->coordinator_id && $this->coordinator_readiness_pct !== null) {
+            return $this->coordinator?->name;
+        }
+
+        return null;
+    }
+
+    public static function usedProjectNumberSequence(): array
+    {
+        return self::query()
+            ->where('project_number', 'like', 'P-%')
+            ->pluck('project_number')
+            ->map(fn ($code) => (int) substr((string) $code, 2))
+            ->filter(fn ($n) => $n > 0)
+            ->unique()
+            ->sort()
+            ->values()
+            ->all();
+    }
+
+    public static function generateProjectNumber(): string
+    {
+        $next = 1;
+
+        foreach (self::usedProjectNumberSequence() as $used) {
+            if ($used > $next) {
+                break;
+            }
+
+            if ($used === $next) {
+                $next++;
+            }
+        }
+
+        return 'P-' . $next;
+    }
+
+    public static function isProjectNumberAvailable(string $number, ?int $exceptProjectId = null): bool
+    {
+        $normalized = self::normalizeProjectNumber($number);
+
+        if (! self::isValidProjectNumberFormat($normalized)) {
+            return false;
+        }
+
+        return ! self::query()
+            ->where('project_number', $normalized)
+            ->when($exceptProjectId, fn ($query) => $query->where('id', '!=', $exceptProjectId))
+            ->exists();
+    }
+
+    public function hasCoordinatorAssignment(): bool
+    {
+        return $this->coordinator_id !== null || filled($this->coordinator_external_name);
+    }
+
+    public function coordinatorDisplayName(): string
+    {
+        if ($this->coordinator) {
+            return $this->coordinator->name;
+        }
+
+        if (filled($this->coordinator_external_name)) {
+            return $this->coordinator_external_name . ' (خارجي)';
+        }
+
+        return '-';
+    }
+
+    public function isSelfCoordinator(): bool
+    {
+        return $this->coordinator_id !== null
+            && (int) $this->coordinator_id === (int) $this->project_manager_id;
+    }
+
+    public function coordinatorMode(): string
+    {
+        if (filled($this->coordinator_external_name)) {
+            return 'external';
+        }
+
+        if ($this->isSelfCoordinator()) {
+            return 'self';
+        }
+
+        if ($this->coordinator_id) {
+            return 'person';
+        }
+
+        return 'none';
+    }
+
+    public function scopeVisibleToUser(Builder $query, ?User $user): Builder
+    {
+        if (! $user || $user->super_admin) {
+            return $query;
+        }
+
+        $person = $user->person;
+
+        if (! $person) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        return match ($person->role) {
+            'project_manager' => $query->where('project_manager_id', $person->id),
+            'department_manager' => $person->department_id
+                ? $query->whereHas('projectManager', fn (Builder $q) => $q->where('department_id', $person->department_id))
+                : $query->whereRaw('1 = 0'),
+            'coordinator' => $query->where('coordinator_id', $person->id),
+            'monitor' => $query->where('monitor_person_id', $person->id),
+            default => $query,
+        };
+    }
+
+    public function isVisibleToUser(?User $user): bool
+    {
+        if (! $user || $user->super_admin) {
+            return true;
+        }
+
+        $person = $user->person;
+
+        if (! $person) {
+            return false;
+        }
+
+        return match ($person->role) {
+            'project_manager' => (int) $this->project_manager_id === (int) $person->id,
+            'department_manager' => $person->department_id
+                && (int) $this->projectManager?->department_id === (int) $person->department_id,
+            'coordinator' => (int) $this->coordinator_id === (int) $person->id,
+            'monitor' => (int) $this->monitor_person_id === (int) $person->id,
+            default => true,
+        };
+    }
+
+    public function approvableByDepartmentManager(?Person $person): bool
+    {
+        if (! $person || $person->role !== 'department_manager' || ! $person->department_id) {
+            return false;
+        }
+
+        $this->loadMissing('projectManager');
+
+        return (int) $person->department_id === (int) $this->projectManager?->department_id;
+    }
+
+    public function approverDepartmentManager(): ?Person
+    {
+        $this->loadMissing('projectManager');
+
+        $departmentId = $this->projectManager?->department_id;
+
+        if (! $departmentId) {
+            return null;
+        }
+
+        static $cache = null;
+        $cache ??= Person::query()
+            ->where('role', 'department_manager')
+            ->get()
+            ->keyBy('department_id');
+
+        return $cache->get($departmentId);
+    }
+
+    public function approverDepartmentManagerLabel(): string
+    {
+        $manager = $this->approverDepartmentManager();
+
+        if ($manager) {
+            return $manager->name;
+        }
+
+        if (! $this->projectManager?->department_id) {
+            return '— (مدير المشروع غير مرتبط بدائرة)';
+        }
+
+        return '— (لا يوجد مدير دائرة معيّن لهذه الدائرة)';
+    }
+
+    public function projectManagerDepartmentName(): ?string
+    {
+        $this->loadMissing('projectManager.department');
+
+        return $this->projectManager?->department?->name;
+    }
+
+    public static function gapOwnerLabels(): array
+    {
+        return [
+            'project_manager' => 'مدير المشروع',
+            'coordinator' => 'المنسق',
+            'department_manager' => 'مدير الدائرة',
+            'monitor' => 'المراقب',
+            'other' => 'أخرى',
+        ];
+    }
+
+    public static function gapOwnerLabel(?string $key): string
+    {
+        if ($key === 'dept_manager') {
+            $key = 'department_manager';
+        }
+
+        return self::gapOwnerLabels()[$key] ?? ($key ?: '—');
+    }
+
+    /** @return array<string, string> */
+    public static function gapOwnerOptionsForRejector(?Person $person, bool $superAdmin = false): array
+    {
+        $labels = self::gapOwnerLabels();
+
+        if ($superAdmin || ! $person) {
+            return $labels;
+        }
+
+        $allowedKeys = match ($person->role) {
+            'department_manager' => ['project_manager', 'coordinator', 'other'],
+            'monitoring_director' => ['project_manager', 'coordinator', 'department_manager', 'monitor', 'other'],
+            'monitor' => ['project_manager', 'coordinator', 'department_manager', 'other'],
+            default => array_keys($labels),
+        };
+
+        return array_intersect_key($labels, array_flip($allowedKeys));
+    }
+
+    public function currentActionLabel(): string
+    {
+        $this->loadMissing(['projectManager', 'monitorPerson', 'primaryMonitoringActivity']);
+
+        return match ($this->workflow_status) {
+            'draft' => 'مدير المشروع: ' . ($this->projectManager?->name ?? '—'),
+            'pending_coordinator', 'coordinator_filling' => 'المنسق: ' . $this->coordinatorDisplayName(),
+            'pending_dept_manager' => 'مدير الدائرة: ' . $this->approverDepartmentManagerLabel(),
+            'pending_monitoring_manager' => 'مدير الرقابة العامة — تعيين مراقب',
+            'monitoring_in_progress' => 'المراقب: ' . ($this->monitorPerson?->name ?? '—') . ' — تعبئة وإرسال',
+            'pending_monitoring_confirmation' => 'مدير الرقابة العامة — تأكيد المرور',
+            'passage_complete' => 'تم المرور — المشروع مكتمل',
+            'rejected' => 'مرفوض — النقص: ' . self::gapOwnerLabel($this->gap_owner),
+            default => self::workflowStatusLabels()[$this->workflow_status] ?? $this->workflow_status,
+        };
+    }
+
+    public function needsActionFromPerson(?Person $person): bool
+    {
+        if (! $person) {
+            return false;
+        }
+
+        return match ($person->role) {
+            'project_manager' => (int) $this->project_manager_id === (int) $person->id
+                && in_array($this->workflow_status, ['draft', 'pending_coordinator', 'coordinator_filling'], true),
+            'coordinator' => (int) $this->coordinator_id === (int) $person->id
+                && in_array($this->workflow_status, ['pending_coordinator', 'coordinator_filling'], true),
+            'department_manager' => $this->workflow_status === 'pending_dept_manager'
+                && $this->approvableByDepartmentManager($person),
+            'monitoring_director' => in_array($this->workflow_status, ['pending_monitoring_manager', 'pending_monitoring_confirmation'], true),
+            'monitor' => (int) $this->monitor_person_id === (int) $person->id
+                && $this->workflow_status === 'monitoring_in_progress'
+                && $this->primaryMonitoringActivity?->workflow_status === 'in_progress',
+            default => false,
+        };
+    }
+
+    public static function workflowStatusLabels(): array
+    {
+        return [
+            'draft' => 'مسودة',
+            'pending_coordinator' => 'بانتظار المنسق',
+            'coordinator_filling' => 'المنسق يعمل',
+            'pending_dept_manager' => 'بانتظار مدير الدائرة',
+            'pending_monitoring_manager' => 'بانتظار مدير الرقابة العامة',
+            'monitoring_in_progress' => 'قيد المراقبة',
+            'pending_monitoring_confirmation' => 'بانتظار تأكيد مدير الرقابة',
+            'passage_complete' => 'تم المرور',
+            'rejected' => 'مرفوض',
+        ];
+    }
+
+    /**
+     * يُصلِح حالات المشروع/النشاط غير المتزامنة (مثلاً بعد تعديل يدوي للنشاط).
+     */
+    public function syncMonitoringWorkflowState(): void
+    {
+        $activity = $this->primaryMonitoringActivity;
+
+        if (! $activity) {
+            return;
+        }
+
+        if ($activity->workflow_status === 'pending_confirmation'
+            && $this->workflow_status === 'monitoring_in_progress') {
+            $this->update(['workflow_status' => 'pending_monitoring_confirmation']);
+
+            return;
+        }
+
+        if ($activity->workflow_status === 'completed'
+            && ! $activity->is_passage_complete
+            && $this->workflow_status === 'monitoring_in_progress') {
+            $activity->update(['workflow_status' => 'pending_confirmation']);
+            $this->update(['workflow_status' => 'pending_monitoring_confirmation']);
+
+            return;
+        }
+
+        if ($activity->is_passage_complete
+            && $activity->workflow_status === 'completed'
+            && $this->workflow_status !== 'passage_complete') {
+            $this->update(['workflow_status' => 'passage_complete']);
+        }
+    }
+
+    public function completePassage(int $userId): void
+    {
+        $activity = $this->primaryMonitoringActivity;
+
+        if ($activity) {
+            $activity->update([
+                'is_passage_complete' => true,
+                'passage_completed_at' => $activity->passage_completed_at ?? now(),
+                'passage_completed_by' => $activity->passage_completed_by ?? $userId,
+                'workflow_status' => 'completed',
+                'updated_by' => $userId,
+            ]);
+        }
+
+        $this->update([
+            'workflow_status' => 'passage_complete',
+            'updated_by' => $userId,
+        ]);
+    }
+
+    public function canMonitorSubmitToDirector(): bool
+    {
+        return $this->workflow_status === 'monitoring_in_progress'
+            && $this->primaryMonitoringActivity?->workflow_status === 'in_progress';
+    }
+
+    public function awaitingMonitoringDirectorConfirmation(): bool
+    {
+        return $this->workflow_status === 'pending_monitoring_confirmation'
+            || $this->primaryMonitoringActivity?->workflow_status === 'pending_confirmation';
     }
 
     public function center(): BelongsTo

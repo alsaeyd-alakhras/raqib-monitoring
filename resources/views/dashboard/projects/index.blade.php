@@ -1,13 +1,5 @@
 @php
-    $statusLabels = [
-        'draft' => 'مسودة',
-        'pending_coordinator' => 'بانتظار المنسق',
-        'coordinator_filling' => 'المنسق يعمل',
-        'pending_dept_manager' => 'بانتظار مدير الدائرة',
-        'pending_monitoring_manager' => 'بانتظار مدير الرقابة العامة',
-        'monitoring_in_progress' => 'قيد المراقبة',
-        'rejected' => 'مرفوض',
-    ];
+    $statusLabels = \App\Models\Project::workflowStatusLabels();
 @endphp
 <x-front-layout>
     <div class="card">
@@ -39,16 +31,23 @@
                             <th>جاهزية المنسق</th>
                             <th>جاهزية المراقب</th>
                             <th>حالة سير العمل</th>
+                            <th>الإجراء الحالي</th>
                             <th>الإجراءات</th>
                         </tr>
                     </thead>
                     <tbody>
                         @forelse ($projects as $project)
-                            <tr>
-                                <td>{{ $project->project_name }}</td>
+                            @php $needsMyAction = ($currentPerson ?? null) && $project->needsActionFromPerson($currentPerson); @endphp
+                            <tr class="{{ $needsMyAction ? 'table-warning' : '' }}">
+                                <td>
+                                    {{ $project->project_name }}
+                                    @if ($needsMyAction)
+                                        <span class="badge bg-warning text-dark ms-1">يتطلب إجراءك</span>
+                                    @endif
+                                </td>
                                 <td>{{ $project->center?->name }} / {{ $project->department?->name }}</td>
                                 <td>{{ $project->projectManager?->name ?? '-' }}</td>
-                                <td>{{ $project->coordinator?->name ?? '-' }}</td>
+                                <td>{{ $project->coordinatorDisplayName() }}</td>
                                 <td>{{ $project->monitorPerson?->name ?? '-' }}</td>
                                 <td>{{ $project->coordinator_readiness_pct !== null ? $project->coordinator_readiness_pct . '%' : '-' }}</td>
                                 <td>{{ $project->monitor_readiness_pct !== null ? $project->monitor_readiness_pct . '%' : '-' }}</td>
@@ -57,6 +56,7 @@
                                         {{ $statusLabels[$project->workflow_status] ?? $project->workflow_status }}
                                     </span>
                                 </td>
+                                <td class="small">{{ $project->currentActionLabel() }}</td>
                                 <td>
                                     <div class="d-flex align-items-center gap-2">
                                         @can('view', 'App\Models\Project')
@@ -83,7 +83,7 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="9" class="text-center py-4">لا توجد مشاريع مضافة حالياً.</td>
+                                <td colspan="10" class="text-center py-4">لا توجد مشاريع مضافة حالياً.</td>
                             </tr>
                         @endforelse
                     </tbody>

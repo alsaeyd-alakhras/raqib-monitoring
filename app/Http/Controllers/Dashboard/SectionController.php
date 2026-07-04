@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Dashboard;
 use App\Http\Controllers\Controller;
 use App\Models\Department;
 use App\Models\Section;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -85,5 +86,16 @@ class SectionController extends Controller
         return redirect()
             ->route('dashboard.sections.index')
             ->with('success', 'تم حذف الشعبة بنجاح.');
+    }
+
+    public function byDepartment(Request $request): JsonResponse
+    {
+        $departmentId = $request->route('department') ?? $request->department_id;
+
+        $sections = Section::where('department_id', $departmentId)
+            ->orderBy('name')
+            ->get(['id', 'name']);
+
+        return response()->json($sections);
     }
 }
