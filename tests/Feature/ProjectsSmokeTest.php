@@ -42,9 +42,11 @@ class ProjectsSmokeTest extends TestCase
         $center = Center::first();
         $department = Department::where('center_id', $center->id)->first();
 
+        $projectName = 'مشروع اختبار شامل ' . uniqid();
+
         // 1) create draft
         $this->post('/projects', [
-            'project_name' => 'مشروع اختبار شامل',
+            'project_name' => $projectName,
             'project_number_seq' => $this->nextProjectNumberSeq(),
             'project_manager_id' => $pm->id,
             'coordinator_mode' => 'person',
@@ -53,7 +55,7 @@ class ProjectsSmokeTest extends TestCase
             'department_id' => $department->id,
         ])->assertRedirect();
 
-        $project = Project::where('project_name', 'مشروع اختبار شامل')->firstOrFail();
+        $project = Project::where('project_name', $projectName)->firstOrFail();
         $this->assertSame('draft', $project->workflow_status);
         $this->assertMatchesRegularExpression('/^P-\d+$/', (string) $project->project_number);
 
@@ -63,7 +65,7 @@ class ProjectsSmokeTest extends TestCase
         // 2) submit to coordinator
         $this->post(route('dashboard.projects.submit-to-coordinator', $project))->assertRedirect();
         $project->refresh();
-        $this->assertContains($project->workflow_status, ['pending_coordinator', 'coordinator_filling']);
+        $this->assertSame('pending_coordinator', $project->workflow_status);
 
         // 3) fill coordinator checklist
         $checklist = [];
@@ -160,6 +162,7 @@ class ProjectsSmokeTest extends TestCase
         $this->post(route('dashboard.projects.reject', $project), [
             'rejection_reason' => 'نقص في المستندات',
             'gap_owner' => 'coordinator',
+            'return_target' => 'reject_final',
         ])->assertRedirect();
 
         $project->refresh();
@@ -175,6 +178,38 @@ class ProjectsSmokeTest extends TestCase
         $this->assertSame('coordinator_filling', $project->workflow_status);
 
         $this->get(route('dashboard.projects.show', $project))->assertStatus(200);
+
+        $project->delete();
+    }
+
+    public function test_reject_final_flow(): void
+    {
+        $user = User::first();
+        $user->super_admin = 1;
+        $this->actingAs($user);
+
+        $pm = Person::first();
+        $center = Center::first();
+        $department = Department::where('center_id', $center->id)->first();
+
+        $project = Project::create([
+            'project_name' => 'مشروع رفض نهائي',
+            'project_manager_id' => $pm->id,
+            'center_id' => $center->id,
+            'department_id' => $department->id,
+            'workflow_status' => 'pending_dept_manager',
+            'created_by' => $user->id,
+            'updated_by' => $user->id,
+        ]);
+
+        $this->post(route('dashboard.projects.reject', $project), [
+            'rejection_reason' => 'رفض نهائي',
+            'gap_owner' => 'coordinator',
+            'return_target' => 'reject_final',
+        ])->assertRedirect();
+
+        $project->refresh();
+        $this->assertSame('rejected', $project->workflow_status);
 
         $project->delete();
     }
@@ -358,6 +393,64 @@ class ProjectsSmokeTest extends TestCase
         $project->delete();
     }
 
+    public function test_submit_to_department_requires_saved_coordinator_fill(): void
+    {
+        $user = User::first();
+        $user->super_admin = 1;
+        $this->actingAs($user);
+
+        $pm = Person::withRole('project_manager')->first() ?? Person::first();
+        $coordinator = Person::withRole('coordinator')->first() ?? Person::skip(1)->first();
+        $center = Center::first();
+        $department = Department::where('center_id', $center->id)->first();
+        $projectName = 'مشروع تحقق تعبئة المنسق ' . uniqid();
+
+        $this->post('/projects', [
+            'project_name' => $projectName,
+            'project_number_seq' => $this->nextProjectNumberSeq(),
+            'project_manager_id' => $pm->id,
+            'coordinator_mode' => 'person',
+            'coordinator_id' => $coordinator->id,
+            'center_id' => $center->id,
+            'department_id' => $department->id,
+        ])->assertRedirect();
+
+        $project = Project::where('project_name', $projectName)->firstOrFail();
+
+        $this->post(route('dashboard.projects.submit-to-coordinator', $project))->assertRedirect();
+        $project->refresh();
+        $this->assertSame('pending_coordinator', $project->workflow_status);
+
+        $project->update(['workflow_status' => 'coordinator_filling']);
+
+        $this->from(route('dashboard.projects.show', $project))
+            ->post(route('dashboard.projects.submit-to-dept-manager', $project))
+            ->assertRedirect(route('dashboard.projects.show', $project))
+            ->assertSessionHasErrors('coordinator');
+
+        $project->refresh();
+        $this->assertSame('coordinator_filling', $project->workflow_status);
+
+        $itemId = \App\Models\ChecklistItem::where('is_active', true)->value('id');
+        if ($itemId) {
+            $this->post(route('dashboard.projects.fill-coordinator', $project), [
+                'fill_on_behalf' => '1',
+                'checklist' => [
+                    $itemId => ['value' => 'ready'],
+                ],
+            ])->assertRedirect();
+        }
+
+        $this->post(route('dashboard.projects.submit-to-dept-manager', $project))
+            ->assertRedirect();
+
+        $project->refresh();
+        $this->assertSame('pending_dept_manager', $project->workflow_status);
+
+        ProjectChecklistValue::where('project_id', $project->id)->delete();
+        $project->delete();
+    }
+
     public function test_generate_project_number_fills_sequence_gaps(): void
     {
         $user = User::first();
@@ -503,17 +596,20 @@ class ProjectsSmokeTest extends TestCase
         $this->post(route('dashboard.projects.reject', $project), [
             'rejection_reason' => 'نقص في المستندات',
             'gap_owner' => 'department_manager',
+            'return_target' => 'return_project_manager',
         ])->assertSessionHasErrors('gap_owner');
 
         $this->post(route('dashboard.projects.reject', $project), [
             'rejection_reason' => 'نقص في المستندات',
             'gap_owner' => 'project_manager',
+            'return_target' => 'return_coordinator',
         ])->assertRedirect();
 
         $project->refresh();
-        $this->assertSame('rejected', $project->workflow_status);
-        $this->assertSame('project_manager', $project->gap_owner);
+        $this->assertSame('coordinator_filling', $project->workflow_status);
+        $this->assertSame('return_coordinator', $project->return_target);
 
         $project->delete();
     }
+
 }

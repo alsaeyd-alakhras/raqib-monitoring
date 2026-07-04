@@ -52,6 +52,7 @@ class Project extends Model
         'rejected_by',
         'rejected_at',
         'gap_owner',
+        'return_target',
         'created_by',
         'updated_by',
     ];
@@ -262,6 +263,123 @@ class Project extends Model
         };
     }
 
+    /**
+     * هل يُعرَض عمود/بيانات المنسق لهذا المستخدم على هذا المشروع؟
+     */
+    public function showsCoordinatorDataTo(?User $user): bool
+    {
+        if (! $user) {
+            return false;
+        }
+
+        if ($user->super_admin) {
+            return true;
+        }
+
+        $person = $user->person;
+
+        if (! $person) {
+            return false;
+        }
+
+        if ($person->role === 'monitor') {
+            return false;
+        }
+
+        return match ($person->role) {
+            'project_manager' => (int) $this->project_manager_id === (int) $person->id,
+            'coordinator' => (int) $this->coordinator_id === (int) $person->id,
+            'department_manager' => $this->approvableByDepartmentManager($person),
+            'monitoring_director', 'general_management' => true,
+            default => $user->can('fill_coordinator', self::class)
+                || $user->can('approve_department', self::class)
+                || $user->can('update', self::class)
+                || $user->can('reject', self::class),
+        };
+    }
+
+    /**
+     * هل يُعرَض عمود/بيانات المراقب لهذا المستخدم على هذا المشروع؟
+     */
+    public function showsMonitorDataTo(?User $user): bool
+    {
+        if (! $user) {
+            return false;
+        }
+
+        if ($user->super_admin) {
+            return true;
+        }
+
+        $person = $user->person;
+
+        if (! $person) {
+            return false;
+        }
+
+        return match ($person->role) {
+            'monitor' => (int) $this->monitor_person_id === (int) $person->id,
+            'monitoring_director', 'general_management' => true,
+            default => false,
+        };
+    }
+
+    /**
+     * هل المستخدم هو المراقب المعيّن على هذا المشروع؟
+     */
+    public function isAssignedMonitor(?User $user): bool
+    {
+        $personId = $user?->person?->id;
+
+        return $personId && (int) $this->monitor_person_id === (int) $personId;
+    }
+
+    /** @return array<string, string> خيارات إرجاع المشروع بعد الرفض */
+    public static function returnTargetOptionsForRejector(?Person $person, bool $superAdmin = false): array
+    {
+        $all = [
+            'return_project_manager' => 'إرجاع لمدير المشروع (مسودة)',
+            'return_coordinator' => 'إرجاع للمنسق (تعبئة)',
+            'return_department_manager' => 'إرجاع لمدير الدائرة (موافقة)',
+            'reject_final' => 'رفض قاطع نهائي (لا إرجاع)',
+        ];
+
+        if ($superAdmin || ! $person) {
+            return $all;
+        }
+
+        $allowedKeys = match ($person->role) {
+            'department_manager' => ['return_project_manager', 'return_coordinator', 'reject_final'],
+            'monitoring_director' => ['return_project_manager', 'return_coordinator', 'return_department_manager', 'reject_final'],
+            default => array_keys($all),
+        };
+
+        return array_intersect_key($all, array_flip($allowedKeys));
+    }
+
+    public static function returnTargetLabel(?string $key): string
+    {
+        return self::returnTargetOptionsForRejector(null, true)[$key] ?? ($key ?: '—');
+    }
+
+    public static function workflowStatusForReturnTarget(string $returnTarget): ?string
+    {
+        return match ($returnTarget) {
+            'return_project_manager' => 'draft',
+            'return_coordinator' => 'coordinator_filling',
+            'return_department_manager' => 'pending_dept_manager',
+            'reject_final' => 'rejected',
+            default => null,
+        };
+    }
+
+    public function hasPendingReturnNotice(): bool
+    {
+        return filled($this->rejection_reason)
+            && filled($this->rejected_at)
+            && $this->workflow_status !== 'rejected';
+    }
+
     public function approvableByDepartmentManager(?Person $person): bool
     {
         if (! $person || $person->role !== 'department_manager' || ! $person->department_id) {
@@ -464,6 +582,22 @@ class Project extends Model
     {
         return $this->workflow_status === 'monitoring_in_progress'
             && $this->primaryMonitoringActivity?->workflow_status === 'in_progress';
+    }
+
+    /**
+     * هل حفظ المراقب عمله (قائمة التحقق و/أو الملاحظات) على الأقل مرة واحدة؟
+     */
+    public function hasSavedMonitorWork(): bool
+    {
+        if ($this->monitor_readiness_pct !== null) {
+            return true;
+        }
+
+        if (filled($this->monitor_notes) || filled($this->monitor_recommendations)) {
+            return true;
+        }
+
+        return $this->checklistValues()->whereNotNull('monitor_value')->exists();
     }
 
     public function awaitingMonitoringDirectorConfirmation(): bool

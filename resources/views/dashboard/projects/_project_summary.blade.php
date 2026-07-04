@@ -142,7 +142,13 @@
             @if ($canViewCoordinatorData ?? false)
                 <tr>
                     <th scope="row">المنسق</th>
-                    <td>{{ $project->coordinatorDisplayName() }}</td>
+                    <td>
+                        @if ($project->isSelfCoordinator())
+                            {{ $project->projectManager?->name }} <span class="badge bg-label-info">مدير المشروع / منسق</span>
+                        @else
+                            {{ $project->coordinatorDisplayName() }}
+                        @endif
+                    </td>
                 </tr>
                 @if ($coordinatorFillActorLabel ?? null)
                     <tr>
@@ -153,12 +159,14 @@
                     </tr>
                 @endif
             @endif
+            @if ($canViewMonitorData ?? false)
             <tr>
                 <th scope="row">المراقب</th>
                 <td class="{{ $project->monitorPerson?->name ? '' : 'text-empty' }}">
                     {{ $project->monitorPerson?->name ?? '—' }}
                 </td>
             </tr>
+            @endif
         </tbody>
     </table>
 </div>
@@ -169,8 +177,8 @@
             تعديل بيانات المشروع
         </a>
     @endcan
-    @if ($project->primaryMonitoringActivity)
-        <a href="{{ route('dashboard.monitoring-activities.edit', $project->primaryMonitoringActivity) }}" class="btn btn-sm btn-outline-secondary">
+    @if ($project->primaryMonitoringActivity && ($canViewMonitorData ?? false))
+        <a href="{{ route('dashboard.monitoring-activities.show', $project->primaryMonitoringActivity) }}" class="btn btn-sm btn-outline-secondary">
             النشاط الرقابي الأساسي ({{ $project->primaryMonitoringActivity->reference_code }})
         </a>
     @endif

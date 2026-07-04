@@ -72,13 +72,11 @@
                                         </a>
                                         @endcan
                                         @can('delete', 'App\\Models\User')
-                                        <form action="{{route('dashboard.users.destroy',$user->id)}}" method="post">
-                                            @csrf
-                                            @method('delete')
+                                        <x-delete-form :action="route('dashboard.users.destroy', $user->id)" :item-label="'المستخدم «' . $user->name . '»'">
                                             <button type="submit" class="dropdown-item" style="margin: 0.5rem -0.75rem; text-align: right;">
                                                 <i class="ti ti-trash me-1"></i>حذف
                                             </button>
-                                        </form>
+                                        </x-delete-form>
                                         @endcan
                                     </div>
                                 </div>

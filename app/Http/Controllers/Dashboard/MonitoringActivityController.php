@@ -14,6 +14,7 @@ use App\Models\Section;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
 class MonitoringActivityController extends Controller
@@ -67,6 +68,33 @@ class MonitoringActivityController extends Controller
             ->with('success', 'تم إنشاء النشاط الرقابي بنجاح.');
     }
 
+    public function show(MonitoringActivity $monitoring_activity): View
+    {
+        $this->authorize('view', MonitoringActivity::class);
+
+        $monitoring_activity->load([
+            'center', 'department', 'section', 'monitorPerson', 'responsiblePerson',
+            'funder', 'rejectedByUser', 'project.projectManager', 'project.coordinator',
+        ]);
+
+        $linkedProject = $monitoring_activity->source_type === 'project' && $monitoring_activity->source_id
+            ? Project::find($monitoring_activity->source_id)
+            : null;
+
+        if ($linkedProject) {
+            $linkedProject->loadMissing(['center', 'department', 'section', 'funder', 'projectManager', 'monitorPerson']);
+        }
+
+        return view('dashboard.monitoring-activities.show', [
+            'activity' => $monitoring_activity,
+            'linkedProject' => $linkedProject,
+            'sourceTypes' => $this->sourceTypeLabels(),
+            'workflowStatusLabels' => MonitoringActivity::workflowStatusLabels(),
+            'canViewCoordinatorData' => $linkedProject?->showsCoordinatorDataTo(auth()->user()) ?? false,
+            'canViewMonitorData' => $linkedProject?->showsMonitorDataTo(auth()->user()) ?? true,
+        ]);
+    }
+
     public function edit(MonitoringActivity $monitoring_activity): View
     {
         $this->authorize('update', MonitoringActivity::class);
@@ -74,10 +102,15 @@ class MonitoringActivityController extends Controller
 
         $monitoring_activity->load('rejectedByUser');
 
+        $linkedProject = $monitoring_activity->source_type === 'project' && $monitoring_activity->source_id
+            ? Project::with(['projectManager', 'monitorPerson'])->find($monitoring_activity->source_id)
+            : null;
+
         return view(
             'dashboard.monitoring-activities.edit',
             $this->formData() + [
                 'activity' => $monitoring_activity,
+                'linkedProject' => $linkedProject,
                 'canConfirmCompletion' => auth()->user()?->can('confirm_completion', MonitoringActivity::class),
                 'canReject' => auth()->user()?->can('reject', MonitoringActivity::class),
             ]
@@ -233,6 +266,7 @@ class MonitoringActivityController extends Controller
             'centers' => Center::orderBy('name')->get(),
             'funders' => Funder::orderBy('name')->get(),
             'people' => Person::orderBy('name')->get(),
+            'monitors' => Person::withRole('monitor')->orderBy('name')->get(),
             'projects' => $projects,
             'sourceTypes' => $this->sourceTypeLabels(),
             'activityTypes' => $this->constantOptions('activity_types'),
@@ -272,7 +306,10 @@ class MonitoringActivityController extends Controller
             'department_id' => ['nullable', 'exists:departments,id', 'required_without:source_id'],
             'section_id' => ['nullable', 'exists:sections,id'],
             'responsible_person_id' => ['nullable', 'exists:people,id'],
-            'monitor_person_id' => ['nullable', 'exists:people,id'],
+            'monitor_person_id' => [
+                'nullable',
+                Rule::exists('people', 'id')->where('role', 'monitor'),
+            ],
             'activity_date' => ['nullable', 'date'],
             'activity_time' => ['nullable', 'date_format:H:i'],
             'activity_type' => ['nullable', 'string'],

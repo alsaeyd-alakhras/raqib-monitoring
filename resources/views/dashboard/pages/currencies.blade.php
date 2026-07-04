@@ -50,13 +50,11 @@
                                             </button>
                                             @endcan
                                             @can('delete', 'App\\Models\Currency')
-                                            <form action="{{route('dashboard.currencies.destroy',$currency->id)}}" method="post">
-                                                @csrf
-                                                @method('delete')
+                                            <x-delete-form :action="route('dashboard.currencies.destroy', $currency->id)" :item-label="'العملة «' . $currency->name . '»'">
                                                 <button type="submit" class="dropdown-item" style="margin: 0.5rem -0.75rem; text-align: right;">
                                                     <i class="ti ti-trash me-1"></i>حذف
                                                 </button>
-                                            </form>
+                                            </x-delete-form>
                                             @endcan
                                         </div>
                                     </div>

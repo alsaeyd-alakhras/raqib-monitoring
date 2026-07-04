@@ -117,7 +117,7 @@
                 <div class="d-flex flex-wrap gap-3 mb-3">
                     <div class="form-check">
                         <input class="form-check-input coordinator-mode-radio" type="radio" name="coordinator_mode" id="coordinator-mode-self" value="self" @checked($selectedCoordinatorMode === 'self')>
-                        <label class="form-check-label" for="coordinator-mode-self">أنا المنسق (مدير المشروع)</label>
+                        <label class="form-check-label" for="coordinator-mode-self">مدير المشروع هو المنسق</label>
                     </div>
                     <div class="form-check">
                         <input class="form-check-input coordinator-mode-radio" type="radio" name="coordinator_mode" id="coordinator-mode-person" value="person" @checked($selectedCoordinatorMode === 'person')>
@@ -140,7 +140,7 @@
                         />
                     </div>
                     <div class="col-md-6 d-flex align-items-end">
-                        <div id="fill-on-behalf-wrap" class="form-check mb-3 {{ $selectedCoordinatorMode === 'person' ? '' : 'd-none' }}">
+                        <div id="fill-on-behalf-wrap" class="form-check mb-3 {{ ($selectedCoordinatorMode === 'person' && ($lockProjectManager ?? false)) ? '' : 'd-none' }}">
                             <input
                                 class="form-check-input"
                                 type="checkbox"
@@ -173,7 +173,11 @@
                 </div>
 
                 <div id="coordinator-self-hint" class="alert alert-info py-2 {{ $selectedCoordinatorMode === 'self' ? '' : 'd-none' }}">
-                    أنت المنسق — ستظهر قائمة التحقق في أسفل النموذج لتعبئتها مع حفظ المشروع.
+                    @if ($lockProjectManager ?? false)
+                        أنت مدير المشروع والمنسق — ستظهر قائمة التحقق في أسفل النموذج لتعبئتها مع حفظ المشروع.
+                    @else
+                        <strong>مدير المشروع هو المنسق</strong> — يعبّئ قائمة التحقق بنفسه عند إنشاء/تعديل المشروع.
+                    @endif
                 </div>
             </div>
 
@@ -325,6 +329,7 @@
     const checklistSection = document.getElementById('coordinator-checklist-section');
     const checklistIntro = document.getElementById('coordinator-checklist-intro');
     const lockedManagerId = @json($lockedManagerId);
+    const canFillOnBehalf = @json((bool) ($lockProjectManager ?? false));
     let previousCoordinatorKey = null;
 
     function getCoordinatorKey() {
@@ -361,7 +366,7 @@
             return true;
         }
         if (mode === 'person') {
-            return Boolean(fillOnBehalfCheckbox?.checked && coordinatorSelect?.value);
+            return Boolean(canFillOnBehalf && fillOnBehalfCheckbox?.checked && coordinatorSelect?.value);
         }
         return false;
     }
@@ -421,7 +426,7 @@
         personWrap.classList.toggle('d-none', mode !== 'person');
         externalWrap.classList.toggle('d-none', mode !== 'external');
         selfHint.classList.toggle('d-none', mode !== 'self');
-        fillOnBehalfWrap?.classList.toggle('d-none', mode !== 'person');
+        fillOnBehalfWrap?.classList.toggle('d-none', mode !== 'person' || !canFillOnBehalf);
 
         if (coordinatorSelect) {
             coordinatorSelect.disabled = mode !== 'person';
@@ -437,7 +442,7 @@
             }
         }
 
-        if (fillOnBehalfCheckbox && mode !== 'person') {
+        if (fillOnBehalfCheckbox && (mode !== 'person' || !canFillOnBehalf)) {
             fillOnBehalfCheckbox.checked = false;
         }
 

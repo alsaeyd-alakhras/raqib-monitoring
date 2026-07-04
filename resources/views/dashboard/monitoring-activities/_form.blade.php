@@ -163,7 +163,7 @@
                 <x-form.select
                     name="monitor_person_id"
                     label="المراقب"
-                    :optionsId="$people"
+                    :optionsId="$monitors ?? collect()"
                     :value="$activity->monitor_person_id ?? ''"
                 />
             </div>
@@ -213,6 +213,27 @@
     </div>
 </div>
 
+@if (isset($linkedProject) && $linkedProject && ($linkedProject->monitor_notes || $linkedProject->monitor_recommendations))
+    <div class="card mb-4 border-info">
+        <div class="card-header bg-label-info">
+            <h5 class="mb-0">ملاحظات/توصيات المراقب على المشروع المرتبط (للقراءة)</h5>
+        </div>
+        <div class="card-body">
+            <p class="small text-muted">من قائمة تحقق المشروع — مختلفة عن «ملاحظة النشاط الرقابي» في هذا النموذج.</p>
+            @if ($linkedProject->monitor_notes)
+                <div><strong>ملاحظات:</strong>
+                    <ul>@foreach ($linkedProject->monitor_notes as $note)<li>{{ $note }}</li>@endforeach</ul>
+                </div>
+            @endif
+            @if ($linkedProject->monitor_recommendations)
+                <div><strong>توصيات:</strong>
+                    <ul class="mb-0">@foreach ($linkedProject->monitor_recommendations as $rec)<li>{{ $rec }}</li>@endforeach</ul>
+                </div>
+            @endif
+        </div>
+    </div>
+@endif
+
 <div class="card mb-4">
     <div class="card-header">
         <h5 class="mb-0">المحتوى الرقابي</h5>
@@ -229,9 +250,10 @@
             <div class="mb-4 col-md-6">
                 <x-form.textarea
                     name="notes"
-                    label="الملاحظة"
+                    label="ملاحظة النشاط الرقابي"
                     :value="$activity->notes ?? ''"
                 />
+                <div class="form-text">ملاحظة عامة على النشاط الرقابي — مختلفة عن ملاحظات المراقب على قائمة التحقق في المشروع.</div>
             </div>
             <div class="mb-4 col-md-4">
                 @php $fieldProblemValue = old('field_problem', isset($activity) ? (int) $activity->field_problem : 0); @endphp

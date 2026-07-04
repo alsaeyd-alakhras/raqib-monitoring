@@ -26,10 +26,14 @@
                             <th>اسم المشروع</th>
                             <th>المركز / الدائرة</th>
                             <th>مدير المشروع</th>
-                            <th>المنسق</th>
-                            <th>المراقب</th>
-                            <th>جاهزية المنسق</th>
-                            <th>جاهزية المراقب</th>
+                            @if ($canViewCoordinatorColumnInList ?? true)
+                                <th>المنسق</th>
+                                <th>جاهزية المنسق</th>
+                            @endif
+                            @if ($canViewMonitorColumnInList ?? false)
+                                <th>المراقب</th>
+                                <th>جاهزية المراقب</th>
+                            @endif
                             <th>حالة سير العمل</th>
                             <th>الإجراء الحالي</th>
                             <th>الإجراءات</th>
@@ -47,10 +51,14 @@
                                 </td>
                                 <td>{{ $project->center?->name }} / {{ $project->department?->name }}</td>
                                 <td>{{ $project->projectManager?->name ?? '-' }}</td>
-                                <td>{{ $project->coordinatorDisplayName() }}</td>
-                                <td>{{ $project->monitorPerson?->name ?? '-' }}</td>
-                                <td>{{ $project->coordinator_readiness_pct !== null ? $project->coordinator_readiness_pct . '%' : '-' }}</td>
-                                <td>{{ $project->monitor_readiness_pct !== null ? $project->monitor_readiness_pct . '%' : '-' }}</td>
+                                @if ($canViewCoordinatorColumnInList ?? true)
+                                    <td>{{ $project->coordinatorDisplayName() }}</td>
+                                    <td>{{ $project->coordinator_readiness_pct !== null ? $project->coordinator_readiness_pct . '%' : '-' }}</td>
+                                @endif
+                                @if ($canViewMonitorColumnInList ?? false)
+                                    <td>{{ $project->monitorPerson?->name ?? '-' }}</td>
+                                    <td>{{ $project->monitor_readiness_pct !== null ? $project->monitor_readiness_pct . '%' : '-' }}</td>
+                                @endif
                                 <td>
                                     <span class="badge bg-label-{{ $project->workflow_status === 'rejected' ? 'danger' : 'info' }}">
                                         {{ $statusLabels[$project->workflow_status] ?? $project->workflow_status }}
@@ -83,7 +91,7 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="10" class="text-center py-4">لا توجد مشاريع مضافة حالياً.</td>
+                                <td colspan="{{ 6 + (($canViewCoordinatorColumnInList ?? true) ? 2 : 0) + (($canViewMonitorColumnInList ?? false) ? 2 : 0) }}" class="text-center py-4">لا توجد مشاريع مضافة حالياً.</td>
                             </tr>
                         @endforelse
                     </tbody>

@@ -74,7 +74,7 @@ Route::group([
     // Monitoring activities ************************
     Route::resources([
         'monitoring-activities' => MonitoringActivityController::class,
-    ], ['except' => ['show']]);
+    ]);
 
     Route::post('monitoring-activities/{monitoring_activity}/confirm-passage', [MonitoringActivityController::class, 'confirmPassage'])
         ->name('monitoring-activities.confirm-passage');

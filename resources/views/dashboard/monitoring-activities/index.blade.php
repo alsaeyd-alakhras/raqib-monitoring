@@ -89,6 +89,11 @@
                                 </td>
                                 <td>
                                     <div class="d-flex align-items-center gap-2 flex-wrap">
+                                        @can('view', 'App\Models\MonitoringActivity')
+                                            <a href="{{ route('dashboard.monitoring-activities.show', $activity) }}" class="btn btn-sm btn-outline-secondary">
+                                                عرض
+                                            </a>
+                                        @endcan
                                         @can('update', 'App\Models\MonitoringActivity')
                                             <a href="{{ route('dashboard.monitoring-activities.edit', $activity) }}" class="btn btn-sm btn-outline-primary">
                                                 تعديل

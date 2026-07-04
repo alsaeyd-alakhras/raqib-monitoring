@@ -34,6 +34,18 @@
             </span>
         </div>
         <div class="card-body pt-3">
+            @if ($project->hasPendingReturnNotice())
+                <div class="alert alert-warning py-2 mb-3">
+                    <strong>أُرجِع المشروع للمراجعة.</strong>
+                    @if ($project->return_target)
+                        الإجراء: {{ \App\Models\Project::returnTargetLabel($project->return_target) }} —
+                    @endif
+                    السبب: {{ $project->rejection_reason }}
+                    @if ($project->rejectedByUser)
+                        <span class="d-block small mt-1">بواسطة: {{ $project->rejectedByUser->name }} — {{ $project->rejected_at?->format('Y-m-d H:i') }}</span>
+                    @endif
+                </div>
+            @endif
             @include('dashboard.projects._project_summary')
         </div>
     </div>
@@ -59,11 +71,15 @@
                 </form>
             @endif
 
-            @if (in_array($project->workflow_status, ['pending_coordinator', 'coordinator_filling']) && $canFillCoordinator)
+            @if ($canSubmitToDeptManager ?? false)
                 <form action="{{ route('dashboard.projects.submit-to-dept-manager', $project) }}" method="post" class="d-inline">
                     @csrf
                     <button type="submit" class="btn btn-primary">إرسال لمدير الدائرة</button>
                 </form>
+            @elseif (in_array($project->workflow_status, ['pending_coordinator', 'coordinator_filling']) && ($canManageCoordinatorColumn ?? false))
+                <div class="alert alert-secondary py-2 mb-0">
+                    قبل الإرسال لمدير الدائرة يجب حفظ تعبئة المنسق أولاً (من المنسق نفسه أو نيابةً عنه).
+                </div>
             @endif
 
             @if ($project->workflow_status === 'pending_dept_manager' && ($canApproveThisProject ?? false))
@@ -141,8 +157,10 @@
 
             @if ($project->workflow_status === 'monitoring_in_progress')
                 <div class="d-flex flex-wrap align-items-center gap-2">
-                    <a href="{{ route('dashboard.projects.monitor-work', $project) }}" class="btn btn-outline-primary">شاشة عمل المراقب</a>
-                    @if ($project->readiness_status)
+                    @if ($isAssignedMonitor ?? false)
+                        <a href="{{ route('dashboard.projects.monitor-work', $project) }}" class="btn btn-outline-primary">شاشة عمل المراقب</a>
+                    @endif
+                    @if (($canViewMonitorData ?? false) && $project->readiness_status)
                         <span class="text-muted small">تقييم الجاهزية: {{ $readinessStatusLabels[$project->readiness_status] ?? '-' }}</span>
                     @endif
                     @if ($canRejectThisProject ?? false)
@@ -181,35 +199,19 @@
 
             @if ($project->workflow_status === 'rejected')
                 <div class="alert alert-danger">
+                    <div><strong>رفض قاطع نهائي</strong></div>
                     <div><strong>سبب الرفض:</strong> {{ $project->rejection_reason }}</div>
                     <div><strong>مسؤولية النقص:</strong> {{ \App\Models\Project::gapOwnerLabel($project->gap_owner) }}</div>
                     <div><strong>رُفض بواسطة:</strong> {{ $project->rejectedByUser?->name ?? '-' }}</div>
                     <div><strong>رُفض بتاريخ:</strong> {{ $project->rejected_at }}</div>
                 </div>
-                @if ($canReject)
-                    <form action="{{ route('dashboard.projects.reroute', $project) }}" method="post" class="row g-2 align-items-end">
-                        @csrf
-                        <div class="col-md-4">
-                            <label class="form-label">إعادة التوجيه إلى</label>
-                            <select name="workflow_status" class="form-select" required>
-                                <option value="pending_coordinator">بانتظار المنسق</option>
-                                <option value="coordinator_filling">المنسق يعمل</option>
-                                <option value="pending_dept_manager">بانتظار مدير الدائرة</option>
-                                <option value="pending_monitoring_manager">بانتظار مدير الرقابة العامة</option>
-                            </select>
-                        </div>
-                        <div class="col-md-3">
-                            <button type="submit" class="btn btn-outline-primary">إعادة التوجيه</button>
-                        </div>
-                    </form>
-                @endif
             @endif
         </div>
     </div>
 
     @include('dashboard.projects._reject_modal')
 
-    @if ($errors->has('rejection_reason') || $errors->has('gap_owner'))
+    @if ($errors->has('rejection_reason') || $errors->has('gap_owner') || $errors->has('return_target'))
         @push('scripts')
         <script>
             document.addEventListener('DOMContentLoaded', function () {
@@ -240,27 +242,48 @@
             @if ((
                     in_array($project->workflow_status, ['pending_coordinator', 'coordinator_filling'])
                     || ($showCoordinatorFillOnDraft ?? false)
-                ) && $canFillCoordinator)
+                ) && ($canManageCoordinatorColumn ?? false))
                 <form action="{{ route('dashboard.projects.fill-coordinator', $project) }}" method="post">
                     @csrf
                     @if ($requiresFillOnBehalfConfirm ?? false)
-                        <div class="alert alert-warning py-2 mb-3">
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" name="fill_on_behalf" id="fill-on-behalf" value="1" @checked(old('fill_on_behalf')) required>
-                                <label class="form-check-label" for="fill-on-behalf">
-                                    أؤكّد أنني أعبّئ قائمة التحقق نيابةً عن المنسق:
-                                    <strong>{{ $project->coordinatorDisplayName() }}</strong>
-                                </label>
-                            </div>
-                            <div class="form-text mb-0">سيُسجَّل اسمك كمُعبّئ نيابةً عن المنسق في بيانات المشروع.</div>
+                        <div class="mb-3">
+                            <button
+                                type="button"
+                                class="btn btn-outline-primary btn-sm"
+                                id="toggle-coordinator-on-behalf-fill"
+                                aria-expanded="{{ old('fill_on_behalf') ? 'true' : 'false' }}"
+                                aria-controls="coordinator-on-behalf-fill-panel"
+                            >
+                                أعبّئ قائمة التحقق نيابةً عن المنسق
+                            </button>
+                            <div class="form-text mt-2">لن تظهر حقول التعبئة إلا بعد الضغط على الزر وتأكيد النيابة.</div>
                         </div>
+                        <div id="coordinator-on-behalf-fill-panel" class="{{ old('fill_on_behalf') ? '' : 'd-none' }}">
+                            <div class="alert alert-warning py-2 mb-3">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="fill_on_behalf" id="fill-on-behalf" value="1" @checked(old('fill_on_behalf')) required>
+                                    <label class="form-check-label" for="fill-on-behalf">
+                                        أؤكّد أنني أعبّئ قائمة التحقق نيابةً عن المنسق:
+                                        <strong>{{ $project->coordinatorDisplayName() }}</strong>
+                                    </label>
+                                </div>
+                                <div class="form-text mb-0">سيُسجَّل اسمك كمُعبّئ نيابةً عن المنسق في بيانات المشروع.</div>
+                            </div>
+                            @include('dashboard.projects._checklist_edit', [
+                                'groups' => $groups,
+                                'values' => $values,
+                                'valueLabels' => $valueLabels,
+                            ])
+                            <button type="submit" class="btn btn-primary">حفظ عمود المنسق</button>
+                        </div>
+                    @else
+                        @include('dashboard.projects._checklist_edit', [
+                            'groups' => $groups,
+                            'values' => $values,
+                            'valueLabels' => $valueLabels,
+                        ])
+                        <button type="submit" class="btn btn-primary">حفظ عمود المنسق</button>
                     @endif
-                    @include('dashboard.projects._checklist_edit', [
-                        'groups' => $groups,
-                        'values' => $values,
-                        'valueLabels' => $valueLabels,
-                    ])
-                    <button type="submit" class="btn btn-primary">حفظ عمود المنسق</button>
                 </form>
             @else
                 @include('dashboard.projects._checklist_display', [
@@ -275,6 +298,7 @@
     @endif
 
     {{-- قائمة التحقق — عمود المراقب (عرض فقط هنا، التعديل من شاشة المراقب المعزولة) --}}
+    @if ($canViewMonitorData ?? false)
     <div class="card mb-4">
         <div class="card-header d-flex justify-content-between align-items-center">
             <h5 class="mb-0">قائمة التحقق — عمود المراقب</h5>
@@ -299,4 +323,43 @@
             @endif
         </div>
     </div>
+    @endif
+
+    @push('scripts')
+        <script>
+            document.addEventListener('DOMContentLoaded', function () {
+                const toggleBtn = document.getElementById('toggle-coordinator-on-behalf-fill');
+                const panel = document.getElementById('coordinator-on-behalf-fill-panel');
+                const checkbox = document.getElementById('fill-on-behalf');
+
+                if (!toggleBtn || !panel) {
+                    return;
+                }
+
+                const syncOnBehalfUi = function (enabled) {
+                    panel.classList.toggle('d-none', !enabled);
+                    toggleBtn.setAttribute('aria-expanded', enabled ? 'true' : 'false');
+                    toggleBtn.textContent = enabled
+                        ? 'إخفاء تعبئة النيابة'
+                        : 'أعبّئ قائمة التحقق نيابةً عن المنسق';
+                };
+
+                syncOnBehalfUi(Boolean(checkbox?.checked));
+
+                toggleBtn.addEventListener('click', function () {
+                    const enableOnBehalf = panel.classList.contains('d-none');
+
+                    if (checkbox) {
+                        checkbox.checked = enableOnBehalf;
+                    }
+
+                    syncOnBehalfUi(enableOnBehalf);
+                });
+
+                checkbox?.addEventListener('change', function () {
+                    syncOnBehalfUi(Boolean(checkbox.checked));
+                });
+            });
+        </script>
+    @endpush
 </x-front-layout>
