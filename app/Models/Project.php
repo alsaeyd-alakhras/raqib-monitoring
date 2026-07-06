@@ -669,25 +669,62 @@ class Project extends Model
         }
     }
 
+    /**
+     * Per-group and overall readiness percentages for reports.
+     *
+     * @return array{groups: list<array{name: string, coordinator_pct: float|null, monitor_pct: float|null}>, overall: array{coordinator_pct: float|null, monitor_pct: float|null}}
+     */
+    public function readinessBreakdown(): array
+    {
+        $grouped = $this->checklistValues()->with('checklistItem.group')->get()
+            ->filter(fn (ProjectChecklistValue $value) => $value->checklistItem && $value->checklistItem->group && $value->checklistItem->group->is_active && $value->checklistItem->is_active)
+            ->groupBy(fn (ProjectChecklistValue $value) => $value->checklistItem->group_id);
+
+        $groups = [];
+
+        foreach ($grouped as $items) {
+            $groups[] = [
+                'name' => $items->first()->checklistItem->group->name ?? '—',
+                'coordinator_pct' => $this->groupReadinessPercent($items, 'coordinator_value'),
+                'monitor_pct' => $this->groupReadinessPercent($items, 'monitor_value'),
+            ];
+        }
+
+        return [
+            'groups' => $groups,
+            'overall' => [
+                'coordinator_pct' => $this->coordinator_readiness_pct,
+                'monitor_pct' => $this->monitor_readiness_pct,
+            ],
+        ];
+    }
+
+    protected function groupReadinessPercent($items, string $column): ?float
+    {
+        $total = $items->count();
+        $notRequired = $items->where($column, 'not_required')->count();
+        $denominator = $total - $notRequired;
+
+        if ($denominator <= 0) {
+            return $total > 0 ? 100.0 : null;
+        }
+
+        $ready = $items->where($column, 'ready')->count();
+        $partial = $items->where($column, 'partial')->count();
+
+        return round((($ready + 0.5 * $partial) / $denominator) * 100, 2);
+    }
+
     protected function averageReadiness($groupedValues, string $column): ?float
     {
         $groupPercentages = [];
 
         foreach ($groupedValues as $items) {
-            $total = $items->count();
-            $notRequired = $items->where($column, 'not_required')->count();
-            $denominator = $total - $notRequired;
+            $pct = $this->groupReadinessPercent($items, $column);
 
-            if ($denominator <= 0) {
-                $groupPercentages[] = 100;
-
-                continue;
+            if ($pct !== null) {
+                $groupPercentages[] = $pct;
             }
-
-            $ready = $items->where($column, 'ready')->count();
-            $partial = $items->where($column, 'partial')->count();
-
-            $groupPercentages[] = (($ready + 0.5 * $partial) / $denominator) * 100;
         }
 
         if ($groupPercentages === []) {

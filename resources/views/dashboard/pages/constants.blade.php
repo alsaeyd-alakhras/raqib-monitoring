@@ -1,133 +1,90 @@
 <x-front-layout>
     <div class="col-xl-12">
-        <h6 class="text-muted">إعدادات ثوابت النظام</h6>
+        <div class="d-flex justify-content-between align-items-start flex-wrap gap-3 mb-4">
+            <div>
+                <h5 class="mb-1">ثوابت النظام</h5>
+                <p class="text-muted mb-0">إدارة القوائم والمقاييس المستخدمة في المشاريع والنشاطات الرقابية.</p>
+            </div>
+            @can('update', 'App\Models\Constant')
+                <button type="submit" form="constants-form" class="btn btn-primary">
+                    <i class="fa-solid fa-floppy-disk me-1"></i> حفظ التغييرات
+                </button>
+            @endcan
+        </div>
+
+        @if (session('success'))
+            <div class="alert alert-success">{{ session('success') }}</div>
+        @endif
+        @if (session('danger'))
+            <div class="alert alert-danger">{{ session('danger') }}</div>
+        @endif
+
+        <div class="alert alert-info d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <div>
+                <strong>الجهات الممولة</strong> لا تُدار من هنا — تُخزَّن في جدول مستقل وتُعدَّل من صفحة الممولون.
+            </div>
+            @can('view', 'App\Models\Funder')
+                <a href="{{ route('dashboard.funders.index') }}" class="btn btn-sm btn-outline-primary">
+                    <i class="fa-solid fa-hand-holding-dollar me-1"></i> إدارة الممولين
+                </a>
+            @endcan
+        </div>
+
         <div class="card">
             <div class="card-body">
-                <div class="nav-align-top mb-6">
-                    <ul class="nav nav-pills mb-4 nav-fill" role="tablist">
-                        <li class="nav-item mb-1 mb-sm-0">
-                            <button type="button" class="nav-link active" role="tab" data-bs-toggle="tab"
-                                data-bs-target="#menu1" aria-controls="menu1"
-                                aria-selected="true">
-                                <span class="d-none d-sm-block">
-                                    <i class="fa-solid fa-wallet"></i> مبلغ السلفة
-                                    <i class="ti ti-home ti-sm d-sm-none"></i>
-                            </button>
-                        </li>
-                        <li class="nav-item mb-1 mb-sm-0">
-                            <button type="button" class="nav-link" role="tab" data-bs-toggle="tab"
-                                data-bs-target="#menu2" aria-controls="menu2"
-                                aria-selected="false">
-                                <span class="d-none d-sm-block"> % نسبة نهاية الخدمة</span><i
-                                    class="ti ti-user ti-sm d-sm-none"></i>
-                            </button>
-                        </li>
-                        <li class="nav-item">
-                            <button type="button" class="nav-link" role="tab" data-bs-toggle="tab"
-                                data-bs-target="#menu3" aria-controls="menu3"
-                                aria-selected="false">
-                                <span class="d-none d-sm-block"><i class="fa-solid fa-dollar-sign"></i>
-                                    رواتب الصحة المثبتين</span><i class="ti ti-message-dots ti-sm d-sm-none"></i>
-                            </button>
-                        </li>
+                <div class="nav-align-top">
+                    <ul class="nav nav-pills mb-4 nav-fill flex-column flex-md-row" role="tablist">
+                        @foreach ($tabGroups as $tabId => $tab)
+                            <li class="nav-item mb-1 mb-md-0">
+                                <button
+                                    type="button"
+                                    class="nav-link {{ $loop->first ? 'active' : '' }}"
+                                    role="tab"
+                                    data-bs-toggle="tab"
+                                    data-bs-target="#tab-{{ $tabId }}"
+                                    aria-controls="tab-{{ $tabId }}"
+                                    aria-selected="{{ $loop->first ? 'true' : 'false' }}"
+                                >
+                                    <i class="fa-solid {{ $tab['icon'] }} me-1"></i>
+                                    {{ $tab['label'] }}
+                                </button>
+                            </li>
+                        @endforeach
                     </ul>
-                    <form action="{{ route('dashboard.constants.store') }}" method="post">
+
+                    <form id="constants-form" action="{{ route('dashboard.constants.store') }}" method="post">
                         @csrf
                         <div class="tab-content">
-                            <div  class="tab-pane fade show active" role="tabpanel" id="menu1">
-                                <h2 class="h3 mt-4">تحديد ملبغ السلفة حسب حالة الدوام للثبتين</h2>
-                                <div class="row">
-                                    <div class="col-md-6 my-2">
-                                        <label for="advance_payment_permanent" class="form-label" style="font-size: 18px;">مبلغ السلفة - مداوم</label>
-                                        <div class="input-group">
-                                            <x-form.input required type="number" value="{{ $constants->where('key', 'advance_payment_permanent')->first() ? $constants->where('key', 'advance_payment_permanent')->first()->value : 0 }}" min="0" name="advance_payment_permanent" placeholder="1000" class="d-inline" />
-                                            <span class="input-group-text">₪</span>
+                            @foreach ($tabGroups as $tabId => $tab)
+                                <div
+                                    class="tab-pane fade {{ $loop->first ? 'show active' : '' }}"
+                                    id="tab-{{ $tabId }}"
+                                    role="tabpanel"
+                                >
+                                    @if (($tab['type'] ?? null) === 'legacy')
+                                        @include('dashboard.pages.constants._legacy', [
+                                            'legacyFields' => $legacyFields,
+                                            'legacyValues' => $legacyValues,
+                                        ])
+                                    @else
+                                        @foreach ($tab['keys'] as $key)
+                                            @include('dashboard.pages.constants._editor', [
+                                                'key' => $key,
+                                                'meta' => $registry[$key],
+                                                'decodedValues' => $decodedValues,
+                                            ])
+                                        @endforeach
+                                    @endif
+
+                                    @can('update', 'App\Models\Constant')
+                                        <div class="d-flex justify-content-end">
+                                            <button type="submit" class="btn btn-primary">
+                                                <i class="fa-solid fa-floppy-disk me-1"></i> حفظ {{ $tab['label'] }}
+                                            </button>
                                         </div>
-                                    </div>
-                                    <div class="col-md-6 my-2">
-                                        <label for="advance_payment_non_permanent" class="form-label" style="font-size: 18px;">مبلغ السلفة - غير مداوم</label>
-                                        <div class="input-group">
-                                            <x-form.input required type="number" value="{{ $constants->where('key', 'advance_payment_non_permanent')->first() ? $constants->where('key', 'advance_payment_non_permanent')->first()->value : 0 }}" min="0" name="advance_payment_non_permanent" placeholder="1000" class="d-inline" />
-                                            <span class="input-group-text">₪</span>
-                                        </div>
-                                    </div>
-                                    <div class="col-md-6 my-2">
-                                        <label for="advance_payment_rate" class="form-label" style="font-size: 18px;">مبلغ السلفة - نسبة</label>
-                                        <div class="input-group">
-                                            <x-form.input required type="number" value="{{ $constants->where('key', 'advance_payment_rate')->first() ? $constants->where('key', 'advance_payment_rate')->first()->value : 0 }}" min="0" name="advance_payment_rate" placeholder="1000" class="d-inline" />
-                                            <span class="input-group-text">₪</span>
-                                        </div>
-                                    </div>
-                                    <div class="col-md-6 my-2">
-                                        <label for="advance_payment_riyadh" class="form-label" style="font-size: 18px;">مبلغ السلفة - رياض</label>
-                                        <div class="input-group">
-                                            <x-form.input required type="number" value="{{ $constants->where('key', 'advance_payment_riyadh')->first() ? $constants->where('key', 'advance_payment_riyadh')->first()->value : 0 }}" min="0" name="advance_payment_riyadh" placeholder="1000" class="d-inline" />
-                                            <span class="input-group-text">₪</span>
-                                        </div>
-                                    </div>
+                                    @endcan
                                 </div>
-                                <div class="row justify-content-end align-items-center mt-4">
-                                    <button type="submit" class="btn btn-primary mx-2 col-2">
-                                        تعديل
-                                    </button>
-                                </div>
-                            </div>
-                            <div  class="tab-pane fade" role="tabpanel" id="menu2">
-                                <h2 class="h3 mt-4">تحديد نسبة الخدمة</h2>
-                                <div class="row">
-                                    <div class="col-md-6 my-2">
-                                        <label for="termination_service" class="form-label" style="font-size: 18px;">نسبة نهاية الخدمة للمؤسسة (الإدخار للمؤسسة)</label>
-                                        <div class="input-group">
-                                            <x-form.input required type="number" value="{{ $constants->where('key', 'termination_service')->first() ? $constants->where('key', 'termination_service')->first()->value : 0 }}" min="0" name="termination_service" placeholder="10" class="d-inline" />
-                                            <span class="input-group-text">%</span>
-                                        </div>
-                                    </div>
-                                    <div class="col-md-6 my-2">
-                                        <label for="termination_employee" class="form-label" style="font-size: 18px;">نسبة إدخار للموظف</label>
-                                        <div class="input-group">
-                                            <x-form.input required type="number" value="{{ $constants->where('key', 'termination_employee')->first() ? $constants->where('key', 'termination_employee')->first()->value : 0 }}" min="0" name="termination_employee" placeholder="5" class="d-inline" />
-                                            <span class="input-group-text">%</span>
-                                        </div>
-                                    </div>
-                                    
-                                </div>
-                                <div class="row justify-content-end align-items-center mt-4">
-                                    <button type="submit" class="btn btn-primary mx-2 col-2">
-                                        تعديل
-                                    </button>
-                                </div>
-                            </div>
-                            <div  class="tab-pane fade" role="tabpanel" id="menu3">
-                                <h2 class="h3 mt-4">تحديد رواتب الصحة المثبتين</h2>
-                                <div class="row">
-                                    <div class="col-md-6 my-2">
-                                        <label for="health_bachelor" class="form-label" style="font-size: 18px;">البكالوريوس</label>
-                                        <div class="input-group">
-                                            <x-form.input required type="number" value="{{ $constants->where('key', 'health_bachelor')->first() ? $constants->where('key', 'health_bachelor')->first()->value : 0 }}" min="0" name="health_bachelor" placeholder="900" class="d-inline" />
-                                            <span class="input-group-text">₪</span>
-                                        </div>
-                                    </div>
-                                    <div class="col-md-6 my-2">
-                                        <label for="health_diploma" class="form-label" style="font-size: 18px;">الدبلوم</label>
-                                        <div class="input-group">
-                                            <x-form.input required type="number" value="{{ $constants->where('key', 'health_diploma')->first() ? $constants->where('key', 'health_diploma')->first()->value : 0 }}" min="0" name="health_diploma" placeholder="800" class="d-inline" />
-                                            <span class="input-group-text">₪</span>
-                                        </div>
-                                    </div>
-                                    <div class="col-md-6 my-2">
-                                        <label for="health_secondary" class="form-label" style="font-size: 18px;">ثانوية عامة</label>
-                                        <div class="input-group">
-                                            <x-form.input required type="number" value="{{ $constants->where('key', 'health_secondary')->first() ? $constants->where('key', 'health_secondary')->first()->value : 0 }}" min="0" name="health_secondary" placeholder="700" class="d-inline" />
-                                            <span class="input-group-text">₪</span>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="row justify-content-end align-items-center mt-4">
-                                    <button type="submit" class="btn btn-primary mx-2 col-2">
-                                        تعديل
-                                    </button>
-                                </div>
-                            </div>
+                            @endforeach
                         </div>
                     </form>
                 </div>
@@ -135,21 +92,105 @@
         </div>
     </div>
 
-    <!-- Tab panes -->
-    
-
     @push('scripts')
-        <script src="{{ asset('assets/vendor/libs/jquery/jquery.js') }}"></script>
-        <script src="{{ asset('assets/vendor/libs/popper/popper.js') }}"></script>
-        <script src="{{ asset('assets/vendor/js/bootstrap.js') }}"></script>
-        <script src="{{ asset('assets/vendor/libs/node-waves/node-waves.js') }}"></script>
-        <script src="{{ asset('assets/vendor/libs/perfect-scrollbar/perfect-scrollbar.js') }}"></script>
-        <script src="{{ asset('assets/vendor/libs/hammer/hammer.js') }}"></script>
-        <script src="{{ asset('assets/vendor/libs/i18n/i18n.js') }}"></script>
-        <script src="{{ asset('assets/vendor/libs/typeahead-js/typeahead.js') }}"></script>
-        <script src="{{ asset('assets/vendor/js/menu.js') }}"></script>
+    <script>
+    (function () {
+        function reindexScaleRows(tbody, key, fieldName) {
+            tbody.querySelectorAll('tr').forEach((row, index) => {
+                const input = row.querySelector(`input[name^="constants[${key}]"]`);
+                if (!input) return;
+                row.querySelectorAll('input').forEach((el) => {
+                    const current = el.getAttribute('name') || '';
+                    el.setAttribute('name', current.replace(/\[\d+\]/, `[${index}]`));
+                });
+            });
+        }
+
+        function updateRemoveButtons(container, rowSelector) {
+            const rows = container.querySelectorAll(rowSelector);
+            rows.forEach((row) => {
+                const btn = row.querySelector('.btn-remove-row');
+                if (btn) {
+                    btn.disabled = rows.length <= 1;
+                }
+            });
+        }
+
+        document.addEventListener('click', function (event) {
+            const addStringBtn = event.target.closest('.btn-add-string-row');
+            if (addStringBtn) {
+                const card = addStringBtn.closest('.constant-editor-card');
+                const key = card.dataset.constantKey;
+                const container = card.querySelector('.constant-string-rows');
+                const row = document.createElement('div');
+                row.className = 'input-group mb-2 constant-string-row';
+                row.innerHTML = `
+                    <input type="text" name="constants[${key}][]" class="form-control" placeholder="أدخل قيمة...">
+                    <button type="button" class="btn btn-outline-danger btn-remove-row"><i class="fa-solid fa-trash"></i></button>
+                `;
+                container.appendChild(row);
+                updateRemoveButtons(container, '.constant-string-row');
+                row.querySelector('input')?.focus();
+                return;
+            }
+
+            const addValueScaleBtn = event.target.closest('.btn-add-value-scale-row');
+            if (addValueScaleBtn) {
+                const card = addValueScaleBtn.closest('.constant-editor-card');
+                const key = card.dataset.constantKey;
+                const tbody = card.querySelector('.constant-value-scale-rows');
+                const index = tbody.querySelectorAll('tr').length;
+                const row = document.createElement('tr');
+                row.className = 'constant-value-scale-row';
+                row.innerHTML = `
+                    <td><input type="number" name="constants[${key}][${index}][value]" class="form-control"></td>
+                    <td><input type="text" name="constants[${key}][${index}][label]" class="form-control" placeholder="مثال: ممتاز"></td>
+                    <td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger btn-remove-row"><i class="fa-solid fa-trash"></i></button></td>
+                `;
+                tbody.appendChild(row);
+                updateRemoveButtons(tbody, 'tr');
+                row.querySelector('input')?.focus();
+                return;
+            }
+
+            const addKpiScaleBtn = event.target.closest('.btn-add-kpi-scale-row');
+            if (addKpiScaleBtn) {
+                const card = addKpiScaleBtn.closest('.constant-editor-card');
+                const key = card.dataset.constantKey;
+                const tbody = card.querySelector('.constant-kpi-scale-rows');
+                const index = tbody.querySelectorAll('tr').length;
+                const row = document.createElement('tr');
+                row.className = 'constant-kpi-scale-row';
+                row.innerHTML = `
+                    <td><input type="number" name="constants[${key}][${index}][min]" class="form-control" min="0" max="100"></td>
+                    <td><input type="text" name="constants[${key}][${index}][label]" class="form-control" placeholder="مثال: ممتاز"></td>
+                    <td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger btn-remove-row"><i class="fa-solid fa-trash"></i></button></td>
+                `;
+                tbody.appendChild(row);
+                updateRemoveButtons(tbody, 'tr');
+                row.querySelector('input')?.focus();
+                return;
+            }
+
+            const removeBtn = event.target.closest('.btn-remove-row');
+            if (removeBtn && !removeBtn.disabled) {
+                const row = removeBtn.closest('.constant-string-row, tr');
+                const card = removeBtn.closest('.constant-editor-card');
+                const container = row?.parentElement;
+                row?.remove();
+
+                if (card?.dataset.editorType === 'value-scale') {
+                    reindexScaleRows(card.querySelector('.constant-value-scale-rows'), card.dataset.constantKey);
+                    updateRemoveButtons(card.querySelector('.constant-value-scale-rows'), 'tr');
+                } else if (card?.dataset.editorType === 'kpi-scale') {
+                    reindexScaleRows(card.querySelector('.constant-kpi-scale-rows'), card.dataset.constantKey);
+                    updateRemoveButtons(card.querySelector('.constant-kpi-scale-rows'), 'tr');
+                } else if (container) {
+                    updateRemoveButtons(container, '.constant-string-row');
+                }
+            }
+        });
+    })();
+    </script>
     @endpush
-
-
-
 </x-front-layout>

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -83,6 +84,53 @@ class MonitoringActivity extends Model
     public function rejectedByUser(): BelongsTo
     {
         return $this->belongsTo(User::class, 'rejected_by');
+    }
+
+    public function createdByUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'created_by');
+    }
+
+    public function updatedByUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'updated_by');
+    }
+
+    public function passageCompletedByUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'passage_completed_by');
+    }
+
+    public function isAssignedMonitor(?User $user): bool
+    {
+        $personId = $user?->person?->id;
+
+        return $personId && (int) $this->monitor_person_id === (int) $personId;
+    }
+
+    public function canMonitorSubmit(): bool
+    {
+        return $this->activity_role !== 'primary'
+            && $this->workflow_status === 'in_progress'
+            && $this->monitor_person_id !== null;
+    }
+
+    public function scopeSecondaryForProject(Builder $query, int $projectId): Builder
+    {
+        return $query
+            ->where('source_type', 'project')
+            ->where('source_id', $projectId)
+            ->where('activity_role', 'secondary');
+    }
+
+    public static function hasOtherPrimaryForProject(int $projectId, ?int $exceptId = null): bool
+    {
+        return self::query()
+            ->where('source_type', 'project')
+            ->where('source_id', $projectId)
+            ->where('activity_role', 'primary')
+            ->when($exceptId, fn ($query) => $query->where('id', '!=', $exceptId))
+            ->exists();
     }
 
     public static function workflowStatusLabels(): array

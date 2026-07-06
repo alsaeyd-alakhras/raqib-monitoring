@@ -7,6 +7,10 @@
                     <a class="btn btn-success" href="{{ route('dashboard.monitoring-activities.create') }}">
                         <i class="fa-solid fa-plus"></i>
                     </a>
+                @elsecan('assign_monitor', 'App\Models\MonitoringActivity')
+                    <a class="btn btn-success" href="{{ route('dashboard.monitoring-activities.create') }}">
+                        <i class="fa-solid fa-plus"></i>
+                    </a>
                 @endcan
             </div>
         </div>

@@ -1,8 +1,20 @@
+@php
+    $compactLayout = $compactLayout ?? false;
+@endphp
+
 @once
     @push('styles')
     <style>
+        .project-summary-grid .project-summary-section {
+            height: 100%;
+        }
+
         .project-summary-section + .project-summary-section {
             margin-top: 1.25rem;
+        }
+
+        .project-summary-grid .project-summary-section {
+            margin-top: 0 !important;
         }
 
         .project-summary-section-title {
@@ -35,6 +47,12 @@
             border-bottom: 1px solid rgba(67, 89, 113, 0.08);
             vertical-align: middle;
             white-space: nowrap;
+        }
+
+        .project-summary-grid .project-summary-table th {
+            width: auto;
+            max-width: none;
+            white-space: normal;
         }
 
         .project-summary-table td {
@@ -81,6 +99,11 @@
     ]);
 @endphp
 
+@if ($compactLayout)
+    <div class="row g-3 project-summary-grid">
+@endif
+
+@if ($compactLayout)<div class="col-lg-6">@endif
 <div class="project-summary-section">
     <div class="project-summary-section-title">بيانات المشروع</div>
     <table class="project-summary-table">
@@ -118,7 +141,9 @@
         </tbody>
     </table>
 </div>
+@if ($compactLayout)</div>@endif
 
+@if ($compactLayout)<div class="col-lg-6">@endif
 <div class="project-summary-section">
     <div class="project-summary-section-title">الفريق والاعتماد</div>
     <table class="project-summary-table">
@@ -170,6 +195,11 @@
         </tbody>
     </table>
 </div>
+@if ($compactLayout)</div>@endif
+
+@if ($compactLayout)
+    </div>
+@endif
 
 <div class="project-summary-actions d-flex flex-wrap gap-2">
     @can('update', 'App\Models\Project')

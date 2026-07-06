@@ -18,6 +18,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
+use Mccarlosen\LaravelMpdf\Facades\LaravelMpdf as PDF;
 
 class ProjectController extends Controller
 {
@@ -154,6 +155,23 @@ class ProjectController extends Controller
         $monitors = Person::withRole('monitor')->orderBy('name')->get();
 
         return view('dashboard.projects.show', $this->showViewData($project, $groups, $values, $monitors));
+    }
+
+    public function exportPdf(Project $project)
+    {
+        $this->authorize('view', Project::class);
+        $this->ensureProjectVisible($project);
+
+        $pdf = PDF::loadView(
+            'reports.projects.pdf',
+            $this->buildPdfReportData($project),
+            [],
+            config('pdf')
+        );
+
+        $filename = 'تقرير جاهزية المشروع ' . ($project->project_number ?? $project->id) . '.pdf';
+
+        return $pdf->stream($filename);
     }
 
     public function edit(Project $project): View
@@ -774,6 +792,40 @@ class ProjectController extends Controller
                 auth()->user()?->person,
                 (bool) auth()->user()?->super_admin
             ),
+        ];
+    }
+
+    /** @return array<string, mixed> */
+    private function buildPdfReportData(Project $project): array
+    {
+        $project->load([
+            'center', 'department', 'section', 'funder',
+            'projectManager.department', 'coordinator', 'monitorPerson',
+            'primaryMonitoringActivity',
+        ]);
+
+        $groups = $this->activeChecklistGroups();
+        $values = $project->checklistValues()->get()->keyBy('checklist_item_id');
+
+        return [
+            'project' => $project,
+            'groups' => $groups,
+            'values' => $values,
+            'canViewCoordinatorData' => $this->canViewCoordinatorData($project),
+            'canViewMonitorData' => $this->canViewMonitorData($project),
+            'workflowStatusLabels' => Project::workflowStatusLabels(),
+            'valueLabels' => [
+                'ready' => 'جاهز',
+                'partial' => 'جزئي',
+                'not_ready' => 'غير جاهز',
+                'not_required' => 'غير مطلوب',
+            ],
+            'readinessStatusLabels' => [
+                'stopped' => 'يحتاج مراجعة — بند غير جاهز',
+                'partially_ready' => 'جاهز جزئياً',
+                'ready' => 'جاهز للتنفيذ — موصى بالمتابعة',
+            ],
+            'readinessBreakdown' => $project->readinessBreakdown(),
         ];
     }
 

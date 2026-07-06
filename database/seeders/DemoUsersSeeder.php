@@ -155,6 +155,8 @@ class DemoUsersSeeder extends Seeder
                     'projects.view',
                     'projects.reject',
                     'monitoringactivities.view',
+                    'monitoringactivities.create',
+                    'monitoringactivities.update',
                     'monitoringactivities.set_monitoring_info',
                     'monitoringactivities.assign_monitor',
                     'monitoringactivities.confirm_completion',

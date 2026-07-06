@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Dashboard;
 
+use App\Exports\MonitoringActivityExport;
 use App\Http\Controllers\Controller;
 use App\Models\Center;
 use App\Models\Constant;
@@ -16,6 +17,8 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
+use Maatwebsite\Excel\Facades\Excel;
+use Mccarlosen\LaravelMpdf\Facades\LaravelMpdf as PDF;
 
 class MonitoringActivityController extends Controller
 {
@@ -41,23 +44,37 @@ class MonitoringActivityController extends Controller
         ]);
     }
 
-    public function create(): View
+    public function create(Request $request): View
     {
-        $this->authorize('create', MonitoringActivity::class);
+        $this->authorizeActivityManagement();
 
-        return view('dashboard.monitoring-activities.create', $this->formData());
+        $prefill = $request->only([
+            'source_type', 'source_id',
+            'center_id', 'department_id', 'section_id',
+            'subject', 'notes', 'monitor_person_id',
+        ]);
+
+        $sourceType = $prefill['source_type'] ?? 'project';
+
+        return view('dashboard.monitoring-activities.create', $this->formData() + [
+            'prefill' => $prefill,
+            'suggestedReferenceCode' => $this->generateReferenceCode($sourceType),
+        ]);
     }
 
     public function store(Request $request): RedirectResponse
     {
-        $this->authorize('create', MonitoringActivity::class);
+        $this->authorizeActivityManagement();
 
         $validated = $request->validate($this->validationRules());
+
+        $validated['activity_role'] = 'secondary';
 
         if (empty($validated['reference_code'])) {
             $validated['reference_code'] = $this->generateReferenceCode($validated['source_type']);
         }
 
+        $validated = $this->normalizeWorkflowStatus($validated);
         $validated['created_by'] = auth()->id();
         $validated['updated_by'] = auth()->id();
 
@@ -72,9 +89,44 @@ class MonitoringActivityController extends Controller
     {
         $this->authorize('view', MonitoringActivity::class);
 
+        return view('dashboard.monitoring-activities.show', $this->buildShowData($monitoring_activity));
+    }
+
+    public function exportPdf(MonitoringActivity $monitoring_activity)
+    {
+        $this->authorize('view', MonitoringActivity::class);
+
+        $pdf = PDF::loadView(
+            'reports.monitoring-activities.pdf',
+            $this->buildShowData($monitoring_activity),
+            [],
+            config('pdf')
+        );
+
+        return $pdf->stream('النشاط الرقابي ' . $monitoring_activity->reference_code . '.pdf');
+    }
+
+    public function exportExcel(MonitoringActivity $monitoring_activity)
+    {
+        $this->authorize('view', MonitoringActivity::class);
+
         $monitoring_activity->load([
             'center', 'department', 'section', 'monitorPerson', 'responsiblePerson',
-            'funder', 'rejectedByUser', 'project.projectManager', 'project.coordinator',
+            'funder', 'createdByUser', 'updatedByUser', 'passageCompletedByUser',
+        ]);
+
+        return Excel::download(
+            new MonitoringActivityExport($monitoring_activity, $this->sourceTypeLabels(), MonitoringActivity::workflowStatusLabels()),
+            'النشاط الرقابي ' . $monitoring_activity->reference_code . '.xlsx'
+        );
+    }
+
+    private function buildShowData(MonitoringActivity $monitoring_activity): array
+    {
+        $monitoring_activity->load([
+            'center', 'department', 'section', 'monitorPerson', 'responsiblePerson',
+            'funder', 'rejectedByUser', 'createdByUser', 'updatedByUser', 'passageCompletedByUser',
+            'project.projectManager', 'project.coordinator',
         ]);
 
         $linkedProject = $monitoring_activity->source_type === 'project' && $monitoring_activity->source_id
@@ -85,14 +137,31 @@ class MonitoringActivityController extends Controller
             $linkedProject->loadMissing(['center', 'department', 'section', 'funder', 'projectManager', 'monitorPerson']);
         }
 
-        return view('dashboard.monitoring-activities.show', [
+        $secondaryActivities = collect();
+        if (
+            $monitoring_activity->activity_role === 'primary'
+            && $monitoring_activity->source_type === 'project'
+            && $monitoring_activity->source_id
+        ) {
+            $secondaryActivities = MonitoringActivity::secondaryForProject((int) $monitoring_activity->source_id)
+                ->with('monitorPerson')
+                ->orderBy('reference_code')
+                ->get();
+        }
+
+        $user = auth()->user();
+
+        return [
             'activity' => $monitoring_activity,
             'linkedProject' => $linkedProject,
+            'secondaryActivities' => $secondaryActivities,
             'sourceTypes' => $this->sourceTypeLabels(),
             'workflowStatusLabels' => MonitoringActivity::workflowStatusLabels(),
-            'canViewCoordinatorData' => $linkedProject?->showsCoordinatorDataTo(auth()->user()) ?? false,
-            'canViewMonitorData' => $linkedProject?->showsMonitorDataTo(auth()->user()) ?? true,
-        ]);
+            'canViewCoordinatorData' => $linkedProject?->showsCoordinatorDataTo($user) ?? false,
+            'canViewMonitorData' => $linkedProject?->showsMonitorDataTo($user) ?? true,
+            'canMonitorSubmit' => $monitoring_activity->canMonitorSubmit() && $monitoring_activity->isAssignedMonitor($user),
+            'isMonitorEditor' => $this->isMonitorOnlyEditor($monitoring_activity),
+        ];
     }
 
     public function edit(MonitoringActivity $monitoring_activity): View
@@ -113,6 +182,8 @@ class MonitoringActivityController extends Controller
                 'linkedProject' => $linkedProject,
                 'canConfirmCompletion' => auth()->user()?->can('confirm_completion', MonitoringActivity::class),
                 'canReject' => auth()->user()?->can('reject', MonitoringActivity::class),
+                'isMonitorEditor' => $this->isMonitorOnlyEditor($monitoring_activity),
+                'canMonitorSubmit' => $monitoring_activity->canMonitorSubmit() && $monitoring_activity->isAssignedMonitor(auth()->user()),
             ]
         );
     }
@@ -121,19 +192,33 @@ class MonitoringActivityController extends Controller
     {
         $this->authorize('update', MonitoringActivity::class);
         $this->authorizeEditAfterClosure($monitoring_activity);
+        $this->guardMonitorActivityUpdate($monitoring_activity);
+
+        if ($this->isMonitorOnlyEditor($monitoring_activity)) {
+            $validated = $request->validate($this->monitorValidationRules());
+            $validated['updated_by'] = auth()->id();
+            $monitoring_activity->update($validated);
+
+            return redirect()
+                ->route('dashboard.monitoring-activities.show', $monitoring_activity)
+                ->with('success', 'تم حفظ عمل المراقب بنجاح.');
+        }
 
         $validated = $request->validate($this->validationRules($monitoring_activity->id));
+
+        $validated['activity_role'] = $monitoring_activity->activity_role;
 
         if (empty($validated['reference_code'])) {
             $validated['reference_code'] = $monitoring_activity->reference_code;
         }
 
+        $validated = $this->normalizeWorkflowStatus($validated, $monitoring_activity);
         $validated['updated_by'] = auth()->id();
 
         $monitoring_activity->update($validated);
 
         return redirect()
-            ->route('dashboard.monitoring-activities.index')
+            ->route('dashboard.monitoring-activities.show', $monitoring_activity)
             ->with('success', 'تم تحديث النشاط الرقابي بنجاح.');
     }
 
@@ -146,6 +231,25 @@ class MonitoringActivityController extends Controller
         return redirect()
             ->route('dashboard.monitoring-activities.index')
             ->with('success', 'تم حذف النشاط الرقابي بنجاح.');
+    }
+
+    public function submitToDirector(MonitoringActivity $monitoring_activity): RedirectResponse
+    {
+        $this->authorize('update', MonitoringActivity::class);
+        $this->guardMonitorSubmit($monitoring_activity);
+
+        if ($monitoring_activity->activity_role === 'primary') {
+            abort(422, 'النشاط الأساسي يُدار عبر شاشة عمل المراقب في المشروع.');
+        }
+
+        $monitoring_activity->update([
+            'workflow_status' => 'pending_confirmation',
+            'updated_by' => auth()->id(),
+        ]);
+
+        return redirect()
+            ->route('dashboard.monitoring-activities.show', $monitoring_activity)
+            ->with('success', 'تم إرسال النشاط لمدير الرقابة — بانتظار تأكيد المرور.');
     }
 
     public function confirmPassage(MonitoringActivity $monitoring_activity): RedirectResponse
@@ -201,6 +305,94 @@ class MonitoringActivityController extends Controller
         if ($monitoringActivity->workflow_status === 'completed' && ! auth()->user()?->can('edit_ratings', MonitoringActivity::class)) {
             abort(403, 'لا يمكن تعديل نشاط مكتمل إلا من قبل مدير الرقابة العامة أو الإدارة العامة.');
         }
+    }
+
+    private function isMonitorOnlyEditor(MonitoringActivity $activity): bool
+    {
+        $user = auth()->user();
+
+        if (! $user || $user->super_admin || ! $activity->isAssignedMonitor($user)) {
+            return false;
+        }
+
+        return ! $user->can('assign_monitor', MonitoringActivity::class)
+            && ! $user->can('create', MonitoringActivity::class);
+    }
+
+    private function authorizeActivityManagement(): void
+    {
+        $user = auth()->user();
+
+        if ($user?->can('create', MonitoringActivity::class)
+            || $user?->can('assign_monitor', MonitoringActivity::class)) {
+            return;
+        }
+
+        abort(403);
+    }
+
+    private function guardMonitorActivityUpdate(MonitoringActivity $activity): void
+    {
+        if (! $this->isMonitorOnlyEditor($activity)) {
+            return;
+        }
+
+        if ($activity->activity_role === 'primary') {
+            abort(403, 'النشاط الأساسي يُدار عبر شاشة عمل المراقب في المشروع.');
+        }
+
+        if ($activity->workflow_status !== 'in_progress') {
+            abort(403, 'لا يمكن تعديل النشاط بعد إرساله لمدير الرقابة.');
+        }
+    }
+
+    private function guardMonitorSubmit(MonitoringActivity $activity): void
+    {
+        if (! $activity->isAssignedMonitor(auth()->user())) {
+            abort(403, 'هذا النشاط غير مُسنَد إليك.');
+        }
+
+        if (! $activity->canMonitorSubmit()) {
+            abort(422, 'حالة النشاط الحالية لا تسمح بالإرسال لمدير الرقابة.');
+        }
+    }
+
+    /** @param  array<string, mixed>  $validated */
+    private function normalizeWorkflowStatus(array $validated, ?MonitoringActivity $existing = null): array
+    {
+        $status = $validated['workflow_status'] ?? ($existing?->workflow_status ?? 'pending_monitor');
+
+        if (! empty($validated['monitor_person_id']) && $status === 'pending_monitor') {
+            $status = 'in_progress';
+        }
+
+        if (empty($validated['monitor_person_id']) && $status === 'in_progress' && ! $existing) {
+            $status = 'pending_monitor';
+        }
+
+        $validated['workflow_status'] = $status;
+
+        return $validated;
+    }
+
+    /** @return array<string, mixed> */
+    private function monitorValidationRules(): array
+    {
+        return [
+            'activity_date' => ['nullable', 'date'],
+            'activity_time' => ['nullable', 'date_format:H:i'],
+            'activity_type' => ['nullable', 'string'],
+            'subject' => ['nullable', 'string'],
+            'notes' => ['nullable', 'string'],
+            'field_problem' => ['required', 'boolean'],
+            'action_taken' => ['nullable', 'string'],
+            'execution_value' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'quality_value' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'closure_value' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'deduction_value' => ['nullable', 'numeric', 'max:0'],
+            'monitoring_method' => ['nullable', 'string'],
+            'monitoring_stage' => ['nullable', 'string'],
+        ];
     }
 
     private function applyMonitorScope(Builder $query): Builder
@@ -301,7 +493,6 @@ class MonitoringActivityController extends Controller
             'reference_code' => ['nullable', 'string', 'max:255', $uniqueRule],
             'source_type' => ['required', 'in:project,external,meeting'],
             'source_id' => ['nullable', 'integer', 'exists:projects,id', 'required_if:source_type,project'],
-            'activity_role' => ['required', 'in:primary,secondary'],
             'center_id' => ['nullable', 'exists:centers,id', 'required_without:source_id'],
             'department_id' => ['nullable', 'exists:departments,id', 'required_without:source_id'],
             'section_id' => ['nullable', 'exists:sections,id'],
@@ -327,6 +518,35 @@ class MonitoringActivityController extends Controller
             'workflow_status' => ['required', 'in:pending_monitor,in_progress,pending_confirmation,completed'],
             'is_passage_complete' => ['required', 'boolean'],
         ];
+    }
+
+    public function checkReferenceCode(Request $request)
+    {
+        $this->authorize('view', MonitoringActivity::class);
+
+        $sourceType = (string) $request->query('source_type', 'project');
+        $code = trim((string) $request->query('reference_code', ''));
+        $exceptId = $request->query('except_id');
+
+        if ($code === '') {
+            return response()->json([
+                'valid' => false,
+                'available' => false,
+                'message' => 'أدخل رمز النشاط.',
+                'suggested' => $this->generateReferenceCode($sourceType),
+            ]);
+        }
+
+        $exists = MonitoringActivity::where('reference_code', $code)
+            ->when(filled($exceptId), fn ($query) => $query->where('id', '!=', (int) $exceptId))
+            ->exists();
+
+        return response()->json([
+            'valid' => true,
+            'available' => ! $exists,
+            'message' => $exists ? 'رمز النشاط مستخدم مسبقاً.' : 'الرمز متاح.',
+            'suggested' => $exists ? $this->generateReferenceCode($sourceType) : null,
+        ]);
     }
 
     private function generateReferenceCode(string $sourceType): string

@@ -21,9 +21,32 @@
         <div class="alert alert-success">{{ session('success') }}</div>
     @endif
 
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+        <div>
+            <h4 class="mb-1">{{ $project->project_name }}</h4>
+            <p class="text-muted mb-0">
+                <span class="badge bg-label-{{ match($project->workflow_status) {
+                    'rejected' => 'danger',
+                    'passage_complete' => 'success',
+                    'pending_monitoring_confirmation' => 'warning',
+                    default => 'info',
+                } }}">{{ $statusLabels[$project->workflow_status] ?? $project->workflow_status }}</span>
+                · {{ $project->project_number }}
+            </p>
+        </div>
+        <div class="d-flex gap-2 flex-wrap">
+            @can('view', 'App\Models\Project')
+                <a href="{{ route('dashboard.projects.export-pdf', $project) }}" class="btn btn-outline-danger" target="_blank">
+                    <i class="bx bx-file-blank"></i> تصدير PDF
+                </a>
+            @endcan
+            <a href="{{ route('dashboard.projects.index') }}" class="btn btn-label-secondary">رجوع</a>
+        </div>
+    </div>
+
     <div class="card mb-4">
         <div class="card-header d-flex justify-content-between align-items-center">
-            <h5 class="mb-0">{{ $project->project_name }}</h5>
+            <h5 class="mb-0">ملخص المشروع</h5>
             <span class="badge bg-label-{{ match($project->workflow_status) {
                 'rejected' => 'danger',
                 'passage_complete' => 'success',

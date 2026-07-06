@@ -72,14 +72,23 @@ Route::group([
     ], ['except' => ['show']]);
 
     // Monitoring activities ************************
+    Route::get('monitoring-activities/check-reference-code', [MonitoringActivityController::class, 'checkReferenceCode'])
+        ->name('monitoring-activities.check-reference-code');
+
     Route::resources([
         'monitoring-activities' => MonitoringActivityController::class,
     ]);
 
     Route::post('monitoring-activities/{monitoring_activity}/confirm-passage', [MonitoringActivityController::class, 'confirmPassage'])
         ->name('monitoring-activities.confirm-passage');
+    Route::post('monitoring-activities/{monitoring_activity}/submit-to-director', [MonitoringActivityController::class, 'submitToDirector'])
+        ->name('monitoring-activities.submit-to-director');
     Route::post('monitoring-activities/{monitoring_activity}/reject', [MonitoringActivityController::class, 'reject'])
         ->name('monitoring-activities.reject');
+    Route::get('monitoring-activities/{monitoring_activity}/export-pdf', [MonitoringActivityController::class, 'exportPdf'])
+        ->name('monitoring-activities.export-pdf');
+    Route::get('monitoring-activities/{monitoring_activity}/export-excel', [MonitoringActivityController::class, 'exportExcel'])
+        ->name('monitoring-activities.export-excel');
 
     // Projects ************************
     Route::get('projects/check-project-number', [ProjectController::class, 'checkProjectNumber'])
@@ -88,6 +97,9 @@ Route::group([
     Route::resources([
         'projects' => ProjectController::class,
     ]);
+
+    Route::get('projects/{project}/export-pdf', [ProjectController::class, 'exportPdf'])
+        ->name('projects.export-pdf');
 
     Route::prefix('projects/{project}')->name('projects.')->group(function () {
         Route::post('submit-to-coordinator', [ProjectController::class, 'submitToCoordinator'])->name('submit-to-coordinator');

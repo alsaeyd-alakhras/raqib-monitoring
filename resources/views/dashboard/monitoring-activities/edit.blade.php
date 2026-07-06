@@ -4,4 +4,15 @@
         @method('put')
         @include('dashboard.monitoring-activities._form')
     </form>
+
+    @if ($canMonitorSubmit ?? false)
+        <div class="mt-3">
+            <form action="{{ route('dashboard.monitoring-activities.submit-to-director', $activity) }}" method="post" onsubmit="return confirm('إرسال النشاط لمدير الرقابة؟');">
+                @csrf
+                <button type="submit" class="btn btn-success">
+                    <i class="bx bx-send"></i> إرسال لمدير الرقابة
+                </button>
+            </form>
+        </div>
+    @endif
 </x-front-layout>
