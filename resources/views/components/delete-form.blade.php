@@ -6,7 +6,10 @@
 
 <form
     {{ $attributes->merge(['method' => 'post', 'class' => 'd-inline']) }}
-    onsubmit="return confirm(@js($confirmMessage ?? "هل أنت متأكد من حذف {$itemLabel}؟ لا يمكن التراجع."));"
+    action="{{ $action }}"
+    data-confirm="{{ $confirmMessage ?? "هل أنت متأكد من حذف {$itemLabel}؟ لا يمكن التراجع." }}"
+    data-confirm-title="تأكيد الحذف"
+    data-confirm-variant="danger"
 >
     @csrf
     @method('delete')

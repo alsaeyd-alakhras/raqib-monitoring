@@ -72,6 +72,8 @@ Route::group([
     ], ['except' => ['show']]);
 
     // Monitoring activities ************************
+    Route::get('monitoring-activities-filters/{column}', [MonitoringActivityController::class, 'getFilterOptions'])
+        ->name('monitoring-activities.filters');
     Route::get('monitoring-activities/check-reference-code', [MonitoringActivityController::class, 'checkReferenceCode'])
         ->name('monitoring-activities.check-reference-code');
 
@@ -91,6 +93,8 @@ Route::group([
         ->name('monitoring-activities.export-excel');
 
     // Projects ************************
+    Route::get('projects-filters/{column}', [ProjectController::class, 'getFilterOptions'])
+        ->name('projects.filters');
     Route::get('projects/check-project-number', [ProjectController::class, 'checkProjectNumber'])
         ->name('projects.check-project-number');
 

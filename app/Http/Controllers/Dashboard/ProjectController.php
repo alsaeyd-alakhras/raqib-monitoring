@@ -13,12 +13,14 @@ use App\Models\Person;
 use App\Models\Project;
 use App\Models\ProjectChecklistValue;
 use App\Models\Section;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 use Mccarlosen\LaravelMpdf\Facades\LaravelMpdf as PDF;
+use Yajra\DataTables\Facades\DataTables;
 
 class ProjectController extends Controller
 {
@@ -29,22 +31,105 @@ class ProjectController extends Controller
         'passage_complete', 'rejected',
     ];
 
-    public function index(): View
+    public function index(Request $request): View|JsonResponse
     {
         $this->authorize('view', Project::class);
 
-        $query = Project::with(['center', 'department', 'projectManager.department', 'coordinator', 'monitorPerson'])
-            ->orderBy('created_at', 'desc');
+        $query = Project::with(['center', 'department', 'projectManager', 'coordinator', 'monitorPerson', 'funder', 'primaryMonitoringActivity']);
         $query = $this->applyVisibilityScope($query);
 
-        $projects = $query->paginate(15);
+        if ($request->ajax()) {
+            if ($request->from_date) {
+                $query->whereDate('created_at', '>=', $request->from_date);
+            }
+            if ($request->to_date) {
+                $query->whereDate('created_at', '<=', $request->to_date);
+            }
+            if ($request->column_filters) {
+                $this->applyColumnFilters($query, $request->column_filters);
+            }
+            $this->applySort($query, $request->sort_column, $request->sort_direction);
+
+            $workflowLabels = Project::workflowStatusLabels();
+            $currentPerson = auth()->user()?->person;
+
+            $rows = $query->get()->map(function (Project $project) use ($workflowLabels, $currentPerson) {
+                $needsMyAction = $currentPerson && $project->needsActionFromPerson($currentPerson);
+
+                return [
+                    'id' => $project->id,
+                    'project_number' => $project->project_number ?? '-',
+                    'project_name' => $project->project_name,
+                    'project_name_display' => $needsMyAction
+                        ? $project->project_name . ' ⚡'
+                        : $project->project_name,
+                    'project_type' => $project->project_type ?? '-',
+                    'org_label' => trim(($project->center?->name ?? '-') . ' / ' . ($project->department?->name ?? '-')),
+                    'project_manager_name' => $project->projectManager?->name ?? '-',
+                    'coordinator_name' => $project->coordinatorDisplayName(),
+                    'coordinator_readiness_pct' => $project->coordinator_readiness_pct !== null
+                        ? number_format((float) $project->coordinator_readiness_pct, 1) . '%'
+                        : '-',
+                    'monitor_name' => $project->monitorPerson?->name ?? '-',
+                    'monitor_readiness_pct' => $project->monitor_readiness_pct !== null
+                        ? number_format((float) $project->monitor_readiness_pct, 1) . '%'
+                        : '-',
+                    'funder_name' => $project->funder?->name ?? '-',
+                    'workflow_status_label' => $workflowLabels[$project->workflow_status] ?? $project->workflow_status,
+                    'current_action_label' => $project->currentActionLabel(),
+                    'needs_my_action' => $needsMyAction,
+                ];
+            })->values();
+
+            return DataTables::of($rows)
+                ->addIndexColumn()
+                ->make(true);
+        }
 
         return view('dashboard.projects.index', [
-            'projects' => $projects,
-            'currentPerson' => auth()->user()?->person,
             'canViewCoordinatorColumnInList' => $this->userCanViewCoordinatorColumnInList(),
             'canViewMonitorColumnInList' => $this->userCanViewMonitorColumnInList(),
         ]);
+    }
+
+    public function getFilterOptions(Request $request, string $column): JsonResponse
+    {
+        $this->authorize('view', Project::class);
+
+        $query = Project::with(['center', 'department', 'projectManager', 'coordinator', 'monitorPerson', 'funder']);
+        $query = $this->applyVisibilityScope($query);
+
+        if ($request->from_date) {
+            $query->whereDate('created_at', '>=', $request->from_date);
+        }
+        if ($request->to_date) {
+            $query->whereDate('created_at', '<=', $request->to_date);
+        }
+        if ($request->active_filters) {
+            $this->applyColumnFilters($query, $request->active_filters);
+        }
+
+        $rows = $query->get();
+        $workflowLabels = Project::workflowStatusLabels();
+
+        $options = match ($column) {
+            'project_number' => $rows->pluck('project_number')->filter()->unique()->values()->toArray(),
+            'project_name' => $rows->pluck('project_name')->filter()->unique()->values()->toArray(),
+            'project_type' => $rows->pluck('project_type')->filter()->unique()->values()->toArray(),
+            'org_label' => $rows->map(fn ($p) => trim(($p->center?->name ?? '-') . ' / ' . ($p->department?->name ?? '-')))->unique()->values()->toArray(),
+            'project_manager_name' => $rows->pluck('projectManager.name')->filter()->unique()->values()->toArray(),
+            'coordinator_name' => $rows->map(fn ($p) => $p->coordinatorDisplayName())->unique()->values()->toArray(),
+            'coordinator_readiness_pct' => $rows->map(fn ($p) => $p->coordinator_readiness_pct !== null ? number_format((float) $p->coordinator_readiness_pct, 1) . '%' : null)->filter()->unique()->values()->toArray(),
+            'monitor_name' => $rows->pluck('monitorPerson.name')->filter()->unique()->values()->toArray(),
+            'monitor_readiness_pct' => $rows->map(fn ($p) => $p->monitor_readiness_pct !== null ? number_format((float) $p->monitor_readiness_pct, 1) . '%' : null)->filter()->unique()->values()->toArray(),
+            'funder_name' => $rows->pluck('funder.name')->filter()->unique()->values()->toArray(),
+            'workflow_status_label' => $rows->map(fn ($p) => $workflowLabels[$p->workflow_status] ?? $p->workflow_status)->unique()->values()->toArray(),
+            'current_action_label' => $rows->map(fn ($p) => $p->currentActionLabel())->unique()->values()->toArray(),
+            'created_at' => $rows->pluck('created_at')->filter()->map(fn ($d) => $d->format('Y-m-d'))->unique()->values()->toArray(),
+            default => [],
+        };
+
+        return response()->json($options);
     }
 
     public function create(): View
@@ -211,12 +296,16 @@ class ProjectController extends Controller
             ->with('success', 'تم تحديث المشروع بنجاح.');
     }
 
-    public function destroy(Project $project): RedirectResponse
+    public function destroy(Request $request, Project $project): RedirectResponse|JsonResponse
     {
         $this->authorize('delete', Project::class);
         $this->ensureProjectVisible($project);
 
         $project->delete();
+
+        if ($request->ajax() || $request->wantsJson()) {
+            return response()->json(['message' => 'تم حذف المشروع بنجاح.']);
+        }
 
         return redirect()
             ->route('dashboard.projects.index')
@@ -247,8 +336,8 @@ class ProjectController extends Controller
     public function fillCoordinator(Request $request, Project $project): RedirectResponse
     {
         $this->authorize('fill_coordinator', Project::class);
-        $this->guardCoordinatorFillStatus($project);
         $this->authorizeCoordinatorFill($project);
+        $this->guardCoordinatorFillStatus($project);
         $this->validateCoordinatorFillOnBehalf($request, $project);
 
         $this->saveChecklistValues($request, $project, 'coordinator_value');
@@ -418,8 +507,8 @@ class ProjectController extends Controller
     public function fillMonitor(Request $request, Project $project): RedirectResponse
     {
         $this->authorize('fill_monitor', Project::class);
-        $this->guardStatus($project, ['monitoring_in_progress']);
         $this->authorizeMonitorFill($project);
+        $this->guardStatus($project, ['monitoring_in_progress']);
 
         $this->saveChecklistValues($request, $project, 'monitor_value');
 
@@ -678,6 +767,9 @@ class ProjectController extends Controller
             'checkProjectNumberUrl' => route('dashboard.projects.check-project-number'),
             'exceptProjectId' => ($project && $project->exists) ? $project->id : null,
             'canFillCoordinatorInForm' => $this->canFillCoordinatorInForm(),
+            'canEditProjectBasicData' => auth()->user()?->can('update', Project::class),
+            'canEditCoordinatorChecklistInForm' => $this->canEditCoordinatorChecklistInForm(),
+            'lockTeamFieldsForMonitoringDirector' => auth()->user()?->person?->role === 'monitoring_director',
             'checklistGroups' => $this->activeChecklistGroups(),
             'checklistValues' => ($project && $project->exists)
                 ? $project->checklistValues()->get()->keyBy('checklist_item_id')
@@ -699,6 +791,11 @@ class ProjectController extends Controller
 
     private function canFillCoordinatorInForm(): bool
     {
+        return $this->canEditCoordinatorChecklistInForm();
+    }
+
+    private function canEditCoordinatorChecklistInForm(): bool
+    {
         $user = auth()->user();
 
         if (! $user) {
@@ -707,6 +804,10 @@ class ProjectController extends Controller
 
         if ($user->super_admin) {
             return true;
+        }
+
+        if ($user->person?->role === 'monitoring_director') {
+            return false;
         }
 
         return $user->can('fill_coordinator', Project::class);
@@ -729,7 +830,7 @@ class ProjectController extends Controller
 
     private function saveCoordinatorChecklistFromForm(Request $request, Project $project): void
     {
-        if (! $this->canFillCoordinatorInForm() || ! $this->shouldProcessCoordinatorChecklistInForm($request)) {
+        if (! $this->canEditCoordinatorChecklistInForm() || ! $this->shouldProcessCoordinatorChecklistInForm($request)) {
             return;
         }
 
@@ -957,6 +1058,10 @@ class ProjectController extends Controller
             return true;
         }
 
+        if ($user->person?->role === 'monitoring_director') {
+            return false;
+        }
+
         $personId = $user->person?->id;
         if (! $personId) {
             return false;
@@ -1067,9 +1172,19 @@ class ProjectController extends Controller
     {
         $rules = $this->validationRules($project?->id);
         $currentPerson = auth()->user()?->person;
+        $isMonitoringDirector = $currentPerson?->role === 'monitoring_director';
 
         if ($currentPerson?->role === 'project_manager') {
             unset($rules['project_manager_id']);
+        }
+
+        if ($isMonitoringDirector && $project) {
+            unset(
+                $rules['project_manager_id'],
+                $rules['coordinator_mode'],
+                $rules['coordinator_id'],
+                $rules['coordinator_external_name']
+            );
         }
 
         $validator = Validator::make($request->all(), $rules, [
@@ -1078,7 +1193,11 @@ class ProjectController extends Controller
             'project_number_seq.min' => 'رقم المشروع يجب أن يكون 1 على الأقل.',
         ]);
 
-        $validator->after(function ($validator) use ($request, $currentPerson, $project) {
+        $validator->after(function ($validator) use ($request, $currentPerson, $project, $isMonitoringDirector) {
+            if ($isMonitoringDirector && $project) {
+                return;
+            }
+
             $mode = $request->input('coordinator_mode');
             $managerId = $currentPerson?->role === 'project_manager'
                 ? $currentPerson->id
@@ -1135,6 +1254,15 @@ class ProjectController extends Controller
         });
 
         $validated = $validator->validate();
+
+        if ($isMonitoringDirector && $project) {
+            $validated['project_manager_id'] = $project->project_manager_id;
+            $validated['coordinator_id'] = $project->coordinator_id;
+            $validated['coordinator_external_name'] = $project->coordinator_external_name;
+
+            return $validated;
+        }
+
         $validated['project_manager_id'] = $this->resolveProjectManagerId($request, $validated);
         $validated = $this->normalizeCoordinatorInput($validated);
 
@@ -1199,6 +1327,147 @@ class ProjectController extends Controller
             'coordinator_readiness_pct' => null,
             'coordinator_filled_by' => null,
         ]);
+    }
+
+    private function applyColumnFilters($query, array $columnFilters): void
+    {
+        foreach ($columnFilters as $fieldName => $values) {
+            if (empty($values)) {
+                continue;
+            }
+
+            if ($fieldName === 'created_at' && is_array($values)) {
+                if (isset($values['from'])) {
+                    $query->whereDate('created_at', '>=', $values['from']);
+                }
+                if (isset($values['to'])) {
+                    $query->whereDate('created_at', '<=', $values['to']);
+                }
+
+                continue;
+            }
+
+            $filteredValues = array_values(array_filter((array) $values, fn ($v) => ! in_array($v, ['الكل', 'all', 'All'], true)));
+
+            if ($filteredValues === []) {
+                continue;
+            }
+
+            switch ($fieldName) {
+                case 'org_label':
+                    $query->where(function ($q) use ($filteredValues) {
+                        foreach ($filteredValues as $value) {
+                            $parts = array_map('trim', explode('/', (string) $value, 2));
+                            $center = $parts[0] ?? null;
+                            $department = $parts[1] ?? null;
+                            $q->orWhere(function ($sub) use ($center, $department) {
+                                if ($center && $center !== '-') {
+                                    $sub->whereHas('center', fn ($c) => $c->where('name', $center));
+                                }
+                                if ($department && $department !== '-') {
+                                    $sub->whereHas('department', fn ($d) => $d->where('name', $department));
+                                }
+                            });
+                        }
+                    });
+                    break;
+                case 'project_manager_name':
+                    $query->whereHas('projectManager', fn ($q) => $q->whereIn('name', $filteredValues));
+                    break;
+                case 'coordinator_name':
+                    $query->where(function ($q) use ($filteredValues) {
+                        $q->whereHas('coordinator', fn ($c) => $c->whereIn('name', $filteredValues))
+                            ->orWhereIn('coordinator_external_name', $filteredValues);
+                    });
+                    break;
+                case 'monitor_name':
+                    $query->whereHas('monitorPerson', fn ($q) => $q->whereIn('name', $filteredValues));
+                    break;
+                case 'funder_name':
+                    $query->whereHas('funder', fn ($q) => $q->whereIn('name', $filteredValues));
+                    break;
+                case 'workflow_status_label':
+                    $statusMap = array_flip(Project::workflowStatusLabels());
+                    $keys = array_values(array_filter(array_map(fn ($v) => $statusMap[$v] ?? null, $filteredValues)));
+                    if ($keys !== []) {
+                        $query->whereIn('workflow_status', $keys);
+                    }
+                    break;
+                case 'coordinator_readiness_pct':
+                    $nums = array_map(fn ($v) => (float) str_replace('%', '', $v), $filteredValues);
+                    $query->whereIn('coordinator_readiness_pct', $nums);
+                    break;
+                case 'monitor_readiness_pct':
+                    $nums = array_map(fn ($v) => (float) str_replace('%', '', $v), $filteredValues);
+                    $query->whereIn('monitor_readiness_pct', $nums);
+                    break;
+                default:
+                    $query->whereIn($fieldName, $filteredValues);
+                    break;
+            }
+        }
+    }
+
+    private function applySort($query, ?string $sortColumn, ?string $sortDirection): void
+    {
+        $dir = in_array(strtolower((string) $sortDirection), ['asc', 'desc'], true)
+            ? strtolower($sortDirection)
+            : null;
+
+        if (empty($sortColumn) || $dir === null) {
+            $query->orderBy('projects.created_at', 'desc');
+
+            return;
+        }
+
+        $baseTable = 'projects';
+
+        switch ($sortColumn) {
+            case 'project_number':
+                $query->orderBy("{$baseTable}.project_number", $dir);
+                break;
+            case 'project_name':
+                $query->orderBy("{$baseTable}.project_name", $dir);
+                break;
+            case 'project_type':
+                $query->orderBy("{$baseTable}.project_type", $dir);
+                break;
+            case 'coordinator_readiness_pct':
+                $query->orderBy("{$baseTable}.coordinator_readiness_pct", $dir);
+                break;
+            case 'monitor_readiness_pct':
+                $query->orderBy("{$baseTable}.monitor_readiness_pct", $dir);
+                break;
+            case 'workflow_status_label':
+                $query->orderBy("{$baseTable}.workflow_status", $dir);
+                break;
+            case 'created_at':
+                $query->orderBy("{$baseTable}.created_at", $dir);
+                break;
+            case 'project_manager_name':
+                $query->leftJoin('people as pm_people', "{$baseTable}.project_manager_id", '=', 'pm_people.id')
+                    ->select("{$baseTable}.*")
+                    ->orderBy('pm_people.name', $dir);
+                break;
+            case 'coordinator_name':
+                $query->leftJoin('people as coord_people', "{$baseTable}.coordinator_id", '=', 'coord_people.id')
+                    ->select("{$baseTable}.*")
+                    ->orderBy('coord_people.name', $dir);
+                break;
+            case 'monitor_name':
+                $query->leftJoin('people as mon_people', "{$baseTable}.monitor_person_id", '=', 'mon_people.id')
+                    ->select("{$baseTable}.*")
+                    ->orderBy('mon_people.name', $dir);
+                break;
+            case 'funder_name':
+                $query->leftJoin('funders', "{$baseTable}.funder_id", '=', 'funders.id')
+                    ->select("{$baseTable}.*")
+                    ->orderBy('funders.name', $dir);
+                break;
+            default:
+                $query->orderBy("{$baseTable}.created_at", 'desc');
+                break;
+        }
     }
 
     private function applyVisibilityScope($query)

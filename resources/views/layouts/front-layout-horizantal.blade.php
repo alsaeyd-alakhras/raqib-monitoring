@@ -59,4 +59,5 @@
 <div class="drag-target"></div>
 
 <!--/ Layout wrapper -->
+<x-confirm-modal />
 @include('layouts.partials.end')

@@ -25,7 +25,7 @@
     <div class="alert alert-{{ $activity->is_verified ? 'success' : 'warning' }} d-flex justify-content-between align-items-center">
         <span><strong>حالة التحقق:</strong> {{ $activity->verification_status }}</span>
         @if (! empty($canConfirmCompletion) && ! $activity->is_passage_complete && in_array($activity->workflow_status, ['pending_confirmation', 'in_progress']))
-            <form action="{{ route('dashboard.monitoring-activities.confirm-passage', $activity) }}" method="post" onsubmit="return confirm('تأكيد اكتمال المرور على هذا النشاط؟');">
+            <form action="{{ route('dashboard.monitoring-activities.confirm-passage', $activity) }}" method="post" data-confirm="تأكيد اكتمال المرور على هذا النشاط؟" data-confirm-title="تأكيد المرور" data-confirm-variant="primary">
                 @csrf
                 <button type="submit" class="btn btn-sm btn-success">تأكيد اكتمال المرور</button>
             </form>
@@ -47,7 +47,7 @@
                 <h5 class="mb-0 text-danger">رفض النشاط</h5>
             </div>
             <div class="card-body">
-                <form action="{{ route('dashboard.monitoring-activities.reject', $activity) }}" method="post" onsubmit="return confirm('هل أنت متأكد من رفض هذا النشاط؟');">
+                <form action="{{ route('dashboard.monitoring-activities.reject', $activity) }}" method="post" data-confirm="هل أنت متأكد من رفض هذا النشاط؟" data-confirm-title="تأكيد الرفض" data-confirm-variant="danger">
                     @csrf
                     <div class="row g-2">
                         <div class="col-md-5">

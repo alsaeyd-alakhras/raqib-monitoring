@@ -12,14 +12,13 @@
     ];
 @endphp
 <x-front-layout>
-    @if (session('success'))
-        <div class="alert alert-success">{{ session('success') }}</div>
-    @endif
     @if ($errors->has('monitor'))
         <div class="alert alert-danger">{{ $errors->first('monitor') }}</div>
     @endif
 
-    <div class="card mb-4">
+    @include('dashboard.projects._workflow_stepper')
+
+    <div class="card mb-4 mt-3">
         <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
             <h5 class="mb-0">عمل المراقب — {{ $project->project_name }}</h5>
             @if ($project->workflow_status === 'passage_complete')
@@ -30,16 +29,12 @@
                 <span class="badge bg-label-info">قيد التعبئة</span>
             @endif
         </div>
-        <div class="card-body">
-            <div class="row">
-                <div class="col-md-3"><strong>المركز/الدائرة/القسم:</strong> {{ $project->center?->name }} / {{ $project->department?->name }} / {{ $project->section?->name }}</div>
-                <div class="col-md-3"><strong>الممول:</strong> {{ $project->funder?->name ?? '-' }}</div>
-                <div class="col-md-3"><strong>المستفيدون المستهدفون:</strong> {{ $project->target_beneficiaries ?? '-' }}</div>
-                <div class="col-md-3"><strong>الميزانية المرصودة:</strong> {{ $project->allocated_budget ?? '-' }}</div>
-                <div class="col-md-6"><strong>الموقع:</strong> {{ $project->location ?? '-' }}</div>
-                <div class="col-md-3"><strong>عدد مناطق التنفيذ:</strong> {{ $project->execution_zones ?? '-' }}</div>
-                <div class="col-md-3"><strong>المدة المقدّرة:</strong> {{ $project->estimated_duration ?? '-' }}</div>
-            </div>
+        <div class="card-body pt-3">
+            @include('dashboard.projects._project_summary', [
+                'compactLayout' => true,
+                'showActions' => false,
+                'canViewMonitorData' => true,
+            ])
         </div>
     </div>
 
@@ -58,16 +53,7 @@
                         'valueField' => 'monitor_value',
                     ])
 
-                    <div class="row mt-3">
-                        <div class="col-md-6">
-                            <label class="form-label">ملاحظات المراقب (سطر لكل ملاحظة)</label>
-                            <textarea name="monitor_notes_text" class="form-control" rows="4">{{ implode("\n", $project->monitor_notes ?? []) }}</textarea>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label">توصيات المراقب (سطر لكل توصية)</label>
-                            <textarea name="monitor_recommendations_text" class="form-control" rows="4">{{ implode("\n", $project->monitor_recommendations ?? []) }}</textarea>
-                        </div>
-                    </div>
+                    @include('dashboard.projects._monitor_notes_editor', ['project' => $project])
 
                     <button type="submit" class="btn btn-outline-primary mt-3">
                         <i class="fa-solid fa-floppy-disk me-1"></i> حفظ التعديلات
@@ -80,16 +66,7 @@
                     'valueLabels' => $valueLabels,
                     'valueField' => 'monitor_value',
                 ])
-                @if ($project->monitor_notes)
-                    <div class="mt-3"><strong>ملاحظات المراقب:</strong>
-                        <ul class="mb-0">@foreach ($project->monitor_notes as $note)<li>{{ $note }}</li>@endforeach</ul>
-                    </div>
-                @endif
-                @if ($project->monitor_recommendations)
-                    <div class="mt-2"><strong>توصيات المراقب:</strong>
-                        <ul class="mb-0">@foreach ($project->monitor_recommendations as $rec)<li>{{ $rec }}</li>@endforeach</ul>
-                    </div>
-                @endif
+                @include('dashboard.projects._monitor_notes_display', ['project' => $project])
             @endif
         </div>
     </div>
@@ -121,7 +98,7 @@
                             — لا يمنع الإرسال.
                         </p>
                     @endif
-                    <form action="{{ route('dashboard.projects.confirm-monitoring', $project) }}" method="post" onsubmit="return confirm('إرسال عمل المراقب لمدير الرقابة العامة؟ لن تستطيع تعديل البيانات بعد الإرسال إلا بإرجاع المشروع.');">
+                    <form action="{{ route('dashboard.projects.confirm-monitoring', $project) }}" method="post" data-confirm="إرسال عمل المراقب لمدير الرقابة العامة؟ لن تستطيع تعديل البيانات بعد الإرسال إلا بإرجاع المشروع." data-confirm-title="تأكيد الإرسال" data-confirm-variant="primary">
                         @csrf
                         <button type="submit" class="btn btn-success btn-lg">
                             <i class="fa-solid fa-paper-plane me-1"></i> إرسال لمدير الرقابة العامة

@@ -43,7 +43,7 @@
                                             </a>
                                         @endcan
                                         @can('delete', 'App\Models\Person')
-                                            <form action="{{ route('dashboard.people.destroy', $person) }}" method="post" onsubmit="return confirm('هل أنت متأكد من حذف هذا الشخص؟');">
+                                            <form action="{{ route('dashboard.people.destroy', $person) }}" method="post" data-confirm="هل أنت متأكد من حذف هذا الشخص؟" data-confirm-title="تأكيد الحذف" data-confirm-variant="danger">
                                                 @csrf
                                                 @method('delete')
                                                 <button type="submit" class="btn btn-sm btn-outline-danger">

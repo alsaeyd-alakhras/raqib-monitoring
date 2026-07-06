@@ -553,7 +553,11 @@ class ProjectsSmokeTest extends TestCase
         $this->actingAs($deptManager->user);
         $this->get('/projects')
             ->assertOk()
-            ->assertSee('مشروع لمدير الدائرة');
+            ->assertSee('projects-table');
+
+        $this->getJson('/projects', ['X-Requested-With' => 'XMLHttpRequest'])
+            ->assertOk()
+            ->assertJsonFragment(['project_name' => 'مشروع لمدير الدائرة']);
 
         $this->get(route('dashboard.projects.show', $project))
             ->assertOk();
@@ -562,7 +566,11 @@ class ProjectsSmokeTest extends TestCase
             $this->actingAs($otherDeptManager->user);
             $this->get('/projects')
                 ->assertOk()
-                ->assertDontSee('مشروع لمدير الدائرة');
+                ->assertSee('projects-table');
+
+            $this->getJson('/projects', ['X-Requested-With' => 'XMLHttpRequest'])
+                ->assertOk()
+                ->assertJsonMissing(['project_name' => 'مشروع لمدير الدائرة']);
 
             $this->get(route('dashboard.projects.show', $project))
                 ->assertForbidden();
@@ -610,6 +618,151 @@ class ProjectsSmokeTest extends TestCase
         $this->assertSame('return_coordinator', $project->return_target);
 
         $project->delete();
+    }
+
+    public function test_project_datatable_ajax_delete_uses_model_id(): void
+    {
+        $user = User::first();
+        $user->super_admin = 1;
+        $this->actingAs($user);
+
+        $pm = Person::withRole('project_manager')->first() ?? Person::first();
+
+        $project = Project::create([
+            'project_name' => 'مشروع حذف datatable ' . uniqid(),
+            'project_number' => 'P-' . ($this->nextProjectNumberSeq() + 9000),
+            'project_manager_id' => $pm->id,
+            'coordinator_id' => $pm->id,
+            'workflow_status' => 'draft',
+            'created_by' => $user->id,
+            'updated_by' => $user->id,
+        ]);
+
+        $this->deleteJson(route('dashboard.projects.destroy', $project), [
+            '_token' => csrf_token(),
+        ])
+            ->assertOk()
+            ->assertJson(['message' => 'تم حذف المشروع بنجاح.']);
+
+        $this->assertDatabaseMissing('projects', ['id' => $project->id]);
+    }
+
+    public function test_monitoring_director_rbac_on_project(): void
+    {
+        $directorPerson = Person::where('role', 'monitoring_director')->whereNotNull('user_id')->first();
+        $this->assertNotNull($directorPerson, 'Expected a monitoring director demo user.');
+
+        $director = User::findOrFail($directorPerson->user_id);
+        foreach ([
+            'projects.view',
+            'projects.update',
+            'projects.reject',
+            'monitoringactivities.set_monitoring_info',
+            'monitoringactivities.assign_monitor',
+            'monitoringactivities.confirm_completion',
+        ] as $ability) {
+            $director->roles()->firstOrCreate(['role_name' => $ability]);
+        }
+
+        $pm = Person::withRole('project_manager')->first() ?? Person::first();
+        $coordinator = Person::withRole('coordinator')->first() ?? Person::skip(1)->first();
+        $monitor = Person::withRole('monitor')->first() ?? Person::skip(2)->first() ?? $coordinator;
+        $center = Center::first();
+        $department = Department::where('center_id', $center->id)->first();
+
+        $project = Project::create([
+            'project_name' => 'مشروع RBAC مدير الرقابة ' . uniqid(),
+            'project_number' => 'P-' . ($this->nextProjectNumberSeq() + random_int(8000, 8999)),
+            'project_manager_id' => $pm->id,
+            'coordinator_id' => $coordinator->id,
+            'center_id' => $center->id,
+            'department_id' => $department->id,
+            'workflow_status' => 'pending_monitoring_manager',
+            'coordinator_readiness_pct' => 100,
+            'created_by' => User::first()->id,
+            'updated_by' => User::first()->id,
+        ]);
+
+        foreach (\App\Models\ChecklistItem::where('is_active', true)->get() as $item) {
+            ProjectChecklistValue::create([
+                'project_id' => $project->id,
+                'checklist_item_id' => $item->id,
+                'coordinator_value' => 'ready',
+            ]);
+        }
+
+        $this->actingAs($director);
+
+        $this->get(route('dashboard.projects.edit', $project))
+            ->assertOk()
+            ->assertDontSee('ثالثاً — قائمة تحقق المنسق');
+        $this->get(route('dashboard.projects.show', $project))
+            ->assertOk()
+            ->assertSee('إعداد المراقبة')
+            ->assertSee('قائمة التحقق — عمود المنسق')
+            ->assertSee('عرض فقط');
+
+        $updatedName = 'مشروع محدّث من مدير الرقابة ' . uniqid();
+        $this->put(route('dashboard.projects.update', $project), [
+            'project_name' => $updatedName,
+            'project_number_seq' => Project::sequenceFromProjectNumber($project->project_number),
+            'project_manager_id' => $pm->id,
+            'coordinator_mode' => 'person',
+            'coordinator_id' => $coordinator->id,
+            'center_id' => $center->id,
+            'department_id' => $department->id,
+        ])->assertRedirect(route('dashboard.projects.show', $project));
+
+        $project->refresh();
+        $this->assertSame($updatedName, $project->project_name);
+        $this->assertSame((int) $coordinator->id, (int) $project->coordinator_id);
+
+        $checklist = [];
+        foreach (\App\Models\ChecklistItem::where('is_active', true)->get() as $item) {
+            $checklist[$item->id] = ['value' => 'not_ready'];
+        }
+        $this->post(route('dashboard.projects.fill-coordinator', $project), ['checklist' => $checklist])
+            ->assertForbidden();
+
+        $this->post(route('dashboard.projects.fill-monitor', $project), [
+            'checklist' => $checklist,
+        ])->assertForbidden();
+
+        $monitorUser = $monitor->user_id
+            ? User::findOrFail($monitor->user_id)
+            : tap(User::first(), function ($user) use ($monitor) {
+                $monitor->update(['user_id' => $user->id]);
+            });
+
+        foreach (['projects.view', 'projects.fill_monitor'] as $ability) {
+            $monitorUser->roles()->firstOrCreate(['role_name' => $ability]);
+        }
+
+        $monitorProject = Project::create([
+            'project_name' => 'مشروع RBAC مراقب ' . uniqid(),
+            'project_number' => 'P-' . ($this->nextProjectNumberSeq() + random_int(9000, 9999)),
+            'project_manager_id' => $pm->id,
+            'coordinator_id' => $coordinator->id,
+            'monitor_person_id' => $monitor->id,
+            'center_id' => $center->id,
+            'department_id' => $department->id,
+            'workflow_status' => 'monitoring_in_progress',
+            'created_by' => User::first()->id,
+            'updated_by' => User::first()->id,
+        ]);
+
+        $this->actingAs($monitorUser);
+        $this->get(route('dashboard.projects.show', $monitorProject))
+            ->assertRedirect(route('dashboard.projects.monitor-work', $monitorProject));
+
+        $this->get(route('dashboard.projects.monitor-work', $monitorProject))
+            ->assertOk()
+            ->assertDontSee('قائمة التحقق — عمود المنسق');
+
+        ProjectChecklistValue::where('project_id', $project->id)->delete();
+        $project->delete();
+        ProjectChecklistValue::where('project_id', $monitorProject->id)->delete();
+        $monitorProject->delete();
     }
 
 }

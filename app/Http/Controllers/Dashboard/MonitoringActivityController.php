@@ -13,35 +13,106 @@ use App\Models\Person;
 use App\Models\Project;
 use App\Models\Section;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 use Maatwebsite\Excel\Facades\Excel;
 use Mccarlosen\LaravelMpdf\Facades\LaravelMpdf as PDF;
+use Yajra\DataTables\Facades\DataTables;
 
 class MonitoringActivityController extends Controller
 {
-    public function index(Request $request): View
+    public function index(Request $request): View|JsonResponse
     {
         $this->authorize('view', MonitoringActivity::class);
 
         $query = MonitoringActivity::with(['center', 'department', 'section', 'monitorPerson', 'responsiblePerson']);
         $query = $this->applyMonitorScope($query);
-        $query = $this->applyFilters($query, $request);
 
-        $activities = $query
-            ->orderBy('created_at', 'desc')
-            ->paginate(15)
-            ->withQueryString();
+        if ($request->ajax()) {
+            if ($request->from_date) {
+                $query->whereDate('activity_date', '>=', $request->from_date);
+            }
+            if ($request->to_date) {
+                $query->whereDate('activity_date', '<=', $request->to_date);
+            }
+            if ($request->column_filters) {
+                $this->applyColumnFilters($query, $request->column_filters);
+            }
+            $this->applySort($query, $request->sort_column, $request->sort_direction);
+
+            $sourceTypes = $this->sourceTypeLabels();
+            $workflowLabels = MonitoringActivity::workflowStatusLabels();
+
+            $rows = $query->get()->map(function (MonitoringActivity $activity) use ($sourceTypes, $workflowLabels) {
+                return [
+                    'id' => $activity->id,
+                    'reference_code' => $activity->reference_code,
+                    'activity_date' => optional($activity->activity_date)->format('Y-m-d') ?? '-',
+                    'source_type_label' => $sourceTypes[$activity->source_type] ?? $activity->source_type,
+                    'activity_type' => $activity->activity_type ?? '-',
+                    'org_label' => trim(($activity->center?->name ?? '-') . ' / ' . ($activity->department?->name ?? '-')),
+                    'responsible_name' => $activity->responsiblePerson?->name ?? '-',
+                    'monitor_name' => $activity->monitorPerson?->name ?? '-',
+                    'subject' => $activity->subject ?? '-',
+                    'kpi_value' => $activity->kpi_value !== null ? number_format((float) $activity->kpi_value, 2) : '-',
+                    'kpi_rating' => $activity->kpi_rating ?? '-',
+                    'workflow_status_label' => $workflowLabels[$activity->workflow_status] ?? $activity->workflow_status,
+                    'is_verified' => $activity->is_verified,
+                    'verification_issues' => $activity->verificationIssues(),
+                ];
+            })->values();
+
+            return DataTables::of($rows)
+                ->addIndexColumn()
+                ->make(true);
+        }
 
         return view('dashboard.monitoring-activities.index', [
-            'activities' => $activities,
-            'filters' => $request->only(['source_type', 'workflow_status', 'monitor_person_id', 'date_from', 'date_to']),
             'sourceTypes' => $this->sourceTypeLabels(),
             'workflowStatusLabels' => MonitoringActivity::workflowStatusLabels(),
-            'people' => Person::orderBy('name')->get(),
         ]);
+    }
+
+    public function getFilterOptions(Request $request, string $column): JsonResponse
+    {
+        $this->authorize('view', MonitoringActivity::class);
+
+        $query = MonitoringActivity::with(['center', 'department', 'monitorPerson', 'responsiblePerson']);
+        $query = $this->applyMonitorScope($query);
+
+        if ($request->from_date) {
+            $query->whereDate('activity_date', '>=', $request->from_date);
+        }
+        if ($request->to_date) {
+            $query->whereDate('activity_date', '<=', $request->to_date);
+        }
+        if ($request->active_filters) {
+            $this->applyColumnFilters($query, $request->active_filters);
+        }
+
+        $rows = $query->get();
+        $sourceTypes = $this->sourceTypeLabels();
+        $workflowLabels = MonitoringActivity::workflowStatusLabels();
+
+        $options = match ($column) {
+            'activity_date' => $rows->pluck('activity_date')->filter()->map(fn ($d) => $d->format('Y-m-d'))->unique()->values()->toArray(),
+            'source_type_label' => $rows->map(fn ($a) => $sourceTypes[$a->source_type] ?? $a->source_type)->filter()->unique()->values()->toArray(),
+            'activity_type' => $rows->pluck('activity_type')->filter()->unique()->values()->toArray(),
+            'org_label' => $rows->map(fn ($a) => trim(($a->center?->name ?? '-') . ' / ' . ($a->department?->name ?? '-')))->unique()->values()->toArray(),
+            'responsible_name' => $rows->pluck('responsiblePerson.name')->filter()->unique()->values()->toArray(),
+            'monitor_name' => $rows->pluck('monitorPerson.name')->filter()->unique()->values()->toArray(),
+            'subject' => $rows->pluck('subject')->filter()->unique()->values()->toArray(),
+            'kpi_value' => $rows->map(fn ($a) => $a->kpi_value !== null ? number_format((float) $a->kpi_value, 2) : null)->filter()->unique()->values()->toArray(),
+            'kpi_rating' => $rows->pluck('kpi_rating')->filter()->unique()->values()->toArray(),
+            'workflow_status_label' => $rows->map(fn ($a) => $workflowLabels[$a->workflow_status] ?? $a->workflow_status)->unique()->values()->toArray(),
+            'reference_code' => $rows->pluck('reference_code')->filter()->unique()->values()->toArray(),
+            default => [],
+        };
+
+        return response()->json($options);
     }
 
     public function create(Request $request): View
@@ -222,11 +293,15 @@ class MonitoringActivityController extends Controller
             ->with('success', 'تم تحديث النشاط الرقابي بنجاح.');
     }
 
-    public function destroy(MonitoringActivity $monitoring_activity): RedirectResponse
+    public function destroy(Request $request, MonitoringActivity $monitoring_activity): RedirectResponse|JsonResponse
     {
         $this->authorize('delete', MonitoringActivity::class);
 
         $monitoring_activity->delete();
+
+        if ($request->ajax() || $request->wantsJson()) {
+            return response()->json(['message' => 'تم حذف النشاط الرقابي بنجاح.']);
+        }
 
         return redirect()
             ->route('dashboard.monitoring-activities.index')
@@ -420,6 +495,136 @@ class MonitoringActivityController extends Controller
         }
 
         return $query->whereRaw('1 = 0');
+    }
+
+    private function applyColumnFilters(Builder $query, array $columnFilters): void
+    {
+        foreach ($columnFilters as $fieldName => $values) {
+            if (empty($values)) {
+                continue;
+            }
+
+            if ($fieldName === 'activity_date' && is_array($values)) {
+                if (isset($values['from'])) {
+                    $query->whereDate('activity_date', '>=', $values['from']);
+                }
+                if (isset($values['to'])) {
+                    $query->whereDate('activity_date', '<=', $values['to']);
+                }
+
+                continue;
+            }
+
+            $filteredValues = array_values(array_filter((array) $values, fn ($v) => ! in_array($v, ['الكل', 'all', 'All'], true)));
+
+            if ($filteredValues === []) {
+                continue;
+            }
+
+            switch ($fieldName) {
+                case 'source_type_label':
+                    $sourceMap = array_flip($this->sourceTypeLabels());
+                    $keys = array_values(array_filter(array_map(fn ($v) => $sourceMap[$v] ?? null, $filteredValues)));
+                    if ($keys !== []) {
+                        $query->whereIn('source_type', $keys);
+                    }
+                    break;
+                case 'org_label':
+                    $query->where(function ($q) use ($filteredValues) {
+                        foreach ($filteredValues as $value) {
+                            $parts = array_map('trim', explode('/', (string) $value, 2));
+                            $center = $parts[0] ?? null;
+                            $department = $parts[1] ?? null;
+                            $q->orWhere(function ($sub) use ($center, $department) {
+                                if ($center && $center !== '-') {
+                                    $sub->whereHas('center', fn ($c) => $c->where('name', $center));
+                                }
+                                if ($department && $department !== '-') {
+                                    $sub->whereHas('department', fn ($d) => $d->where('name', $department));
+                                }
+                            });
+                        }
+                    });
+                    break;
+                case 'responsible_name':
+                    $query->whereHas('responsiblePerson', fn ($q) => $q->whereIn('name', $filteredValues));
+                    break;
+                case 'monitor_name':
+                    $query->whereHas('monitorPerson', fn ($q) => $q->whereIn('name', $filteredValues));
+                    break;
+                case 'workflow_status_label':
+                    $statusMap = array_flip(MonitoringActivity::workflowStatusLabels());
+                    $keys = array_values(array_filter(array_map(fn ($v) => $statusMap[$v] ?? null, $filteredValues)));
+                    if ($keys !== []) {
+                        $query->whereIn('workflow_status', $keys);
+                    }
+                    break;
+                case 'kpi_rating':
+                    $query->whereIn('kpi_rating', $filteredValues);
+                    break;
+                case 'kpi_value':
+                    $query->whereIn('kpi_value', array_map('floatval', $filteredValues));
+                    break;
+                default:
+                    $query->whereIn($fieldName, $filteredValues);
+                    break;
+            }
+        }
+    }
+
+    private function applySort(Builder $query, ?string $sortColumn, ?string $sortDirection): void
+    {
+        $dir = in_array(strtolower((string) $sortDirection), ['asc', 'desc'], true)
+            ? strtolower($sortDirection)
+            : null;
+
+        if (empty($sortColumn) || $dir === null) {
+            $query->orderBy('monitoring_activities.created_at', 'desc');
+
+            return;
+        }
+
+        $baseTable = 'monitoring_activities';
+
+        switch ($sortColumn) {
+            case 'activity_date':
+                $query->orderBy("{$baseTable}.activity_date", $dir);
+                break;
+            case 'reference_code':
+                $query->orderBy("{$baseTable}.reference_code", $dir);
+                break;
+            case 'source_type_label':
+                $query->orderBy("{$baseTable}.source_type", $dir);
+                break;
+            case 'activity_type':
+                $query->orderBy("{$baseTable}.activity_type", $dir);
+                break;
+            case 'subject':
+                $query->orderBy("{$baseTable}.subject", $dir);
+                break;
+            case 'kpi_value':
+                $query->orderBy("{$baseTable}.kpi_value", $dir);
+                break;
+            case 'kpi_rating':
+                $query->orderBy("{$baseTable}.kpi_rating", $dir);
+                break;
+            case 'workflow_status_label':
+                $query->orderBy("{$baseTable}.workflow_status", $dir);
+                break;
+            case 'responsible_name':
+                $query->leftJoin('people as responsible_people', "{$baseTable}.responsible_person_id", '=', 'responsible_people.id')
+                    ->select("{$baseTable}.*")
+                    ->orderBy('responsible_people.name', $dir);
+                break;
+            case 'monitor_name':
+                $query->leftJoin('people as monitor_people', "{$baseTable}.monitor_person_id", '=', 'monitor_people.id')
+                    ->select("{$baseTable}.*")
+                    ->orderBy('monitor_people.name', $dir);
+                break;
+            default:
+                $query->orderBy("{$baseTable}.created_at", 'desc');
+                break;
+        }
     }
 
     private function applyFilters(Builder $query, Request $request): Builder

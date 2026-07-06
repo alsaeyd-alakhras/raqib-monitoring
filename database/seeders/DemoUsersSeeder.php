@@ -153,6 +153,7 @@ class DemoUsersSeeder extends Seeder
                 'job_title' => 'مدير الرقابة العامة',
                 'abilities' => [
                     'projects.view',
+                    'projects.update',
                     'projects.reject',
                     'monitoringactivities.view',
                     'monitoringactivities.create',

@@ -18,7 +18,7 @@
                 <a href="{{ route('dashboard.monitoring-activities.edit', $activity) }}" class="btn btn-outline-primary">تعديل</a>
             @endcan
             @if ($canMonitorSubmit ?? false)
-                <form action="{{ route('dashboard.monitoring-activities.submit-to-director', $activity) }}" method="post" class="d-inline" onsubmit="return confirm('إرسال النشاط لمدير الرقابة؟');">
+                <form action="{{ route('dashboard.monitoring-activities.submit-to-director', $activity) }}" method="post" class="d-inline" data-confirm="إرسال النشاط لمدير الرقابة؟" data-confirm-title="تأكيد الإرسال" data-confirm-variant="primary">
                     @csrf
                     <button type="submit" class="btn btn-success">
                         <i class="bx bx-send"></i> إرسال لمدير الرقابة

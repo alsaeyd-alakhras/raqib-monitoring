@@ -7,7 +7,7 @@
 
     @if ($canMonitorSubmit ?? false)
         <div class="mt-3">
-            <form action="{{ route('dashboard.monitoring-activities.submit-to-director', $activity) }}" method="post" onsubmit="return confirm('إرسال النشاط لمدير الرقابة؟');">
+            <form action="{{ route('dashboard.monitoring-activities.submit-to-director', $activity) }}" method="post" data-confirm="إرسال النشاط لمدير الرقابة؟" data-confirm-title="تأكيد الإرسال" data-confirm-variant="primary">
                 @csrf
                 <button type="submit" class="btn btn-success">
                     <i class="bx bx-send"></i> إرسال لمدير الرقابة

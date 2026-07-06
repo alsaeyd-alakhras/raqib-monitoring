@@ -31,7 +31,7 @@
                                             </a>
                                         @endcan
                                         @can('delete', 'App\Models\Funder')
-                                            <form action="{{ route('dashboard.funders.destroy', $funder) }}" method="post" onsubmit="return confirm('هل أنت متأكد من حذف هذه الجهة الممولة؟');">
+                                            <form action="{{ route('dashboard.funders.destroy', $funder) }}" method="post" data-confirm="هل أنت متأكد من حذف هذه الجهة الممولة؟" data-confirm-title="تأكيد الحذف" data-confirm-variant="danger">
                                                 @csrf
                                                 @method('delete')
                                                 <button type="submit" class="btn btn-sm btn-outline-danger">

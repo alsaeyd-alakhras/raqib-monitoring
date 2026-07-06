@@ -40,10 +40,10 @@
                                     @endcan
 
                                     @can('delete', \App\Models\Section::class)
-                                        <form action="{{ route('dashboard.sections.destroy', $section) }}" method="POST" class="d-inline">
+                                        <form action="{{ route('dashboard.sections.destroy', $section) }}" method="POST" class="d-inline" data-confirm="هل أنت متأكد من حذف هذه الشعبة؟" data-confirm-title="تأكيد الحذف" data-confirm-variant="danger">
                                             @csrf
                                             @method('DELETE')
-                                            <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('هل أنت متأكد من حذف هذه الشعبة؟')">
+                                            <button type="submit" class="btn btn-sm btn-outline-danger">
                                                 حذف
                                             </button>
                                         </form>

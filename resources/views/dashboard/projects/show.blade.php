@@ -17,10 +17,6 @@
     $canUpdate = auth()->user()?->can('update', 'App\Models\Project');
 @endphp
 <x-front-layout>
-    @if (session('success'))
-        <div class="alert alert-success">{{ session('success') }}</div>
-    @endif
-
     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
         <div>
             <h4 class="mb-1">{{ $project->project_name }}</h4>
@@ -69,7 +65,7 @@
                     @endif
                 </div>
             @endif
-            @include('dashboard.projects._project_summary')
+            @include('dashboard.projects._project_summary', ['compactLayout' => true])
         </div>
     </div>
 
@@ -77,6 +73,9 @@
     <div class="card mb-4">
         <div class="card-header"><h5 class="mb-0">سير العمل</h5></div>
         <div class="card-body">
+            @include('dashboard.projects._workflow_stepper')
+
+            <div class="workflow-actions-panel mt-4">
             @if ($project->workflow_status === 'pending_dept_manager')
                 <div class="alert alert-info py-2 mb-3">
                     المشروع بانتظار موافقة
@@ -119,98 +118,6 @@
                 </div>
             @endif
 
-            @if ($project->workflow_status === 'pending_monitoring_manager' && ($canSetMonitoringInfo || $canAssignMonitor))
-                @if ($canSetMonitoringInfo)
-                <form action="{{ route('dashboard.projects.set-monitoring-info', $project) }}" method="post" class="row g-2 align-items-end mb-3">
-                    @csrf
-                    <div class="col-md-3">
-                        <label class="form-label">طريقة المراقبة</label>
-                        <select name="monitoring_method" class="form-select">
-                            <option value="">إختر القيمة</option>
-                            @foreach ($monitoringMethods as $method)
-                                <option value="{{ $method }}" @selected($project->monitoring_method === $method)>{{ $method }}</option>
-                            @endforeach
-                        </select>
-                    </div>
-                    <div class="col-md-3">
-                        <label class="form-label">مرحلة المراقبة</label>
-                        <select name="monitoring_stage" class="form-select">
-                            <option value="">إختر القيمة</option>
-                            @foreach ($monitoringStages as $stage)
-                                <option value="{{ $stage }}" @selected($project->monitoring_stage === $stage)>{{ $stage }}</option>
-                            @endforeach
-                        </select>
-                    </div>
-                    <div class="col-md-3">
-                        <button type="submit" class="btn btn-outline-primary">حفظ طريقة/مرحلة المراقبة</button>
-                    </div>
-                </form>
-                @endif
-
-                @if ($canAssignMonitor)
-                <form action="{{ route('dashboard.projects.assign-monitor', $project) }}" method="post" class="row g-2 align-items-end">
-                    @csrf
-                    <div class="col-md-4">
-                        <label class="form-label">تعيين المراقب</label>
-                        <select name="monitor_person_id" class="form-select" required>
-                            <option value="">إختر القيمة</option>
-                            @foreach ($monitors as $person)
-                                <option value="{{ $person->id }}" @selected($project->monitor_person_id == $person->id)>{{ $person->name }}</option>
-                            @endforeach
-                        </select>
-                    </div>
-                    <div class="col-md-3">
-                        <label class="form-label">تاريخ المراقبة</label>
-                        <input type="date" name="monitoring_date" class="form-control" value="{{ $project->monitoring_date?->format('Y-m-d') }}">
-                    </div>
-                    <div class="col-md-3">
-                        <button type="submit" class="btn btn-success">تعيين وبدء المراقبة</button>
-                    </div>
-                </form>
-                @endif
-            @endif
-
-            @if ($project->workflow_status === 'pending_monitoring_manager' && ($canRejectThisProject ?? false))
-                <div class="mt-3">
-                    <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#projectRejectModal">
-                        رفض المشروع
-                    </button>
-                </div>
-            @endif
-
-            @if ($project->workflow_status === 'monitoring_in_progress')
-                <div class="d-flex flex-wrap align-items-center gap-2">
-                    @if ($isAssignedMonitor ?? false)
-                        <a href="{{ route('dashboard.projects.monitor-work', $project) }}" class="btn btn-outline-primary">شاشة عمل المراقب</a>
-                    @endif
-                    @if (($canViewMonitorData ?? false) && $project->readiness_status)
-                        <span class="text-muted small">تقييم الجاهزية: {{ $readinessStatusLabels[$project->readiness_status] ?? '-' }}</span>
-                    @endif
-                    @if ($canRejectThisProject ?? false)
-                        <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#projectRejectModal">
-                            رفض المشروع
-                        </button>
-                    @endif
-                </div>
-            @endif
-
-            @if ($project->workflow_status === 'pending_monitoring_confirmation')
-                <div class="alert alert-warning py-2 mb-3">
-                    المراقب <strong>{{ $project->monitorPerson?->name ?? '—' }}</strong> أنهى عمله وأرسل المشروع — بانتظار تأكيد المرور من مدير الرقابة العامة.
-                </div>
-                @if ($canConfirmPassageThisProject ?? false)
-                    <form action="{{ route('dashboard.projects.confirm-passage', $project) }}" method="post" class="d-inline" onsubmit="return confirm('تأكيد المرور على المشروع وإغلاق دورة المراقبة؟');">
-                        @csrf
-                        <button type="submit" class="btn btn-success btn-lg">تأكيد المرور — إتمام المشروع</button>
-                    </form>
-                @endif
-                @if ($canRejectThisProject ?? false)
-                    <button type="button" class="btn btn-outline-danger ms-2" data-bs-toggle="modal" data-bs-target="#projectRejectModal">
-                        رفض المشروع
-                    </button>
-                @endif
-            @endif
-
             @if ($project->workflow_status === 'passage_complete')
                 <div class="alert alert-success mb-0">
                     <strong>تم المرور على المشروع بنجاح.</strong> دورة المراقبة مكتملة ولا يلزم أي إجراء إضافي.
@@ -229,8 +136,20 @@
                     <div><strong>رُفض بتاريخ:</strong> {{ $project->rejected_at }}</div>
                 </div>
             @endif
+
+            </div>{{-- /.workflow-actions-panel --}}
         </div>
     </div>
+
+    @if ($project->workflow_status === 'pending_monitoring_manager' && (($canSetMonitoringInfo ?? false) || ($canAssignMonitor ?? false)))
+        @include('dashboard.projects._monitoring_setup_panel')
+    @endif
+
+    @if (in_array($project->workflow_status, ['monitoring_in_progress', 'pending_monitoring_confirmation'], true))
+        @include('dashboard.projects._monitoring_status_panel', [
+            'readinessStatusLabels' => $readinessStatusLabels,
+        ])
+    @endif
 
     @include('dashboard.projects._reject_modal')
 
@@ -253,6 +172,9 @@
         <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
             <h5 class="mb-0">قائمة التحقق — عمود المنسق</h5>
             <div class="d-flex align-items-center gap-2 flex-wrap">
+                @if (! ($canManageCoordinatorColumn ?? false))
+                    <span class="badge bg-label-secondary">عرض فقط</span>
+                @endif
                 @if ($project->coordinator_filled_by)
                     <span class="badge bg-label-warning">عُبّئ نيابةً: {{ $project->coordinatorFilledByUser?->name }}</span>
                 @elseif ($coordinatorFillActorLabel ?? null)
@@ -323,9 +245,14 @@
     {{-- قائمة التحقق — عمود المراقب (عرض فقط هنا، التعديل من شاشة المراقب المعزولة) --}}
     @if ($canViewMonitorData ?? false)
     <div class="card mb-4">
-        <div class="card-header d-flex justify-content-between align-items-center">
+        <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
             <h5 class="mb-0">قائمة التحقق — عمود المراقب</h5>
-            <span>نسبة الجاهزية: {{ $project->monitor_readiness_pct !== null ? $project->monitor_readiness_pct . '%' : '-' }}</span>
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+                @if (! ($isAssignedMonitor ?? false))
+                    <span class="badge bg-label-secondary">عرض فقط — التعديل من شاشة المراقب</span>
+                @endif
+                <span>نسبة الجاهزية: {{ $project->monitor_readiness_pct !== null ? $project->monitor_readiness_pct . '%' : '-' }}</span>
+            </div>
         </div>
         <div class="card-body">
             @include('dashboard.projects._checklist_display', [
@@ -334,16 +261,7 @@
                 'valueLabels' => $valueLabels,
                 'valueField' => 'monitor_value',
             ])
-            @if ($project->monitor_notes)
-                <div><strong>ملاحظات المراقب:</strong>
-                    <ul>@foreach ($project->monitor_notes as $note)<li>{{ $note }}</li>@endforeach</ul>
-                </div>
-            @endif
-            @if ($project->monitor_recommendations)
-                <div><strong>توصيات المراقب:</strong>
-                    <ul>@foreach ($project->monitor_recommendations as $rec)<li>{{ $rec }}</li>@endforeach</ul>
-                </div>
-            @endif
+            @include('dashboard.projects._monitor_notes_display', ['project' => $project])
         </div>
     </div>
     @endif

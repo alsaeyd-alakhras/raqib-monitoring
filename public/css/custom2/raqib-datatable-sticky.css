@@ -1,0 +1,267 @@
+/**
+ * Raqib DataTables — sticky columns (RTL)
+ * sticky-r1..sticky-rN = right-pinned, sticky-l = left-pinned delete col.
+ * Do NOT put enhanced-sticky on individual cells.
+ */
+
+:root {
+    --raqib-col-index-w: 36px;
+    --raqib-col-icon-w: 46px;
+    --raqib-col-verify-w: 44px;
+    --raqib-col-code-w: 96px;
+    --raqib-header-bg: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 50%, var(--tertiary-color) 100%);
+}
+
+/* Page layout — table box fills viewport, scroll stays inside */
+.raqib-dt-layout {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 190px);
+    max-height: calc(100vh - 190px);
+    min-height: 420px;
+    overflow: hidden;
+    max-width: 100%;
+}
+
+.raqib-dt-layout .enhanced-card-body,
+.raqib-dt-layout .enhanced-card-body > .col-12 {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.table-container.raqib-table-container {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden !important;
+    width: 100%;
+    max-width: 100%;
+    border-radius: 15px;
+}
+
+.table-container.raqib-table-container .dataTables_wrapper {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    width: 100%;
+}
+
+.table-container.raqib-table-container .dataTables_wrapper > .top,
+.table-container.raqib-table-container .dataTables_wrapper > .bottom {
+    flex-shrink: 0;
+}
+
+.table-container.raqib-table-container .dataTables_wrapper .table-responsive {
+    flex: 1;
+    min-height: 0;
+    overflow: auto !important;
+    -webkit-overflow-scrolling: touch;
+}
+
+/* display:block on enhanced-sticky breaks thead — restore table layout */
+table.enhanced-sticky.raqib-dt {
+    display: table !important;
+    table-layout: auto;
+    width: 100% !important;
+    min-width: max-content;
+    height: auto !important;
+    overflow: visible !important;
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+table.enhanced-sticky.raqib-dt thead {
+    position: static !important;
+    display: table-header-group !important;
+    background: var(--raqib-header-bg) !important;
+    box-shadow: 0 4px 15px rgba(30, 46, 79, 0.25) !important;
+}
+
+table.enhanced-sticky.raqib-dt tbody {
+    display: table-row-group !important;
+}
+
+table.enhanced-sticky.raqib-dt thead tr,
+table.enhanced-sticky.raqib-dt tbody tr {
+    display: table-row !important;
+}
+
+/* All header cells stick vertically; pinned cols also stick horizontally */
+table.enhanced-sticky.raqib-dt thead th {
+    position: sticky !important;
+    top: 0;
+    z-index: 5;
+    background: transparent !important;
+}
+
+table.enhanced-sticky.raqib-dt thead th[class*="sticky-r"],
+table.enhanced-sticky.raqib-dt tbody td[class*="sticky-r"],
+table.enhanced-sticky.raqib-dt thead th.sticky-l,
+table.enhanced-sticky.raqib-dt tbody td.sticky-l {
+    position: sticky !important;
+    box-sizing: border-box !important;
+}
+
+table.enhanced-sticky.raqib-dt thead th[class*="sticky-r"],
+table.enhanced-sticky.raqib-dt thead th.sticky-l {
+    z-index: 11;
+    background: var(--raqib-header-bg) !important;
+}
+
+table.enhanced-sticky.raqib-dt tbody td[class*="sticky-r"],
+table.enhanced-sticky.raqib-dt tbody td.sticky-l {
+    z-index: 6;
+}
+
+table.enhanced-sticky.raqib-dt thead th.sticky-l,
+table.enhanced-sticky.raqib-dt tbody td.sticky-l {
+    left: 0;
+    box-shadow: 3px 0 8px rgba(0, 0, 0, 0.06);
+}
+
+/* Compact widths */
+table.raqib-dt .col-index {
+    width: var(--raqib-col-index-w) !important;
+    min-width: var(--raqib-col-index-w) !important;
+    max-width: var(--raqib-col-index-w) !important;
+    padding: 6px 2px !important;
+}
+
+table.raqib-dt .col-icon {
+    width: var(--raqib-col-icon-w) !important;
+    min-width: var(--raqib-col-icon-w) !important;
+    max-width: var(--raqib-col-icon-w) !important;
+    padding: 6px 4px !important;
+    text-align: center !important;
+}
+
+table.raqib-dt .col-verify {
+    width: var(--raqib-col-verify-w) !important;
+    min-width: var(--raqib-col-verify-w) !important;
+    max-width: var(--raqib-col-verify-w) !important;
+    padding: 6px 2px !important;
+    text-align: center !important;
+}
+
+table.raqib-dt .col-code {
+    width: var(--raqib-col-code-w) !important;
+    min-width: var(--raqib-col-code-w) !important;
+    max-width: var(--raqib-col-code-w) !important;
+    padding: 6px 4px !important;
+    text-align: center !important;
+    font-size: 13px !important;
+}
+
+table.raqib-dt .col-code .code-cell {
+    display: block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: default;
+}
+
+table.raqib-dt .col-icon .action-btn {
+    margin: 0 auto;
+    padding: 6px 8px !important;
+    min-width: 34px;
+    min-height: 34px;
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    line-height: 1;
+}
+
+table.raqib-dt .btn-view {
+    background: linear-gradient(135deg, #6f42c1 0%, #5a32a3 100%);
+    color: #fff;
+    box-shadow: 0 3px 10px rgba(111, 66, 193, 0.3);
+}
+
+table.raqib-dt thead th.col-icon,
+table.raqib-dt thead th.col-index,
+table.raqib-dt thead th.col-verify {
+    padding: 12px 4px !important;
+}
+
+table.raqib-dt thead th.col-code {
+    padding: 10px 4px !important;
+    white-space: nowrap;
+}
+
+table.raqib-dt thead th.col-code .enhanced-filter-dropdown {
+    flex-shrink: 0;
+}
+
+table.raqib-dt thead th.col-icon i,
+table.raqib-dt thead th.col-verify i {
+    font-size: 14px;
+    opacity: 0.95;
+}
+
+/* Horizontal pin offsets — projects: # | view | edit | number */
+table.raqib-dt.projects-dt .sticky-r1 { right: 0 !important; }
+table.raqib-dt.projects-dt .sticky-r2 { right: var(--raqib-col-index-w) !important; }
+table.raqib-dt.projects-dt .sticky-r3 { right: calc(var(--raqib-col-index-w) + var(--raqib-col-icon-w)) !important; }
+table.raqib-dt.projects-dt .sticky-r4 { right: calc(var(--raqib-col-index-w) + 2 * var(--raqib-col-icon-w)) !important; }
+
+/* monitoring: # | verify | view | edit | code */
+table.raqib-dt.monitoring-dt .sticky-r1 { right: 0 !important; }
+table.raqib-dt.monitoring-dt .sticky-r2 { right: var(--raqib-col-index-w) !important; }
+table.raqib-dt.monitoring-dt .sticky-r3 { right: calc(var(--raqib-col-index-w) + var(--raqib-col-verify-w)) !important; }
+table.raqib-dt.monitoring-dt .sticky-r4 { right: calc(var(--raqib-col-index-w) + var(--raqib-col-verify-w) + var(--raqib-col-icon-w)) !important; }
+table.raqib-dt.monitoring-dt .sticky-r5 { right: calc(var(--raqib-col-index-w) + var(--raqib-col-verify-w) + 2 * var(--raqib-col-icon-w)) !important; }
+
+/* Body sticky backgrounds */
+table.raqib-dt tbody td[class*="sticky-r"],
+table.raqib-dt tbody td.sticky-l {
+    background: #fff !important;
+}
+
+table.raqib-dt tbody tr:nth-child(even) td[class*="sticky-r"],
+table.raqib-dt tbody tr:nth-child(even) td.sticky-l {
+    background: #f8f9fa !important;
+}
+
+table.raqib-dt tbody tr:hover td[class*="sticky-r"],
+table.raqib-dt tbody tr:hover td.sticky-l {
+    background: #eef2f9 !important;
+}
+
+table.raqib-dt tbody tr.needs-action td[class*="sticky-r"],
+table.raqib-dt tbody tr.needs-action td.sticky-l {
+    background: rgba(255, 193, 7, 0.15) !important;
+}
+
+table.raqib-dt tbody td[class*="sticky-r"],
+table.raqib-dt tbody td.sticky-l {
+    box-shadow: -2px 0 6px rgba(0, 0, 0, 0.04);
+}
+
+table.raqib-dt .sticky-r4,
+table.raqib-dt .sticky-r5 {
+    box-shadow: -3px 0 8px rgba(0, 0, 0, 0.06);
+}
+
+/* Verification icon */
+table.raqib-dt .verify-icon {
+    font-size: 1.05rem;
+    cursor: default;
+    line-height: 1;
+}
+
+table.raqib-dt .verify-icon.ok {
+    color: #28a745;
+}
+
+table.raqib-dt .verify-icon.fail {
+    color: #dc3545;
+    cursor: help;
+}

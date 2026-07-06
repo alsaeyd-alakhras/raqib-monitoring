@@ -38,10 +38,10 @@
                                     @endcan
 
                                     @can('delete', \App\Models\Department::class)
-                                        <form action="{{ route('dashboard.departments.destroy', $department) }}" method="POST" class="d-inline">
+                                        <form action="{{ route('dashboard.departments.destroy', $department) }}" method="POST" class="d-inline" data-confirm="هل أنت متأكد من حذف هذا القسم؟" data-confirm-title="تأكيد الحذف" data-confirm-variant="danger">
                                             @csrf
                                             @method('DELETE')
-                                            <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('هل أنت متأكد من حذف هذا القسم؟')">
+                                            <button type="submit" class="btn btn-sm btn-outline-danger">
                                                 حذف
                                             </button>
                                         </form>

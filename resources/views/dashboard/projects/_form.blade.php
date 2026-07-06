@@ -1,6 +1,7 @@
 @php
     $selectedCoordinatorMode = old('coordinator_mode', $coordinatorMode ?? 'person');
     $isEditing = isset($project) && $project->exists;
+    $lockTeamFields = (bool) ($lockTeamFieldsForMonitoringDirector ?? false);
     $projectNumberSeq = old(
         'project_number_seq',
         $isEditing
@@ -99,6 +100,10 @@
                     <label class="form-label">مدير المشروع</label>
                     <input type="text" class="form-control" value="{{ $currentPerson->name }}" readonly>
                     <input type="hidden" name="project_manager_id" value="{{ $currentPerson->id }}">
+                @elseif ($lockTeamFields && $isEditing)
+                    <label class="form-label">مدير المشروع</label>
+                    <input type="text" class="form-control" value="{{ $project->projectManager?->name ?? '—' }}" readonly>
+                    <input type="hidden" name="project_manager_id" value="{{ $project->project_manager_id }}">
                 @else
                     <x-form.select
                         name="project_manager_id"
@@ -113,6 +118,26 @@
 
             {{-- المنسق --}}
             <div class="mb-4 col-md-12">
+                @if ($lockTeamFields && $isEditing)
+                    <label class="form-label d-block">المنسق</label>
+                    <div class="alert alert-secondary py-2 mb-0">
+                        @if ($project->isSelfCoordinator())
+                            <strong>{{ $project->projectManager?->name }}</strong> — مدير المشروع / منسق
+                        @elseif (filled($project->coordinator_external_name))
+                            <strong>{{ $project->coordinator_external_name }}</strong> — منسق خارجي
+                        @else
+                            <strong>{{ $project->coordinator?->name ?? '—' }}</strong> — منسق من النظام
+                        @endif
+                        <span class="d-block small text-muted mt-1">لا يمكن تعديل الفريق أو المنسق من حساب مدير الرقابة.</span>
+                    </div>
+                    <input type="hidden" name="coordinator_mode" value="{{ $project->coordinatorMode() === 'none' ? 'person' : $project->coordinatorMode() }}">
+                    @if ($project->coordinator_id)
+                        <input type="hidden" name="coordinator_id" value="{{ $project->coordinator_id }}">
+                    @endif
+                    @if ($project->coordinator_external_name)
+                        <input type="hidden" name="coordinator_external_name" value="{{ $project->coordinator_external_name }}">
+                    @endif
+                @else
                 <label class="form-label d-block">المنسق</label>
                 <div class="d-flex flex-wrap gap-3 mb-3">
                     <div class="form-check">
@@ -179,6 +204,7 @@
                         <strong>مدير المشروع هو المنسق</strong> — يعبّئ قائمة التحقق بنفسه عند إنشاء/تعديل المشروع.
                     @endif
                 </div>
+                @endif
             </div>
 
             <div class="mb-4 col-md-4">
@@ -288,7 +314,7 @@
     </div>
 </div>
 
-@if ($canFillCoordinatorInForm ?? false)
+@if ($canEditCoordinatorChecklistInForm ?? false)
     <div
         id="coordinator-checklist-section"
         class="card mb-4 {{ ($showCoordinatorChecklistInitially ?? false) ? '' : 'd-none' }}"

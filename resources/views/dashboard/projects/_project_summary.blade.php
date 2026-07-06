@@ -1,5 +1,6 @@
 @php
     $compactLayout = $compactLayout ?? false;
+    $showActions = $showActions ?? true;
 @endphp
 
 @once
@@ -103,7 +104,7 @@
     <div class="row g-3 project-summary-grid">
 @endif
 
-@if ($compactLayout)<div class="col-lg-6">@endif
+@if ($compactLayout)<div class="col-lg-4">@endif
 <div class="project-summary-section">
     <div class="project-summary-section-title">بيانات المشروع</div>
     <table class="project-summary-table">
@@ -132,18 +133,20 @@
                     @endif
                 </td>
             </tr>
-            <tr>
-                <th scope="row">المستفيدون المستهدفون</th>
-                <td class="{{ $project->target_beneficiaries !== null ? '' : 'text-empty' }}">
-                    {{ $project->target_beneficiaries !== null ? number_format($project->target_beneficiaries) : '—' }}
-                </td>
-            </tr>
+            @unless ($compactLayout)
+                <tr>
+                    <th scope="row">المستفيدون المستهدفون</th>
+                    <td class="{{ $project->target_beneficiaries !== null ? '' : 'text-empty' }}">
+                        {{ $project->target_beneficiaries !== null ? number_format($project->target_beneficiaries) : '—' }}
+                    </td>
+                </tr>
+            @endunless
         </tbody>
     </table>
 </div>
 @if ($compactLayout)</div>@endif
 
-@if ($compactLayout)<div class="col-lg-6">@endif
+@if ($compactLayout)<div class="col-lg-4">@endif
 <div class="project-summary-section">
     <div class="project-summary-section-title">الفريق والاعتماد</div>
     <table class="project-summary-table">
@@ -198,9 +201,56 @@
 @if ($compactLayout)</div>@endif
 
 @if ($compactLayout)
+    <div class="col-lg-4">
+        <div class="project-summary-section">
+            <div class="project-summary-section-title">بيانات التنفيذ</div>
+            <table class="project-summary-table">
+                <tbody>
+                    <tr>
+                        <th scope="row">الموقع الجغرافي</th>
+                        <td class="{{ $project->location ? '' : 'text-empty' }}">
+                            @if ($project->location)
+                                {!! nl2br(e($project->location)) !!}
+                            @else
+                                —
+                            @endif
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">الميزانية المرصودة</th>
+                        <td class="{{ $project->allocated_budget !== null ? '' : 'text-empty' }}">
+                            {{ $project->allocated_budget !== null ? number_format((float) $project->allocated_budget, 2) : '—' }}
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">عدد مناطق التنفيذ</th>
+                        <td class="{{ $project->execution_zones !== null ? '' : 'text-empty' }}">
+                            {{ $project->execution_zones !== null ? number_format($project->execution_zones) : '—' }}
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">المدة الزمنية المقدّرة</th>
+                        <td class="{{ $project->estimated_duration ? '' : 'text-empty' }}">
+                            {{ $project->estimated_duration ?: '—' }}
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">المستفيدون المستهدفون</th>
+                        <td class="{{ $project->target_beneficiaries !== null ? '' : 'text-empty' }}">
+                            {{ $project->target_beneficiaries !== null ? number_format($project->target_beneficiaries) : '—' }}
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
     </div>
 @endif
 
+@if ($compactLayout)
+    </div>
+@endif
+
+@if ($showActions)
 <div class="project-summary-actions d-flex flex-wrap gap-2">
     @can('update', 'App\Models\Project')
         <a href="{{ route('dashboard.projects.edit', $project) }}" class="btn btn-sm btn-outline-primary">
@@ -213,3 +263,4 @@
         </a>
     @endif
 </div>
+@endif

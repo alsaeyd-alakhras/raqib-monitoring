@@ -243,6 +243,45 @@ class MonitoringActivity extends Model
         return $this->verification_status === '✓ تحقق';
     }
 
+    /**
+     * @return array<int, string>
+     */
+    public function verificationIssues(): array
+    {
+        $issues = [];
+
+        if (! $this->isValidHierarchy()) {
+            $issues[] = 'الهرم التنظيمي غير متسق (مركز / دائرة / قسم)';
+        }
+
+        $invalidLists = $this->collectInvalidListValues();
+        foreach ($invalidLists as $label) {
+            $issues[] = 'قيمة غير صالحة: ' . $label;
+        }
+
+        $deductionValue = $this->deduction_value;
+        $hasDeduction = $deductionValue !== null && (float) $deductionValue !== 0.0;
+
+        if ((! $this->field_problem && $hasDeduction) || ($this->field_problem && ! $hasDeduction)) {
+            $issues[] = 'تناقض بين «مشكلة ميدانية» وقيمة الخصم';
+        }
+
+        if (
+            (float) $this->execution_value === 100.0
+            && (float) $this->quality_value === 100.0
+            && $this->closure_value !== null
+            && (float) $this->closure_value !== 100.0
+        ) {
+            $issues[] = 'التنفيذ والجودة 100% لكن الإغلاق ليس 100%';
+        }
+
+        foreach ($this->collectMissingFields() as $label) {
+            $issues[] = 'حقل ناقص: ' . $label;
+        }
+
+        return $issues;
+    }
+
     protected function isValidHierarchy(): bool
     {
         if ($this->center_id && $this->department_id) {
