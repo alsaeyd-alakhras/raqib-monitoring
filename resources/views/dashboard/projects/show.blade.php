@@ -53,18 +53,6 @@
             </span>
         </div>
         <div class="card-body pt-3">
-            @if ($project->hasPendingReturnNotice())
-                <div class="alert alert-warning py-2 mb-3">
-                    <strong>أُرجِع المشروع للمراجعة.</strong>
-                    @if ($project->return_target)
-                        الإجراء: {{ \App\Models\Project::returnTargetLabel($project->return_target) }} —
-                    @endif
-                    السبب: {{ $project->rejection_reason }}
-                    @if ($project->rejectedByUser)
-                        <span class="d-block small mt-1">بواسطة: {{ $project->rejectedByUser->name }} — {{ $project->rejected_at?->format('Y-m-d H:i') }}</span>
-                    @endif
-                </div>
-            @endif
             @include('dashboard.projects._project_summary', ['compactLayout' => true])
         </div>
     </div>
@@ -75,7 +63,17 @@
         <div class="card-body">
             @include('dashboard.projects._workflow_stepper')
 
+            @include('dashboard.projects._rejection_history')
+
             <div class="workflow-actions-panel mt-4">
+            @if ($project->workflow_status === 'pending_project_manager')
+                <div class="alert alert-info py-2 mb-3">
+                    المشروع بانتظار مراجعة
+                    <strong>{{ $project->projectManager?->name }}</strong>
+                    وإرساله لمدير الدائرة.
+                </div>
+            @endif
+
             @if ($project->workflow_status === 'pending_dept_manager')
                 <div class="alert alert-info py-2 mb-3">
                     المشروع بانتظار موافقة
@@ -93,6 +91,13 @@
                 </form>
             @endif
 
+            @if ($canSubmitToProjectManager ?? false)
+                <form action="{{ route('dashboard.projects.submit-to-project-manager', $project) }}" method="post" class="d-inline">
+                    @csrf
+                    <button type="submit" class="btn btn-primary">إرسال لمدير المشروع</button>
+                </form>
+            @endif
+
             @if ($canSubmitToDeptManager ?? false)
                 <form action="{{ route('dashboard.projects.submit-to-dept-manager', $project) }}" method="post" class="d-inline">
                     @csrf
@@ -100,7 +105,7 @@
                 </form>
             @elseif (in_array($project->workflow_status, ['pending_coordinator', 'coordinator_filling']) && ($canManageCoordinatorColumn ?? false))
                 <div class="alert alert-secondary py-2 mb-0">
-                    قبل الإرسال لمدير الدائرة يجب حفظ تعبئة المنسق أولاً (من المنسق نفسه أو نيابةً عنه).
+                    قبل الإرسال لمدير المشروع يجب حفظ تعبئة المنسق أولاً (من المنسق نفسه أو نيابةً عنه إن وُجدت).
                 </div>
             @endif
 
@@ -127,7 +132,7 @@
                 </div>
             @endif
 
-            @if ($project->workflow_status === 'rejected')
+            @if ($project->workflow_status === 'rejected' && ($canViewRejectionHistory ?? false))
                 <div class="alert alert-danger">
                     <div><strong>رفض قاطع نهائي</strong></div>
                     <div><strong>سبب الرفض:</strong> {{ $project->rejection_reason }}</div>
@@ -145,7 +150,7 @@
         @include('dashboard.projects._monitoring_setup_panel')
     @endif
 
-    @if (in_array($project->workflow_status, ['monitoring_in_progress', 'pending_monitoring_confirmation'], true))
+    @if (in_array($project->workflow_status, ['monitoring_in_progress', 'pending_monitoring_confirmation'], true) && ($canViewMonitoringStatusPanel ?? false))
         @include('dashboard.projects._monitoring_status_panel', [
             'readinessStatusLabels' => $readinessStatusLabels,
         ])
@@ -180,7 +185,7 @@
                 @elseif ($coordinatorFillActorLabel ?? null)
                     <span class="badge bg-label-info">عُبّئ بواسطة: {{ $coordinatorFillActorLabel }}</span>
                 @endif
-                <span>نسبة الجاهزية: {{ $project->coordinator_readiness_pct !== null ? $project->coordinator_readiness_pct . '%' : '-' }}</span>
+                <span>نسبة الجاهزية: <strong class="checklist-overall-pct">{{ $project->coordinator_readiness_pct !== null ? $project->coordinator_readiness_pct . '%' : '—' }}</strong></span>
             </div>
         </div>
         <div class="card-body">
@@ -218,6 +223,7 @@
                                 'groups' => $groups,
                                 'values' => $values,
                                 'valueLabels' => $valueLabels,
+                                'readinessBreakdown' => $readinessBreakdown ?? null,
                             ])
                             <button type="submit" class="btn btn-primary">حفظ عمود المنسق</button>
                         </div>
@@ -226,6 +232,7 @@
                             'groups' => $groups,
                             'values' => $values,
                             'valueLabels' => $valueLabels,
+                            'readinessBreakdown' => $readinessBreakdown ?? null,
                         ])
                         <button type="submit" class="btn btn-primary">حفظ عمود المنسق</button>
                     @endif
@@ -236,6 +243,7 @@
                     'values' => $values,
                     'valueLabels' => $valueLabels,
                     'valueField' => 'coordinator_value',
+                    'readinessBreakdown' => $readinessBreakdown ?? null,
                 ])
             @endif
         </div>
@@ -251,7 +259,7 @@
                 @if (! ($isAssignedMonitor ?? false))
                     <span class="badge bg-label-secondary">عرض فقط — التعديل من شاشة المراقب</span>
                 @endif
-                <span>نسبة الجاهزية: {{ $project->monitor_readiness_pct !== null ? $project->monitor_readiness_pct . '%' : '-' }}</span>
+                <span>نسبة الجاهزية: <strong class="checklist-overall-pct">{{ $project->monitor_readiness_pct !== null ? $project->monitor_readiness_pct . '%' : '—' }}</strong></span>
             </div>
         </div>
         <div class="card-body">
@@ -260,6 +268,7 @@
                 'values' => $values,
                 'valueLabels' => $valueLabels,
                 'valueField' => 'monitor_value',
+                'readinessBreakdown' => $readinessBreakdown ?? null,
             ])
             @include('dashboard.projects._monitor_notes_display', ['project' => $project])
         </div>
@@ -267,6 +276,7 @@
     @endif
 
     @push('scripts')
+        <script src="{{ asset('js/checklist-readiness.js') }}"></script>
         <script>
             document.addEventListener('DOMContentLoaded', function () {
                 const toggleBtn = document.getElementById('toggle-coordinator-on-behalf-fill');

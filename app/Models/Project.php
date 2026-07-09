@@ -17,7 +17,7 @@ class Project extends Model
         'project_number',
         'project_type',
         'funder_id',
-        'procurement_rep',
+        'procurement_rep_id',
         'project_manager_id',
         'coordinator_id',
         'coordinator_external_name',
@@ -75,6 +75,11 @@ class Project extends Model
     public function funder(): BelongsTo
     {
         return $this->belongsTo(Funder::class);
+    }
+
+    public function procurementRep(): BelongsTo
+    {
+        return $this->belongsTo(Person::class, 'procurement_rep_id');
     }
 
     public function projectManager(): BelongsTo
@@ -218,6 +223,21 @@ class Project extends Model
         return 'none';
     }
 
+    /**
+     * هل المنسق المعيّن (وضع person) له حساب دخول؟
+     * self و external يُعاملان كبلا حساب منسق مستقل للنيابة.
+     */
+    public function coordinatorHasUserAccount(): bool
+    {
+        if ($this->isSelfCoordinator() || filled($this->coordinator_external_name)) {
+            return false;
+        }
+
+        $this->loadMissing('coordinator');
+
+        return (bool) $this->coordinator?->user_id;
+    }
+
     public function scopeVisibleToUser(Builder $query, ?User $user): Builder
     {
         if (! $user || $user->super_admin) {
@@ -299,6 +319,22 @@ class Project extends Model
     }
 
     /**
+     * هل يُعرَض لوحة «حالة المراقبة» في صفحة المشروع؟ (مدير الرقابة فقط)
+     */
+    public function canViewMonitoringStatusPanel(?User $user): bool
+    {
+        if (! $user) {
+            return false;
+        }
+
+        if ($user->super_admin) {
+            return true;
+        }
+
+        return $user->person?->role === 'monitoring_director';
+    }
+
+    /**
      * هل يُعرَض عمود/بيانات المراقب لهذا المستخدم على هذا المشروع؟
      */
     public function showsMonitorDataTo(?User $user): bool
@@ -339,6 +375,7 @@ class Project extends Model
     {
         $all = [
             'return_project_manager' => 'إرجاع لمدير المشروع (مسودة)',
+            'return_project_manager_review' => 'إرجاع لمدير المشروع (مراجعة)',
             'return_coordinator' => 'إرجاع للمنسق (تعبئة)',
             'return_department_manager' => 'إرجاع لمدير الدائرة (موافقة)',
             'reject_final' => 'رفض قاطع نهائي (لا إرجاع)',
@@ -349,8 +386,8 @@ class Project extends Model
         }
 
         $allowedKeys = match ($person->role) {
-            'department_manager' => ['return_project_manager', 'return_coordinator', 'reject_final'],
-            'monitoring_director' => ['return_project_manager', 'return_coordinator', 'return_department_manager', 'reject_final'],
+            'department_manager' => ['return_project_manager', 'return_project_manager_review', 'return_coordinator', 'reject_final'],
+            'monitoring_director' => ['return_project_manager', 'return_project_manager_review', 'return_coordinator', 'return_department_manager', 'reject_final'],
             default => array_keys($all),
         };
 
@@ -366,6 +403,7 @@ class Project extends Model
     {
         return match ($returnTarget) {
             'return_project_manager' => 'draft',
+            'return_project_manager_review' => 'pending_project_manager',
             'return_coordinator' => 'coordinator_filling',
             'return_department_manager' => 'pending_dept_manager',
             'reject_final' => 'rejected',
@@ -378,6 +416,83 @@ class Project extends Model
         return filled($this->rejection_reason)
             && filled($this->rejected_at)
             && $this->workflow_status !== 'rejected';
+    }
+
+    public function personIdForReturnTarget(?string $returnTarget): ?int
+    {
+        if (! filled($returnTarget) || $returnTarget === 'reject_final') {
+            return null;
+        }
+
+        $this->loadMissing(['projectManager', 'coordinator']);
+
+        return match ($returnTarget) {
+            'return_project_manager', 'return_project_manager_review' => $this->project_manager_id,
+            'return_coordinator' => $this->isSelfCoordinator()
+                ? $this->project_manager_id
+                : $this->coordinator_id,
+            'return_department_manager' => $this->approverDepartmentManager()?->id,
+            default => null,
+        };
+    }
+
+    public function isReturnTargetPerson(?Person $person): bool
+    {
+        if (! $person || ! filled($this->return_target)) {
+            return false;
+        }
+
+        $targetPersonId = $this->personIdForReturnTarget($this->return_target);
+
+        return $targetPersonId && (int) $targetPersonId === (int) $person->id;
+    }
+
+    public function canUserViewRejectionHistory(?User $user): bool
+    {
+        if (! $user) {
+            return false;
+        }
+
+        if ($user->super_admin) {
+            return true;
+        }
+
+        $person = $user->person;
+
+        if (! $person) {
+            return false;
+        }
+
+        if ((int) $person->id === (int) $this->project_manager_id) {
+            return true;
+        }
+
+        if ($person->role === 'monitoring_director') {
+            return true;
+        }
+
+        if ($person->role === 'department_manager' && $this->approvableByDepartmentManager($person)) {
+            return true;
+        }
+
+        if ($this->hasPendingReturnNotice() && $this->isReturnTargetPerson($person)) {
+            return true;
+        }
+
+        return $this->rejections()
+            ->where('return_target_person_id', $person->id)
+            ->exists();
+    }
+
+    public function clearReturnNotice(): void
+    {
+        $this->forceFill([
+            'rejection_reason' => null,
+            'rejected_by' => null,
+            'rejected_at' => null,
+            'return_target' => null,
+            'gap_owner' => null,
+        ])->save();
     }
 
     public function approvableByDepartmentManager(?Person $person): bool
@@ -478,6 +593,7 @@ class Project extends Model
         return match ($this->workflow_status) {
             'draft' => 'مدير المشروع: ' . ($this->projectManager?->name ?? '—'),
             'pending_coordinator', 'coordinator_filling' => 'المنسق: ' . $this->coordinatorDisplayName(),
+            'pending_project_manager' => 'مدير المشروع: ' . ($this->projectManager?->name ?? '—') . ' — مراجعة وإرسال',
             'pending_dept_manager' => 'مدير الدائرة: ' . $this->approverDepartmentManagerLabel(),
             'pending_monitoring_manager' => 'مدير الرقابة العامة — تعيين مراقب',
             'monitoring_in_progress' => 'المراقب: ' . ($this->monitorPerson?->name ?? '—') . ' — تعبئة وإرسال',
@@ -496,7 +612,7 @@ class Project extends Model
 
         return match ($person->role) {
             'project_manager' => (int) $this->project_manager_id === (int) $person->id
-                && in_array($this->workflow_status, ['draft', 'pending_coordinator', 'coordinator_filling'], true),
+                && in_array($this->workflow_status, ['draft', 'pending_coordinator', 'coordinator_filling', 'pending_project_manager'], true),
             'coordinator' => (int) $this->coordinator_id === (int) $person->id
                 && in_array($this->workflow_status, ['pending_coordinator', 'coordinator_filling'], true),
             'department_manager' => $this->workflow_status === 'pending_dept_manager'
@@ -515,6 +631,7 @@ class Project extends Model
             'draft' => 'مسودة',
             'pending_coordinator' => 'بانتظار المنسق',
             'coordinator_filling' => 'المنسق يعمل',
+            'pending_project_manager' => 'بانتظار مدير المشروع',
             'pending_dept_manager' => 'بانتظار مدير الدائرة',
             'pending_monitoring_manager' => 'بانتظار مدير الرقابة العامة',
             'monitoring_in_progress' => 'قيد المراقبة',
@@ -636,6 +753,11 @@ class Project extends Model
         return $this->belongsTo(User::class, 'rejected_by');
     }
 
+    public function rejections(): HasMany
+    {
+        return $this->hasMany(ProjectRejection::class)->orderByDesc('rejected_at');
+    }
+
     public function checklistValues(): HasMany
     {
         return $this->hasMany(ProjectChecklistValue::class);
@@ -656,12 +778,35 @@ class Project extends Model
      */
     public function recalculateReadiness(): void
     {
-        $values = $this->checklistValues()->with('checklistItem.group')->get()
+        $savedValues = $this->checklistValues()->with('checklistItem.group')->get()
             ->filter(fn (ProjectChecklistValue $value) => $value->checklistItem && $value->checklistItem->group && $value->checklistItem->group->is_active && $value->checklistItem->is_active)
-            ->groupBy(fn (ProjectChecklistValue $value) => $value->checklistItem->group_id);
+            ->keyBy('checklist_item_id');
 
-        $this->coordinator_readiness_pct = $this->averageReadiness($values, 'coordinator_value');
-        $this->monitor_readiness_pct = $this->averageReadiness($values, 'monitor_value');
+        $activeGroups = ChecklistGroup::query()
+            ->where('is_active', true)
+            ->with(['items' => fn ($q) => $q->where('is_active', true)])
+            ->orderBy('order')
+            ->get();
+
+        $groupedValues = collect();
+
+        foreach ($activeGroups as $group) {
+            $items = $group->items->map(function (ChecklistItem $item) use ($savedValues) {
+                $saved = $savedValues->get($item->id);
+
+                return (object) [
+                    'coordinator_value' => $saved?->coordinator_value,
+                    'monitor_value' => $saved?->monitor_value,
+                ];
+            });
+
+            if ($items->isNotEmpty()) {
+                $groupedValues->put($group->id, $items);
+            }
+        }
+
+        $this->coordinator_readiness_pct = $this->averageReadiness($groupedValues, 'coordinator_value');
+        $this->monitor_readiness_pct = $this->averageReadiness($groupedValues, 'monitor_value');
         $this->save();
 
         if ($this->primary_monitoring_activity_id) {
@@ -676,15 +821,34 @@ class Project extends Model
      */
     public function readinessBreakdown(): array
     {
-        $grouped = $this->checklistValues()->with('checklistItem.group')->get()
+        $savedValues = $this->checklistValues()->with('checklistItem.group')->get()
             ->filter(fn (ProjectChecklistValue $value) => $value->checklistItem && $value->checklistItem->group && $value->checklistItem->group->is_active && $value->checklistItem->is_active)
-            ->groupBy(fn (ProjectChecklistValue $value) => $value->checklistItem->group_id);
+            ->keyBy('checklist_item_id');
+
+        $activeGroups = ChecklistGroup::query()
+            ->where('is_active', true)
+            ->with(['items' => fn ($q) => $q->where('is_active', true)])
+            ->orderBy('order')
+            ->get();
 
         $groups = [];
 
-        foreach ($grouped as $items) {
+        foreach ($activeGroups as $group) {
+            $items = $group->items->map(function (ChecklistItem $item) use ($savedValues) {
+                $saved = $savedValues->get($item->id);
+
+                return (object) [
+                    'coordinator_value' => $saved?->coordinator_value,
+                    'monitor_value' => $saved?->monitor_value,
+                ];
+            });
+
+            if ($items->isEmpty()) {
+                continue;
+            }
+
             $groups[] = [
-                'name' => $items->first()->checklistItem->group->name ?? '—',
+                'name' => $group->name,
                 'coordinator_pct' => $this->groupReadinessPercent($items, 'coordinator_value'),
                 'monitor_pct' => $this->groupReadinessPercent($items, 'monitor_value'),
             ];
@@ -702,15 +866,15 @@ class Project extends Model
     protected function groupReadinessPercent($items, string $column): ?float
     {
         $total = $items->count();
-        $notRequired = $items->where($column, 'not_required')->count();
+        $notRequired = $items->filter(fn ($item) => ($item->{$column} ?? null) === 'not_required')->count();
         $denominator = $total - $notRequired;
 
         if ($denominator <= 0) {
             return $total > 0 ? 100.0 : null;
         }
 
-        $ready = $items->where($column, 'ready')->count();
-        $partial = $items->where($column, 'partial')->count();
+        $ready = $items->filter(fn ($item) => ($item->{$column} ?? null) === 'ready')->count();
+        $partial = $items->filter(fn ($item) => ($item->{$column} ?? null) === 'partial')->count();
 
         return round((($ready + 0.5 * $partial) / $denominator) * 100, 2);
     }
@@ -739,16 +903,19 @@ class Project extends Model
      */
     public function getReadinessStatusAttribute(): ?string
     {
-        $monitorValues = $this->checklistValues()
-            ->whereHas('checklistItem', fn ($query) => $query->where('is_active', true)->whereHas('group', fn ($groupQuery) => $groupQuery->where('is_active', true)))
-            ->pluck('monitor_value')
-            ->filter(fn ($value) => $value !== null && $value !== '');
+        $savedValues = $this->checklistValues()->get()->keyBy('checklist_item_id');
+        $activeItems = ChecklistItem::query()
+            ->where('is_active', true)
+            ->whereHas('group', fn ($q) => $q->where('is_active', true))
+            ->get();
 
-        if ($monitorValues->isEmpty()) {
+        if ($activeItems->isEmpty()) {
             return null;
         }
 
-        if ($monitorValues->contains('not_ready')) {
+        $monitorValues = $activeItems->map(fn (ChecklistItem $item) => $savedValues->get($item->id)?->monitor_value);
+
+        if ($monitorValues->contains(fn ($value) => $value === null || $value === '' || $value === 'not_ready')) {
             return 'stopped';
         }
 

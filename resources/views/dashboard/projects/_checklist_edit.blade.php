@@ -3,12 +3,28 @@
 @php
     $valueField = $valueField ?? 'coordinator_value';
     $inputClass = $inputClass ?? '';
+    $defaultValue = $defaultValue ?? 'not_ready';
+    $readinessBreakdown = $readinessBreakdown ?? null;
+    $breakdownField = $valueField === 'monitor_value' ? 'monitor_pct' : 'coordinator_pct';
+    $groupPctMap = [];
+
+    if ($readinessBreakdown && ! empty($readinessBreakdown['groups'])) {
+        foreach ($readinessBreakdown['groups'] as $groupRow) {
+            $groupPctMap[$groupRow['name']] = $groupRow[$breakdownField] ?? null;
+        }
+    }
 @endphp
 
-<div class="checklist-groups-grid">
+<div class="checklist-groups-grid" data-checklist-readiness>
     @foreach ($groups as $group)
+        @php
+            $groupPct = $groupPctMap[$group->name] ?? null;
+        @endphp
         <div class="checklist-group-card">
-            <h6 class="checklist-group-title">{{ $group->name }}</h6>
+            <h6 class="checklist-group-title d-flex justify-content-between align-items-center gap-2 flex-wrap">
+                <span>{{ $group->name }}</span>
+                <span class="badge bg-label-primary checklist-group-pct">{{ $groupPct !== null ? $groupPct . '%' : '—' }}</span>
+            </h6>
             <div class="checklist-table-wrap">
                 <table class="table table-sm table-bordered checklist-compact-table">
                     <thead>
@@ -22,14 +38,16 @@
                     </thead>
                     <tbody>
                         @foreach ($group->items as $item)
-                            @php $current = $values->get($item->id); @endphp
+                            @php
+                                $current = $values->get($item->id);
+                                $selected = $current?->{$valueField} ?? $defaultValue;
+                            @endphp
                             <tr>
                                 <td class="checklist-col-item align-middle">{{ $item->name }}</td>
                                 <td class="checklist-col-status">
-                                    <select name="checklist[{{ $item->id }}][value]" class="form-select form-select-sm {{ $inputClass }}">
-                                        <option value="">—</option>
+                                    <select name="checklist[{{ $item->id }}][value]" class="form-select form-select-sm {{ $inputClass }}" required>
                                         @foreach ($valueLabels as $key => $label)
-                                            <option value="{{ $key }}" @selected($current?->{$valueField} === $key)>{{ $label }}</option>
+                                            <option value="{{ $key }}" @selected($selected === $key)>{{ $label }}</option>
                                         @endforeach
                                     </select>
                                 </td>

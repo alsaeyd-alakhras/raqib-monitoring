@@ -1,6 +1,7 @@
 @php
     $compactLayout = $compactLayout ?? false;
     $showActions = $showActions ?? true;
+    $showCoordinatorInSummary = $showCoordinatorInSummary ?? ($canViewCoordinatorData ?? false);
 @endphp
 
 @once
@@ -115,11 +116,15 @@
             </tr>
             <tr>
                 <th scope="row">النوع</th>
-                <td>{{ $project->project_type ?: '—' }}</td>
+                <td class="{{ $project->project_type ? '' : 'text-empty' }}">{{ $project->project_type ?: '—' }}</td>
             </tr>
             <tr>
                 <th scope="row">الممول</th>
                 <td class="{{ $project->funder?->name ? '' : 'text-empty' }}">{{ $project->funder?->name ?? '—' }}</td>
+            </tr>
+            <tr>
+                <th scope="row">مندوب المشتريات</th>
+                <td class="{{ $project->procurementRep?->name ? '' : 'text-empty' }}">{{ $project->procurementRep?->name ?? '—' }}</td>
             </tr>
             <tr>
                 <th scope="row">الموقع التنظيمي</th>
@@ -133,14 +138,28 @@
                     @endif
                 </td>
             </tr>
-            @unless ($compactLayout)
-                <tr>
-                    <th scope="row">المستفيدون المستهدفون</th>
-                    <td class="{{ $project->target_beneficiaries !== null ? '' : 'text-empty' }}">
-                        {{ $project->target_beneficiaries !== null ? number_format($project->target_beneficiaries) : '—' }}
-                    </td>
-                </tr>
-            @endunless
+            <tr>
+                <th scope="row">بداية التنفيذ المخطط</th>
+                <td class="{{ $project->planned_start_date ? '' : 'text-empty' }}">
+                    {{ $project->planned_start_date?->format('Y-m-d') ?? '—' }}
+                </td>
+            </tr>
+            <tr>
+                <th scope="row">نهاية التنفيذ المخطط</th>
+                <td class="{{ $project->planned_end_date ? '' : 'text-empty' }}">
+                    {{ $project->planned_end_date?->format('Y-m-d') ?? '—' }}
+                </td>
+            </tr>
+            <tr>
+                <th scope="row">الموقع الجغرافي</th>
+                <td class="{{ $project->location ? '' : 'text-empty' }}">
+                    @if ($project->location)
+                        {!! nl2br(e($project->location)) !!}
+                    @else
+                        —
+                    @endif
+                </td>
+            </tr>
         </tbody>
     </table>
 </div>
@@ -167,7 +186,7 @@
                     {{ $approverDepartmentManagerLabel ?? '—' }}
                 </td>
             </tr>
-            @if ($canViewCoordinatorData ?? false)
+            @if ($showCoordinatorInSummary)
                 <tr>
                     <th scope="row">المنسق</th>
                     <td>
@@ -178,7 +197,7 @@
                         @endif
                     </td>
                 </tr>
-                @if ($coordinatorFillActorLabel ?? null)
+                @if (($canViewCoordinatorData ?? false) && ($coordinatorFillActorLabel ?? null))
                     <tr>
                         <th scope="row">تعبئة عمود المنسق</th>
                         <td>
@@ -207,19 +226,9 @@
             <table class="project-summary-table">
                 <tbody>
                     <tr>
-                        <th scope="row">الموقع الجغرافي</th>
-                        <td class="{{ $project->location ? '' : 'text-empty' }}">
-                            @if ($project->location)
-                                {!! nl2br(e($project->location)) !!}
-                            @else
-                                —
-                            @endif
-                        </td>
-                    </tr>
-                    <tr>
-                        <th scope="row">الميزانية المرصودة</th>
-                        <td class="{{ $project->allocated_budget !== null ? '' : 'text-empty' }}">
-                            {{ $project->allocated_budget !== null ? number_format((float) $project->allocated_budget, 2) : '—' }}
+                        <th scope="row">المستفيدون المستهدفون</th>
+                        <td class="{{ $project->target_beneficiaries !== null ? '' : 'text-empty' }}">
+                            {{ $project->target_beneficiaries !== null ? number_format($project->target_beneficiaries) : '—' }}
                         </td>
                     </tr>
                     <tr>
@@ -235,9 +244,9 @@
                         </td>
                     </tr>
                     <tr>
-                        <th scope="row">المستفيدون المستهدفون</th>
-                        <td class="{{ $project->target_beneficiaries !== null ? '' : 'text-empty' }}">
-                            {{ $project->target_beneficiaries !== null ? number_format($project->target_beneficiaries) : '—' }}
+                        <th scope="row">الميزانية المرصودة</th>
+                        <td class="{{ $project->allocated_budget !== null ? '' : 'text-empty' }}">
+                            {{ $project->allocated_budget !== null ? number_format((float) $project->allocated_budget, 2) : '—' }}
                         </td>
                     </tr>
                 </tbody>

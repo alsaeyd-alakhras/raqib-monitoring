@@ -5,10 +5,11 @@
     'id' => null,
     'label'=>'',
     'value'=> null,
-    'required' => false
+    'required' => false,
+    'searchable' => false,
 ])
 @if ($label)
-    <label class="form-label" for="{{$name}}">
+    <label class="form-label" for="{{$id ?? $name}}">
         {{ $label }}
     </label>
 @endif
@@ -18,9 +19,10 @@
     name="{{$name}}"
     {{$attributes->class([
         'form-select',
+        'select2-searchable' => $searchable,
         'is-invalid' => $errors->has($name)
     ])}}>
-    <option value="" @selected(old($name, $value) == null)>إختر القيمة</option>
+    <option value="" @selected(old($name, $value) == null || old($name, $value) === '')>إختر القيمة</option>
     @if($optionsId!= null)
         @foreach ($optionsId as $item)
             <option value="{{ $item->id }}" @selected(old($name, $value) == $item->id)>{{ $item->name }}</option>
@@ -42,3 +44,16 @@
         {{$message}}
     </div>
 @enderror
+
+@if ($searchable)
+    @once
+        @push('styles')
+            <link rel="stylesheet" href="{{ asset('assets/vendor/libs/select2/select2.css') }}">
+            <link rel="stylesheet" href="{{ asset('css/searchable-select.css') }}">
+        @endpush
+        @push('scripts')
+            <script src="{{ asset('assets/vendor/libs/select2/select2.full.min.js') }}"></script>
+            <script src="{{ asset('js/searchable-select.js') }}"></script>
+        @endpush
+    @endonce
+@endif

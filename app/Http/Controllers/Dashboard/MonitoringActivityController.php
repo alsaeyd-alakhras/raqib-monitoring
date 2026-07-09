@@ -205,7 +205,10 @@ class MonitoringActivityController extends Controller
             : null;
 
         if ($linkedProject) {
-            $linkedProject->loadMissing(['center', 'department', 'section', 'funder', 'projectManager', 'monitorPerson']);
+            $linkedProject->loadMissing([
+                'center', 'department', 'section', 'funder', 'procurementRep',
+                'projectManager.department', 'coordinator', 'monitorPerson',
+            ]);
         }
 
         $secondaryActivities = collect();

@@ -121,6 +121,7 @@
                     label="المشروع المرتبط"
                     :optionsId="$projects"
                     :value="$selectedSourceId"
+                    searchable
                 />
             </div>
         </div>
@@ -176,6 +177,7 @@
                     label="المسؤول عن النشاط"
                     :optionsId="$people"
                     :value="$activity->responsible_person_id ?? ''"
+                    searchable
                 />
             </div>
             <div class="mb-4 col-md-6">
@@ -184,6 +186,7 @@
                     label="المراقب"
                     :optionsId="$monitors ?? collect()"
                     :value="old('monitor_person_id', isset($activity) ? $activity->monitor_person_id : ($prefill['monitor_person_id'] ?? ''))"
+                    searchable
                 />
             </div>
         </div>
@@ -227,6 +230,7 @@
                     label="الممول (اختياري)"
                     :optionsId="$funders"
                     :value="$activity->funder_id ?? ''"
+                    searchable
                 />
             </div>
         </div>

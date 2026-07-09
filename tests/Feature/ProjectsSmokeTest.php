@@ -3,11 +3,15 @@
 namespace Tests\Feature;
 
 use App\Models\Center;
+use App\Models\ChecklistItem;
+use App\Models\Constant;
 use App\Models\Department;
+use App\Models\Funder;
 use App\Models\MonitoringActivity;
 use App\Models\Person;
 use App\Models\Project;
 use App\Models\ProjectChecklistValue;
+use App\Models\Section;
 use App\Models\User;
 use Tests\TestCase;
 
@@ -16,6 +20,52 @@ class ProjectsSmokeTest extends TestCase
     private function nextProjectNumberSeq(): int
     {
         return Project::sequenceFromProjectNumber(Project::generateProjectNumber()) ?? 1;
+    }
+
+    /** @return array<string, mixed> */
+    private function sampleProjectFields(array $overrides = []): array
+    {
+        $pm = Person::withRole('project_manager')->first() ?? Person::first();
+        $center = Center::firstOrFail();
+        $department = Department::where('center_id', $center->id)->firstOrFail();
+        $section = Section::where('department_id', $department->id)->first()
+            ?? Section::create([
+                'department_id' => $department->id,
+                'name' => 'قسم تجريبي',
+            ]);
+        $funder = Funder::first()
+            ?? Funder::create(['name' => 'ممول تجريبي']);
+        $procurementRep = Person::firstOrFail();
+        $projectTypes = json_decode((string) Constant::where('key', 'project_types')->value('value'), true);
+
+        return array_merge([
+            'project_manager_id' => $pm->id,
+            'project_type' => is_array($projectTypes) ? ($projectTypes[0] ?? 'مشروع') : 'مشروع',
+            'funder_id' => $funder->id,
+            'procurement_rep_id' => $procurementRep->id,
+            'center_id' => $center->id,
+            'department_id' => $department->id,
+            'section_id' => $section->id,
+            'planned_start_date' => '2026-01-01',
+            'planned_end_date' => '2026-06-30',
+            'location' => 'موقع تجريبي',
+            'target_beneficiaries' => 100,
+            'execution_zones' => 2,
+            'estimated_duration' => '6 أشهر',
+            'allocated_budget' => 50000,
+        ], $overrides);
+    }
+
+    /** @return array<int, array{value: string}> */
+    private function fullChecklist(string $value = 'ready'): array
+    {
+        $checklist = [];
+
+        foreach (ChecklistItem::where('is_active', true)->get() as $item) {
+            $checklist[$item->id] = ['value' => $value];
+        }
+
+        return $checklist;
     }
 
     public function test_project_and_checklist_admin_pages_render(): void
@@ -45,15 +95,12 @@ class ProjectsSmokeTest extends TestCase
         $projectName = 'مشروع اختبار شامل ' . uniqid();
 
         // 1) create draft
-        $this->post('/projects', [
+        $this->post('/projects', $this->sampleProjectFields([
             'project_name' => $projectName,
             'project_number_seq' => $this->nextProjectNumberSeq(),
-            'project_manager_id' => $pm->id,
             'coordinator_mode' => 'person',
             'coordinator_id' => $coordinator->id,
-            'center_id' => $center->id,
-            'department_id' => $department->id,
-        ])->assertRedirect();
+        ]))->assertRedirect();
 
         $project = Project::where('project_name', $projectName)->firstOrFail();
         $this->assertSame('draft', $project->workflow_status);
@@ -68,17 +115,17 @@ class ProjectsSmokeTest extends TestCase
         $this->assertSame('pending_coordinator', $project->workflow_status);
 
         // 3) fill coordinator checklist
-        $checklist = [];
-        foreach (\App\Models\ChecklistItem::where('is_active', true)->get() as $item) {
-            $checklist[$item->id] = ['value' => 'ready'];
-        }
-        $this->post(route('dashboard.projects.fill-coordinator', $project), ['checklist' => $checklist])
+        $this->post(route('dashboard.projects.fill-coordinator', $project), ['checklist' => $this->fullChecklist()])
             ->assertRedirect();
         $project->refresh();
         $this->assertSame('coordinator_filling', $project->workflow_status);
         $this->assertEquals(100.0, (float) $project->coordinator_readiness_pct);
 
-        // 4) submit to dept manager, approve
+        // 4) submit to project manager, then to dept manager, approve
+        $this->post(route('dashboard.projects.submit-to-project-manager', $project))->assertRedirect();
+        $project->refresh();
+        $this->assertSame('pending_project_manager', $project->workflow_status);
+
         $this->post(route('dashboard.projects.submit-to-dept-manager', $project))->assertRedirect();
         $project->refresh();
         $this->assertSame('pending_dept_manager', $project->workflow_status);
@@ -101,10 +148,7 @@ class ProjectsSmokeTest extends TestCase
         // 6) monitor-work isolated screen
         $this->get(route('dashboard.projects.monitor-work', $project))->assertStatus(200);
 
-        $checklistMonitor = [];
-        foreach (\App\Models\ChecklistItem::where('is_active', true)->get() as $item) {
-            $checklistMonitor[$item->id] = ['value' => 'partial'];
-        }
+        $checklistMonitor = $this->fullChecklist('partial');
         $this->post(route('dashboard.projects.fill-monitor', $project), [
             'checklist' => $checklistMonitor,
             'monitor_notes_text' => "ملاحظة1\nملاحظة2",
@@ -257,27 +301,21 @@ class ProjectsSmokeTest extends TestCase
         $department = Department::where('center_id', $center->id)->first();
         $itemId = \App\Models\ChecklistItem::where('is_active', true)->value('id');
 
-        $this->post('/projects', [
+        $this->post('/projects', $this->sampleProjectFields([
             'project_name' => 'مشروع منسق خارجي',
             'project_number_seq' => $this->nextProjectNumberSeq(),
-            'project_manager_id' => $pm->id,
             'coordinator_mode' => 'external',
             'coordinator_external_name' => 'منسق خارجي تجريبي',
-            'center_id' => $center->id,
-            'department_id' => $department->id,
-        ])->assertRedirect();
+        ]))->assertRedirect();
 
         $externalProject = Project::where('project_name', 'مشروع منسق خارجي')->firstOrFail();
         $this->assertSame('external', $externalProject->coordinatorMode());
 
-        $this->post('/projects', [
+        $this->post('/projects', $this->sampleProjectFields([
             'project_name' => 'مشروع منسق ذاتي',
             'project_number_seq' => $this->nextProjectNumberSeq(),
-            'project_manager_id' => $pm->id,
             'coordinator_mode' => 'self',
-            'center_id' => $center->id,
-            'department_id' => $department->id,
-        ])->assertRedirect();
+        ]))->assertRedirect();
 
         $selfProject = Project::where('project_name', 'مشروع منسق ذاتي')->firstOrFail();
         $this->assertTrue($selfProject->isSelfCoordinator());
@@ -290,15 +328,12 @@ class ProjectsSmokeTest extends TestCase
             );
         }
 
-        $this->put(route('dashboard.projects.update', $selfProject), [
+        $this->put(route('dashboard.projects.update', $selfProject), $this->sampleProjectFields([
             'project_name' => $selfProject->project_name,
-            'project_number_seq' => \App\Models\Project::sequenceFromProjectNumber($selfProject->project_number),
-            'project_manager_id' => $pm->id,
+            'project_number_seq' => Project::sequenceFromProjectNumber($selfProject->project_number),
             'coordinator_mode' => 'person',
             'coordinator_id' => $coordinator->id,
-            'center_id' => $center->id,
-            'department_id' => $department->id,
-        ])->assertRedirect();
+        ]))->assertRedirect();
 
         $selfProject->refresh();
         $this->assertSame('person', $selfProject->coordinatorMode());
@@ -368,22 +403,18 @@ class ProjectsSmokeTest extends TestCase
         $department = Department::where('center_id', $center->id)->first();
         $itemId = \App\Models\ChecklistItem::where('is_active', true)->value('id');
 
-        $this->post('/projects', [
+        $this->post('/projects', $this->sampleProjectFields([
             'project_name' => 'مشروع تعبئة خارجي',
             'project_number_seq' => $this->nextProjectNumberSeq(),
-            'project_manager_id' => $pm->id,
             'coordinator_mode' => 'external',
             'coordinator_external_name' => 'منسق خارجي',
-            'center_id' => $center->id,
-            'department_id' => $department->id,
-        ])->assertRedirect();
+        ]))->assertRedirect();
 
         $project = Project::where('project_name', 'مشروع تعبئة خارجي')->firstOrFail();
 
-        $checklist = $itemId ? [$itemId => ['value' => 'ready']] : [];
         $this->post(route('dashboard.projects.fill-coordinator', $project), [
             'fill_on_behalf' => '1',
-            'checklist' => $checklist,
+            'checklist' => $this->fullChecklist(),
         ])->assertRedirect();
 
         $project->refresh();
@@ -393,27 +424,21 @@ class ProjectsSmokeTest extends TestCase
         $project->delete();
     }
 
-    public function test_submit_to_department_requires_saved_coordinator_fill(): void
+    public function test_submit_to_project_manager_requires_saved_coordinator_fill(): void
     {
         $user = User::first();
         $user->super_admin = 1;
         $this->actingAs($user);
 
-        $pm = Person::withRole('project_manager')->first() ?? Person::first();
         $coordinator = Person::withRole('coordinator')->first() ?? Person::skip(1)->first();
-        $center = Center::first();
-        $department = Department::where('center_id', $center->id)->first();
         $projectName = 'مشروع تحقق تعبئة المنسق ' . uniqid();
 
-        $this->post('/projects', [
+        $this->post('/projects', $this->sampleProjectFields([
             'project_name' => $projectName,
             'project_number_seq' => $this->nextProjectNumberSeq(),
-            'project_manager_id' => $pm->id,
             'coordinator_mode' => 'person',
             'coordinator_id' => $coordinator->id,
-            'center_id' => $center->id,
-            'department_id' => $department->id,
-        ])->assertRedirect();
+        ]))->assertRedirect();
 
         $project = Project::where('project_name', $projectName)->firstOrFail();
 
@@ -424,22 +449,22 @@ class ProjectsSmokeTest extends TestCase
         $project->update(['workflow_status' => 'coordinator_filling']);
 
         $this->from(route('dashboard.projects.show', $project))
-            ->post(route('dashboard.projects.submit-to-dept-manager', $project))
+            ->post(route('dashboard.projects.submit-to-project-manager', $project))
             ->assertRedirect(route('dashboard.projects.show', $project))
             ->assertSessionHasErrors('coordinator');
 
         $project->refresh();
         $this->assertSame('coordinator_filling', $project->workflow_status);
 
-        $itemId = \App\Models\ChecklistItem::where('is_active', true)->value('id');
-        if ($itemId) {
-            $this->post(route('dashboard.projects.fill-coordinator', $project), [
-                'fill_on_behalf' => '1',
-                'checklist' => [
-                    $itemId => ['value' => 'ready'],
-                ],
-            ])->assertRedirect();
-        }
+        $this->post(route('dashboard.projects.fill-coordinator', $project), [
+            'checklist' => $this->fullChecklist(),
+        ])->assertRedirect();
+
+        $this->post(route('dashboard.projects.submit-to-project-manager', $project))
+            ->assertRedirect();
+
+        $project->refresh();
+        $this->assertSame('pending_project_manager', $project->workflow_status);
 
         $this->post(route('dashboard.projects.submit-to-dept-manager', $project))
             ->assertRedirect();
@@ -542,7 +567,7 @@ class ProjectsSmokeTest extends TestCase
 
         $project = Project::create([
             'project_name' => 'مشروع لمدير الدائرة',
-            'project_number' => 'P-' . ($this->nextProjectNumberSeq() + 500),
+            'project_number' => 'P-' . ($this->nextProjectNumberSeq() + random_int(10000, 99999)),
             'project_manager_id' => $pm->id,
             'coordinator_id' => $pm->id,
             'workflow_status' => 'pending_dept_manager',
@@ -703,24 +728,18 @@ class ProjectsSmokeTest extends TestCase
             ->assertSee('عرض فقط');
 
         $updatedName = 'مشروع محدّث من مدير الرقابة ' . uniqid();
-        $this->put(route('dashboard.projects.update', $project), [
+        $this->put(route('dashboard.projects.update', $project), $this->sampleProjectFields([
             'project_name' => $updatedName,
             'project_number_seq' => Project::sequenceFromProjectNumber($project->project_number),
-            'project_manager_id' => $pm->id,
             'coordinator_mode' => 'person',
             'coordinator_id' => $coordinator->id,
-            'center_id' => $center->id,
-            'department_id' => $department->id,
-        ])->assertRedirect(route('dashboard.projects.show', $project));
+        ]))->assertRedirect(route('dashboard.projects.show', $project));
 
         $project->refresh();
         $this->assertSame($updatedName, $project->project_name);
         $this->assertSame((int) $coordinator->id, (int) $project->coordinator_id);
 
-        $checklist = [];
-        foreach (\App\Models\ChecklistItem::where('is_active', true)->get() as $item) {
-            $checklist[$item->id] = ['value' => 'not_ready'];
-        }
+        $checklist = $this->fullChecklist('not_ready');
         $this->post(route('dashboard.projects.fill-coordinator', $project), ['checklist' => $checklist])
             ->assertForbidden();
 
@@ -763,6 +782,303 @@ class ProjectsSmokeTest extends TestCase
         $project->delete();
         ProjectChecklistValue::where('project_id', $monitorProject->id)->delete();
         $monitorProject->delete();
+    }
+
+    public function test_project_create_requires_all_fields(): void
+    {
+        $user = User::first();
+        $user->super_admin = 1;
+        $this->actingAs($user);
+
+        $this->from('/projects/create')
+            ->post('/projects', [
+                'project_name' => 'مشروع ناقص',
+                'project_number_seq' => $this->nextProjectNumberSeq(),
+                'coordinator_mode' => 'self',
+            ])
+            ->assertRedirect('/projects/create')
+            ->assertSessionHasErrors([
+                'project_type',
+                'funder_id',
+                'procurement_rep_id',
+                'center_id',
+                'department_id',
+                'section_id',
+            ]);
+    }
+
+    public function test_coordinator_with_user_blocks_project_manager_fill(): void
+    {
+        $pm = Person::withRole('project_manager')->first() ?? Person::first();
+        $coordinator = Person::withRole('coordinator')->whereNotNull('user_id')->first()
+            ?? tap(Person::withRole('coordinator')->first() ?? Person::skip(1)->first(), function (Person $person) {
+                $person->update(['user_id' => User::first()->id]);
+            });
+
+        $pmUser = $pm->user_id
+            ? User::findOrFail($pm->user_id)
+            : tap(User::skip(1)->first() ?? User::first(), function (User $user) use ($pm) {
+                $pm->update(['user_id' => $user->id]);
+            });
+
+        foreach (['projects.view', 'projects.create', 'projects.update', 'projects.fill_coordinator'] as $ability) {
+            $pmUser->roles()->firstOrCreate(['role_name' => $ability]);
+        }
+
+        $this->actingAs($pmUser);
+
+        $projectName = 'مشروع منسق بحساب ' . uniqid();
+        $this->post('/projects', $this->sampleProjectFields([
+            'project_name' => $projectName,
+            'project_number_seq' => $this->nextProjectNumberSeq(),
+            'coordinator_mode' => 'person',
+            'coordinator_id' => $coordinator->id,
+        ]))->assertRedirect();
+
+        $project = Project::where('project_name', $projectName)->firstOrFail();
+        $project->update(['workflow_status' => 'coordinator_filling']);
+
+        $this->post(route('dashboard.projects.fill-coordinator', $project), [
+            'fill_on_behalf' => '1',
+            'checklist' => $this->fullChecklist(),
+        ])->assertForbidden();
+
+        ProjectChecklistValue::where('project_id', $project->id)->delete();
+        $project->delete();
+    }
+
+    public function test_unset_checklist_items_count_as_not_ready(): void
+    {
+        $user = User::first();
+        $user->super_admin = 1;
+        $this->actingAs($user);
+
+        $pm = Person::withRole('project_manager')->first() ?? Person::first();
+        $project = Project::create([
+            'project_name' => 'مشروع جاهزية ' . uniqid(),
+            'project_number' => 'P-' . ($this->nextProjectNumberSeq() + random_int(7000, 7999)),
+            'project_manager_id' => $pm->id,
+            'coordinator_id' => $pm->id,
+            'workflow_status' => 'draft',
+            'created_by' => $user->id,
+            'updated_by' => $user->id,
+        ]);
+
+        $items = ChecklistItem::where('is_active', true)->take(2)->get();
+        $this->assertGreaterThanOrEqual(1, $items->count());
+
+        if ($items->count() >= 2) {
+            ProjectChecklistValue::create([
+                'project_id' => $project->id,
+                'checklist_item_id' => $items[0]->id,
+                'coordinator_value' => 'ready',
+            ]);
+        } else {
+            ProjectChecklistValue::create([
+                'project_id' => $project->id,
+                'checklist_item_id' => $items[0]->id,
+                'coordinator_value' => 'ready',
+            ]);
+        }
+
+        $project->recalculateReadiness();
+        $project->refresh();
+
+        $this->assertNotNull($project->coordinator_readiness_pct);
+        $this->assertLessThan(100.0, (float) $project->coordinator_readiness_pct);
+
+        ProjectChecklistValue::where('project_id', $project->id)->delete();
+        $project->delete();
+    }
+
+    public function test_rejection_creates_history_record(): void
+    {
+        $user = User::first();
+        $user->super_admin = 1;
+        $this->actingAs($user);
+
+        $project = Project::create(array_merge($this->sampleProjectFields(), [
+            'project_name' => 'مشروع سجل رفض',
+            'workflow_status' => 'pending_dept_manager',
+            'created_by' => $user->id,
+            'updated_by' => $user->id,
+        ]));
+
+        $this->post(route('dashboard.projects.reject', $project), [
+            'rejection_reason' => 'نقص في المستندات',
+            'gap_owner' => 'coordinator',
+            'return_target' => 'return_coordinator',
+        ])->assertRedirect();
+
+        $project->refresh();
+        $this->assertDatabaseHas('project_rejections', [
+            'project_id' => $project->id,
+            'rejection_reason' => 'نقص في المستندات',
+            'return_target' => 'return_coordinator',
+            'workflow_status_before' => 'pending_dept_manager',
+            'workflow_status_after' => 'coordinator_filling',
+        ]);
+
+        $project->rejections()->delete();
+        $project->delete();
+    }
+
+    public function test_coordinator_sees_rejection_history_when_returned(): void
+    {
+        $coordinator = Person::where('role', 'coordinator')->whereNotNull('user_id')->first();
+        $this->assertNotNull($coordinator);
+
+        $pm = Person::withRole('project_manager')->first() ?? Person::first();
+        $deptManager = Person::where('role', 'department_manager')
+            ->where('department_id', $pm->department_id)
+            ->whereNotNull('user_id')
+            ->first();
+        $this->assertNotNull($deptManager);
+
+        $project = Project::create([
+            'project_name' => 'مشروع رفض للمنسق',
+            'project_number' => 'P-' . ($this->nextProjectNumberSeq() + 700),
+            'project_manager_id' => $pm->id,
+            'coordinator_id' => $coordinator->id,
+            'workflow_status' => 'pending_dept_manager',
+            'created_by' => User::first()->id,
+            'updated_by' => User::first()->id,
+        ]);
+
+        $this->actingAs($deptManager->user);
+        $this->post(route('dashboard.projects.reject', $project), [
+            'rejection_reason' => 'قائمة التحقق ناقصة',
+            'gap_owner' => 'coordinator',
+            'return_target' => 'return_coordinator',
+        ])->assertRedirect();
+
+        $this->actingAs($coordinator->user);
+        $response = $this->get(route('dashboard.projects.show', $project));
+        $response->assertOk();
+        $response->assertSee('سجل الرفض والإرجاع');
+        $response->assertSee('قائمة التحقق ناقصة');
+        $response->assertSee('أُرجِع المشروع للمراجعة');
+
+        $project->rejections()->delete();
+        $project->delete();
+    }
+
+    public function test_monitor_does_not_see_rejection_history(): void
+    {
+        $monitor = Person::where('role', 'monitor')->whereNotNull('user_id')->first();
+        $this->assertNotNull($monitor);
+
+        $pm = Person::withRole('project_manager')->first() ?? Person::first();
+        $coordinator = Person::where('role', 'coordinator')->whereNotNull('user_id')->first();
+        $this->assertNotNull($coordinator);
+
+        $project = Project::create([
+            'project_name' => 'مشروع رفض للمراقب',
+            'project_number' => 'P-' . ($this->nextProjectNumberSeq() + 800),
+            'project_manager_id' => $pm->id,
+            'coordinator_id' => $coordinator->id,
+            'monitor_person_id' => $monitor->id,
+            'workflow_status' => 'pending_dept_manager',
+            'created_by' => User::first()->id,
+            'updated_by' => User::first()->id,
+        ]);
+
+        $admin = User::first();
+        $admin->super_admin = 1;
+        $this->actingAs($admin);
+        $this->post(route('dashboard.projects.reject', $project), [
+            'rejection_reason' => 'سبب سري للإدارة',
+            'gap_owner' => 'coordinator',
+            'return_target' => 'return_coordinator',
+        ])->assertRedirect();
+
+        $this->actingAs($monitor->user);
+        $response = $this->get(route('dashboard.projects.show', $project));
+        $response->assertOk();
+        $response->assertDontSee('سجل الرفض والإرجاع');
+        $response->assertDontSee('سبب سري للإدارة');
+
+        $project->rejections()->delete();
+        $project->delete();
+    }
+
+    public function test_coordinator_does_not_see_monitoring_status_panel(): void
+    {
+        $coordinator = Person::where('role', 'coordinator')->whereNotNull('user_id')->first();
+        $this->assertNotNull($coordinator);
+
+        $pm = Person::withRole('project_manager')->first() ?? Person::first();
+        $monitor = Person::where('role', 'monitor')->whereNotNull('user_id')->first();
+        $this->assertNotNull($monitor);
+
+        $project = Project::create([
+            'project_name' => 'مشروع اختبار المنسق والمراقبة',
+            'project_number' => 'P-' . ($this->nextProjectNumberSeq() + random_int(10000, 19999)),
+            'project_manager_id' => $pm->id,
+            'coordinator_id' => $coordinator->id,
+            'monitor_person_id' => $monitor->id,
+            'monitoring_method' => 'ميداني',
+            'monitoring_stage' => 'أثناء التنفيذ',
+            'monitoring_date' => '2026-07-08',
+            'workflow_status' => 'monitoring_in_progress',
+            'created_by' => User::first()->id,
+            'updated_by' => User::first()->id,
+        ]);
+
+        $this->actingAs($coordinator->user);
+        $this->get(route('dashboard.projects.show', $project))
+            ->assertOk()
+            ->assertDontSee('حالة المراقبة')
+            ->assertDontSee('المراقب المعيّن');
+
+        $director = Person::where('role', 'monitoring_director')->whereNotNull('user_id')->first();
+        $this->assertNotNull($director);
+
+        $this->actingAs($director->user);
+        $this->get(route('dashboard.projects.show', $project))
+            ->assertOk()
+            ->assertSee('حالة المراقبة')
+            ->assertSee('المراقب المعيّن');
+
+        $project->delete();
+    }
+
+    public function test_return_notice_cleared_after_coordinator_resubmits(): void
+    {
+        $coordinator = Person::where('role', 'coordinator')->whereNotNull('user_id')->first();
+        $this->assertNotNull($coordinator);
+
+        $pm = Person::withRole('project_manager')->first() ?? Person::first();
+
+        $project = Project::create([
+            'project_name' => 'مشروع مسح إشعار الرفض',
+            'project_number' => 'P-' . ($this->nextProjectNumberSeq() + random_int(10000, 99999)),
+            'project_manager_id' => $pm->id,
+            'coordinator_id' => $coordinator->id,
+            'workflow_status' => 'coordinator_filling',
+            'rejection_reason' => 'نقص سابق',
+            'rejected_by' => User::first()->id,
+            'rejected_at' => now(),
+            'return_target' => 'return_coordinator',
+            'gap_owner' => 'coordinator',
+            'created_by' => User::first()->id,
+            'updated_by' => User::first()->id,
+        ]);
+
+        $this->actingAs($coordinator->user);
+        $this->post(route('dashboard.projects.fill-coordinator', $project), [
+            'checklist' => $this->fullChecklist('ready'),
+        ])->assertRedirect();
+
+        $this->post(route('dashboard.projects.submit-to-project-manager', $project))->assertRedirect();
+
+        $project->refresh();
+        $this->assertNull($project->rejection_reason);
+        $this->assertNull($project->return_target);
+        $this->assertSame('pending_project_manager', $project->workflow_status);
+
+        ProjectChecklistValue::where('project_id', $project->id)->delete();
+        $project->delete();
     }
 
 }

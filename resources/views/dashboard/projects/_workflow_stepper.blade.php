@@ -3,6 +3,7 @@
         'draft',
         'pending_coordinator',
         'coordinator_filling',
+        'pending_project_manager',
         'pending_dept_manager',
         'pending_monitoring_manager',
         'monitoring_in_progress',

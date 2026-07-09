@@ -71,12 +71,14 @@
                         label="نوع المشروع"
                         :options="$projectTypeOptions"
                         :value="$project->project_type ?? ''"
+                        required
                     />
                 @else
                     <x-form.input
                         name="project_type"
                         label="نوع المشروع"
                         :value="$project->project_type ?? ''"
+                        required
                     />
                 @endif
             </div>
@@ -86,13 +88,18 @@
                     label="الجهة المانحة"
                     :optionsId="$funders"
                     :value="$project->funder_id ?? ''"
+                    searchable
+                    required
                 />
             </div>
             <div class="mb-4 col-md-4">
-                <x-form.input
-                    name="procurement_rep"
+                <x-form.select
+                    name="procurement_rep_id"
                     label="مندوب المشتريات"
-                    :value="$project->procurement_rep ?? ''"
+                    :optionsId="$people"
+                    :value="$project->procurement_rep_id ?? ''"
+                    searchable
+                    required
                 />
             </div>
             <div class="mb-4 col-md-4">
@@ -111,6 +118,7 @@
                         label="مدير المشروع"
                         :optionsId="$projectManagers"
                         :value="$project->project_manager_id ?? ''"
+                        searchable
                         required
                     />
                 @endif
@@ -162,6 +170,7 @@
                             label="اختر المنسق"
                             :optionsId="$coordinators"
                             :value="$project->coordinator_id ?? ''"
+                            searchable
                         />
                     </div>
                     <div class="col-md-6 d-flex align-items-end">
@@ -214,14 +223,19 @@
                     label="المركز"
                     :optionsId="$centers"
                     :value="$selectedCenterId ?? ''"
+                    required
                 />
             </div>
             <div class="mb-4 col-md-4">
-                <label class="form-label" for="department_id">الدائرة</label>
+                <label class="form-label" for="department_id">
+                    الدائرة
+                    <span class="text-danger" style="font-size: 12px;"><i class="fa fa-asterisk"></i></span>
+                </label>
                 <select
                     name="department_id"
                     id="department_id"
                     class="form-select @error('department_id') is-invalid @enderror"
+                    required
                 >
                     <option value="">إختر القيمة</option>
                 </select>
@@ -230,11 +244,15 @@
                 @enderror
             </div>
             <div class="mb-4 col-md-4">
-                <label class="form-label" for="section_id">القسم</label>
+                <label class="form-label" for="section_id">
+                    القسم
+                    <span class="text-danger" style="font-size: 12px;"><i class="fa fa-asterisk"></i></span>
+                </label>
                 <select
                     name="section_id"
                     id="section_id"
                     class="form-select @error('section_id') is-invalid @enderror"
+                    required
                 >
                     <option value="">إختر القيمة</option>
                 </select>
@@ -248,6 +266,7 @@
                     name="planned_start_date"
                     label="تاريخ بداية التنفيذ المخطط"
                     :value="isset($project) && $project->planned_start_date ? $project->planned_start_date->format('Y-m-d') : ''"
+                    required
                 />
             </div>
             <div class="mb-4 col-md-4">
@@ -256,6 +275,7 @@
                     name="planned_end_date"
                     label="تاريخ نهاية التنفيذ المخطط"
                     :value="isset($project) && $project->planned_end_date ? $project->planned_end_date->format('Y-m-d') : ''"
+                    required
                 />
             </div>
             <div class="mb-4 col-md-12">
@@ -263,6 +283,7 @@
                     name="location"
                     label="الموقع الجغرافي"
                     :value="$project->location ?? ''"
+                    required
                 />
             </div>
         </div>
@@ -282,6 +303,7 @@
                     label="إجمالي المستفيدين المستهدفين"
                     :value="$project->target_beneficiaries ?? ''"
                     min="0"
+                    required
                 />
             </div>
             <div class="mb-4 col-md-3">
@@ -291,6 +313,7 @@
                     label="عدد مناطق التنفيذ"
                     :value="$project->execution_zones ?? ''"
                     min="0"
+                    required
                 />
             </div>
             <div class="mb-4 col-md-3">
@@ -298,6 +321,7 @@
                     name="estimated_duration"
                     label="المدة الزمنية المقدّرة"
                     :value="$project->estimated_duration ?? ''"
+                    required
                 />
             </div>
             <div class="mb-4 col-md-3">
@@ -308,6 +332,7 @@
                     label="الميزانية المرصودة"
                     :value="$project->allocated_budget ?? ''"
                     min="0"
+                    required
                 />
             </div>
         </div>
@@ -321,7 +346,10 @@
     >
         <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
             <h5 class="mb-0">ثالثاً — قائمة تحقق المنسق</h5>
-            <span id="coordinator-checklist-badge" class="badge bg-label-primary">تُحفظ مع المشروع</span>
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+                <span id="coordinator-checklist-badge" class="badge bg-label-primary">تُحفظ مع المشروع</span>
+                <span>نسبة الجاهزية: <strong class="checklist-overall-pct">—</strong></span>
+            </div>
         </div>
         <div class="card-body">
             <p id="coordinator-checklist-intro" class="text-muted small mb-3"></p>
@@ -341,6 +369,7 @@
 
 @push('scripts')
 <script src="{{ asset('js/org-cascade.js') }}"></script>
+<script src="{{ asset('js/checklist-readiness.js') }}"></script>
 <script>
 (function () {
     const modeRadios = document.querySelectorAll('.coordinator-mode-radio');
@@ -356,7 +385,20 @@
     const checklistIntro = document.getElementById('coordinator-checklist-intro');
     const lockedManagerId = @json($lockedManagerId);
     const canFillOnBehalf = @json((bool) ($lockProjectManager ?? false));
+    const coordinatorUserMap = @json($coordinatorUserMap ?? []);
     let previousCoordinatorKey = null;
+
+    function selectedCoordinatorHasUser() {
+        const coordinatorId = coordinatorSelect?.value || '';
+
+        return Boolean(coordinatorUserMap[coordinatorId]);
+    }
+
+    function canShowFillOnBehalfOption() {
+        const mode = document.querySelector('.coordinator-mode-radio:checked')?.value || 'person';
+
+        return mode === 'person' && canFillOnBehalf && coordinatorSelect?.value && !selectedCoordinatorHasUser();
+    }
 
     function getCoordinatorKey() {
         const mode = document.querySelector('.coordinator-mode-radio:checked')?.value || 'person';
@@ -392,7 +434,7 @@
             return true;
         }
         if (mode === 'person') {
-            return Boolean(canFillOnBehalf && fillOnBehalfCheckbox?.checked && coordinatorSelect?.value);
+            return Boolean(canShowFillOnBehalfOption() && fillOnBehalfCheckbox?.checked);
         }
         return false;
     }
@@ -429,6 +471,10 @@
         setChecklistInputsEnabled(show);
         updateChecklistIntro();
 
+        if (show && window.initChecklistReadiness) {
+            window.initChecklistReadiness(checklistSection);
+        }
+
         const currentKey = getCoordinatorKey();
         if (previousCoordinatorKey !== null && previousCoordinatorKey !== currentKey) {
             clearCoordinatorChecklistInputs();
@@ -452,7 +498,7 @@
         personWrap.classList.toggle('d-none', mode !== 'person');
         externalWrap.classList.toggle('d-none', mode !== 'external');
         selfHint.classList.toggle('d-none', mode !== 'self');
-        fillOnBehalfWrap?.classList.toggle('d-none', mode !== 'person' || !canFillOnBehalf);
+        fillOnBehalfWrap?.classList.toggle('d-none', !canShowFillOnBehalfOption());
 
         if (coordinatorSelect) {
             coordinatorSelect.disabled = mode !== 'person';
@@ -468,8 +514,12 @@
             }
         }
 
-        if (fillOnBehalfCheckbox && (mode !== 'person' || !canFillOnBehalf)) {
+        if (fillOnBehalfCheckbox && !canShowFillOnBehalfOption()) {
             fillOnBehalfCheckbox.checked = false;
+        }
+
+        if (mode === 'person' && window.initSearchableSelects && personWrap) {
+            window.initSearchableSelects(personWrap);
         }
 
         syncCoordinatorChecklistSection();

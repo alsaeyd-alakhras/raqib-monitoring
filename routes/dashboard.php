@@ -108,6 +108,7 @@ Route::group([
     Route::prefix('projects/{project}')->name('projects.')->group(function () {
         Route::post('submit-to-coordinator', [ProjectController::class, 'submitToCoordinator'])->name('submit-to-coordinator');
         Route::post('fill-coordinator', [ProjectController::class, 'fillCoordinator'])->name('fill-coordinator');
+        Route::post('submit-to-project-manager', [ProjectController::class, 'submitToProjectManager'])->name('submit-to-project-manager');
         Route::post('submit-to-dept-manager', [ProjectController::class, 'submitToDeptManager'])->name('submit-to-dept-manager');
         Route::post('approve-department', [ProjectController::class, 'approveDepartment'])->name('approve-department');
         Route::post('set-monitoring-info', [ProjectController::class, 'setMonitoringInfo'])->name('set-monitoring-info');

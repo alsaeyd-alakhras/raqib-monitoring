@@ -33,14 +33,17 @@
             @include('dashboard.projects._project_summary', [
                 'compactLayout' => true,
                 'showActions' => false,
+                'showCoordinatorInSummary' => true,
+                'canViewCoordinatorData' => false,
                 'canViewMonitorData' => true,
             ])
         </div>
     </div>
 
     <div class="card mb-4">
-        <div class="card-header">
+        <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
             <h5 class="mb-0">قائمة التحقق — عمود المراقب</h5>
+            <span>نسبة الجاهزية: <strong class="checklist-overall-pct">{{ $project->monitor_readiness_pct !== null ? $project->monitor_readiness_pct . '%' : '—' }}</strong></span>
         </div>
         <div class="card-body">
             @if (($canEditMonitorColumn ?? true) && ($isAssignedMonitor ?? true))
@@ -51,6 +54,7 @@
                         'values' => $values,
                         'valueLabels' => $valueLabels,
                         'valueField' => 'monitor_value',
+                        'readinessBreakdown' => $readinessBreakdown ?? null,
                     ])
 
                     @include('dashboard.projects._monitor_notes_editor', ['project' => $project])
@@ -65,6 +69,7 @@
                     'values' => $values,
                     'valueLabels' => $valueLabels,
                     'valueField' => 'monitor_value',
+                    'readinessBreakdown' => $readinessBreakdown ?? null,
                 ])
                 @include('dashboard.projects._monitor_notes_display', ['project' => $project])
             @endif
@@ -112,4 +117,8 @@
             <strong>الخطوة التالية:</strong> احفظ قائمة التحقق والملاحظات من الأعلى أولاً، ثم سيظهر خيار الإرسال لمدير الرقابة العامة في هذه الصفحة.
         </div>
     @endif
+
+    @push('scripts')
+        <script src="{{ asset('js/checklist-readiness.js') }}"></script>
+    @endpush
 </x-front-layout>

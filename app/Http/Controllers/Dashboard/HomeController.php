@@ -58,6 +58,7 @@ class HomeController extends Controller
             'total' => $projects->count(),
             'draft' => $projects->where('workflow_status', 'draft')->count(),
             'coordinator' => $projects->whereIn('workflow_status', ['pending_coordinator', 'coordinator_filling'])->count(),
+            'pending_pm' => $projects->where('workflow_status', 'pending_project_manager')->count(),
             'pending_dept' => $projects->where('workflow_status', 'pending_dept_manager')->count(),
             'pending_monitoring' => $projects->where('workflow_status', 'pending_monitoring_manager')->count(),
             'monitoring' => $projects->where('workflow_status', 'monitoring_in_progress')->count(),
@@ -73,6 +74,7 @@ class HomeController extends Controller
                     ['title' => 'إجمالي مشاريعي', 'value' => $base['total'], 'class' => 'primary'],
                     ['title' => 'مسودات', 'value' => $base['draft'], 'class' => 'secondary'],
                     ['title' => 'بانتظار المنسق', 'value' => $base['coordinator'], 'class' => 'info'],
+                    ['title' => 'بانتظار مراجعتي', 'value' => $base['pending_pm'], 'class' => 'warning'],
                     ['title' => 'قيد المراقبة', 'value' => $base['monitoring'], 'class' => 'warning'],
                     ['title' => 'مكتملة', 'value' => $base['complete'], 'class' => 'success'],
                     ['title' => 'مرفوضة نهائياً', 'value' => $base['rejected'], 'class' => 'danger'],
@@ -83,6 +85,7 @@ class HomeController extends Controller
                 'cards' => [
                     ['title' => 'مُسندة لي', 'value' => $base['total'], 'class' => 'primary'],
                     ['title' => 'بانتظار تعبئتي', 'value' => $base['coordinator'], 'class' => 'warning'],
+                    ['title' => 'بانتظار مدير المشروع', 'value' => $base['pending_pm'], 'class' => 'info'],
                     ['title' => 'بانتظار مدير الدائرة', 'value' => $base['pending_dept'], 'class' => 'info'],
                     ['title' => 'مكتملة', 'value' => $base['complete'], 'class' => 'success'],
                 ],
@@ -118,7 +121,7 @@ class HomeController extends Controller
                 'label' => 'نظرة عامة',
                 'cards' => [
                     ['title' => 'إجمالي المشاريع', 'value' => $base['total'], 'class' => 'primary'],
-                    ['title' => 'قيد التنفيذ', 'value' => $base['coordinator'] + $base['pending_dept'] + $base['pending_monitoring'] + $base['monitoring'], 'class' => 'info'],
+                    ['title' => 'قيد التنفيذ', 'value' => $base['coordinator'] + $base['pending_pm'] + $base['pending_dept'] + $base['pending_monitoring'] + $base['monitoring'], 'class' => 'info'],
                     ['title' => 'مكتملة', 'value' => $base['complete'], 'class' => 'success'],
                     ['title' => 'مرفوضة', 'value' => $base['rejected'], 'class' => 'danger'],
                 ],

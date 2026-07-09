@@ -26,7 +26,7 @@ class ProjectController extends Controller
 {
     private const STATUSES = [
         'draft', 'pending_coordinator', 'coordinator_filling',
-        'pending_dept_manager', 'pending_monitoring_manager',
+        'pending_project_manager', 'pending_dept_manager', 'pending_monitoring_manager',
         'monitoring_in_progress', 'pending_monitoring_confirmation',
         'passage_complete', 'rejected',
     ];
@@ -211,7 +211,7 @@ class ProjectController extends Controller
             return redirect()->route('dashboard.projects.monitor-work', $project);
         }
 
-        $project->load(['center', 'department', 'section', 'funder', 'projectManager.department', 'monitorPerson', 'primaryMonitoringActivity', 'rejectedByUser', 'coordinatorFilledByUser']);
+        $project->load(['center', 'department', 'section', 'funder', 'procurementRep', 'projectManager.department', 'monitorPerson', 'primaryMonitoringActivity', 'rejectedByUser', 'coordinatorFilledByUser', 'rejections.rejectedByUser', 'rejections.returnTargetPerson']);
         $project->syncMonitoringWorkflowState();
         $project->refresh();
 
@@ -329,6 +329,7 @@ class ProjectController extends Controller
             'coordinator_submitted_by' => auth()->id(),
             'updated_by' => auth()->id(),
         ]);
+        $this->clearProjectReturnNotice($project);
 
         return back()->with('success', 'تم إرسال المشروع للمنسق.');
     }
@@ -353,16 +354,38 @@ class ProjectController extends Controller
         return back()->with('success', 'تم حفظ عمود المنسق.');
     }
 
-    public function submitToDeptManager(Project $project): RedirectResponse
+    public function submitToProjectManager(Project $project): RedirectResponse
     {
         $this->authorize('fill_coordinator', Project::class);
         $this->guardStatus($project, ['coordinator_filling']);
         $this->authorizeCoordinatorFill($project);
         $project->loadMissing('checklistValues');
 
-        if (! $this->coordinatorChecklistReadyForDeptSubmission($project)) {
+        if (! $this->coordinatorChecklistReadyForSubmission($project)) {
             return back()->withErrors([
-                'coordinator' => 'لا يمكن الإرسال لمدير الدائرة قبل حفظ تعبئة المنسق (من المنسق نفسه أو نيابةً عنه).',
+                'coordinator' => 'لا يمكن الإرسال لمدير المشروع قبل اكتمال تعبئة جميع بنود قائمة المنسق.',
+            ]);
+        }
+
+        $project->update([
+            'workflow_status' => 'pending_project_manager',
+            'updated_by' => auth()->id(),
+        ]);
+        $this->clearProjectReturnNotice($project);
+
+        return back()->with('success', 'تم إرسال المشروع لمدير المشروع.');
+    }
+
+    public function submitToDeptManager(Project $project): RedirectResponse
+    {
+        $this->authorize('update', Project::class);
+        $this->guardStatus($project, ['pending_project_manager']);
+        $this->authorizeProjectManagerReview($project);
+        $project->loadMissing('checklistValues');
+
+        if (! $this->coordinatorChecklistReadyForSubmission($project)) {
+            return back()->withErrors([
+                'coordinator' => 'لا يمكن الإرسال لمدير الدائرة قبل اكتمال تعبئة المنسق.',
             ]);
         }
 
@@ -370,6 +393,7 @@ class ProjectController extends Controller
             'workflow_status' => 'pending_dept_manager',
             'updated_by' => auth()->id(),
         ]);
+        $this->clearProjectReturnNotice($project);
 
         return back()->with('success', 'تم إرسال المشروع لمدير الدائرة.');
     }
@@ -386,6 +410,7 @@ class ProjectController extends Controller
             'dept_manager_approved_by' => auth()->id(),
             'updated_by' => auth()->id(),
         ]);
+        $this->clearProjectReturnNotice($project);
 
         return back()->with('success', 'تمت الموافقة، أُرسل المشروع لمدير الرقابة العامة.');
     }
@@ -473,8 +498,11 @@ class ProjectController extends Controller
         $this->guardStatus($project, ['monitoring_in_progress', 'pending_monitoring_confirmation', 'passage_complete']);
         $this->authorizeMonitorFill($project);
 
-        // عزل بيانات المنسق على مستوى الاستعلام: لا يُحمَّل coordinator_id ولا coordinator_value إطلاقاً
-        $project->loadMissing(['center', 'department', 'section', 'funder', 'primaryMonitoringActivity']);
+        // عزل بيانات المنسق على مستوى الاستعلام: لا يُحمَّل coordinator_value إطلاقاً
+        $project->loadMissing([
+            'center', 'department', 'section', 'funder', 'procurementRep',
+            'projectManager.department', 'coordinator', 'primaryMonitoringActivity',
+        ]);
         $project->syncMonitoringWorkflowState();
         $project->refresh();
 
@@ -501,6 +529,13 @@ class ProjectController extends Controller
             'canShowMonitorSubmitSection',
         ) + [
             'isAssignedMonitor' => $project->isAssignedMonitor(auth()->user()),
+            'showCoordinatorInSummary' => true,
+            'canViewCoordinatorData' => false,
+            'canViewMonitorData' => true,
+            'approverDepartmentManager' => $project->approverDepartmentManager(),
+            'approverDepartmentManagerLabel' => $project->approverDepartmentManagerLabel(),
+            'projectManagerDepartmentName' => $project->projectManagerDepartmentName(),
+            'readinessBreakdown' => $project->readinessBreakdown(),
         ]);
     }
 
@@ -537,10 +572,10 @@ class ProjectController extends Controller
         $this->guardStatus($project, ['monitoring_in_progress']);
         $this->authorizeMonitorFill($project);
 
-        if (! $this->isMonitorSubmitUnlocked($project) || ! $project->hasSavedMonitorWork()) {
+        if (! $this->isMonitorSubmitUnlocked($project) || ! $this->monitorChecklistReadyForSubmission($project)) {
             return redirect()
                 ->route('dashboard.projects.monitor-work', $project)
-                ->withErrors(['monitor' => 'يجب حفظ قائمة التحقق والملاحظات أولاً قبل الإرسال لمدير الرقابة.']);
+                ->withErrors(['monitor' => 'يجب حفظ وتعبئة جميع بنود قائمة التحقق قبل الإرسال لمدير الرقابة.']);
         }
 
         $activity = $project->primaryMonitoringActivity;
@@ -636,6 +671,7 @@ class ProjectController extends Controller
 
         $returnTarget = $validated['return_target'];
         $nextStatus = Project::workflowStatusForReturnTarget($returnTarget);
+        $statusBefore = $project->workflow_status;
 
         if ($nextStatus === null) {
             abort(422, 'خيار الإرجاع غير صالح.');
@@ -657,6 +693,19 @@ class ProjectController extends Controller
         }
 
         $project->update($payload);
+
+        $project->rejections()->create([
+            'rejection_reason' => $validated['rejection_reason'],
+            'gap_owner' => $validated['gap_owner'],
+            'return_target' => $returnTarget === 'reject_final' ? null : $returnTarget,
+            'return_target_person_id' => $project->fresh()->personIdForReturnTarget(
+                $returnTarget === 'reject_final' ? null : $returnTarget
+            ),
+            'workflow_status_before' => $statusBefore,
+            'workflow_status_after' => $nextStatus,
+            'rejected_by' => auth()->id(),
+            'rejected_at' => now(),
+        ]);
 
         $message = $returnTarget === 'reject_final'
             ? 'تم رفض المشروع نهائياً.'
@@ -687,6 +736,13 @@ class ProjectController extends Controller
         }
     }
 
+    private function clearProjectReturnNotice(Project $project): void
+    {
+        if ($project->hasPendingReturnNotice()) {
+            $project->clearReturnNotice();
+        }
+    }
+
     private function activeChecklistGroups()
     {
         return ChecklistGroup::where('is_active', true)
@@ -701,19 +757,27 @@ class ProjectController extends Controller
             return;
         }
 
-        $validated = $request->validate([
-            'checklist' => ['array'],
-            'checklist.*.value' => ['nullable', 'in:ready,partial,not_ready,not_required'],
-            'checklist.*.person_name' => ['nullable', 'string', 'max:255'],
+        $activeItemIds = $this->activeChecklistItemIds();
+        $rules = ['checklist' => ['required', 'array']];
+
+        foreach ($activeItemIds as $itemId) {
+            $rules["checklist.{$itemId}.value"] = ['required', 'in:ready,partial,not_ready,not_required'];
+            $rules["checklist.{$itemId}.person_name"] = ['nullable', 'string', 'max:255'];
+        }
+
+        $validated = $request->validate($rules, [
+            'checklist.*.value.required' => 'يجب تحديد حالة كل بند في قائمة التحقق.',
         ]);
 
-        foreach ($validated['checklist'] as $itemId => $data) {
-            if (empty($data['value']) && empty($data['person_name'])) {
+        foreach ($activeItemIds as $itemId) {
+            $data = $validated['checklist'][$itemId] ?? null;
+
+            if (! is_array($data)) {
                 continue;
             }
 
             $attributes = ['project_id' => $project->id, 'checklist_item_id' => $itemId];
-            $payload = [$column => $data['value'] ?? null];
+            $payload = [$column => $data['value']];
 
             if (array_key_exists('person_name', $data)) {
                 $payload['person_name'] = $data['person_name'];
@@ -721,6 +785,19 @@ class ProjectController extends Controller
 
             ProjectChecklistValue::updateOrCreate($attributes, $payload);
         }
+    }
+
+    /** @return list<int> */
+    private function activeChecklistItemIds(): array
+    {
+        return \App\Models\ChecklistItem::query()
+            ->where('is_active', true)
+            ->whereHas('group', fn ($q) => $q->where('is_active', true))
+            ->orderBy('group_id')
+            ->orderBy('order')
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
     }
 
     private function linesToArray(string $text): array
@@ -747,15 +824,19 @@ class ProjectController extends Controller
 
         $showCoordinatorChecklistInitially = in_array($coordinatorMode, ['self', 'external'], true)
             || ($coordinatorMode === 'person' && (
-                old('fill_on_behalf')
-                || ($project && $project->exists && $project->coordinator_filled_by)
+                (old('fill_on_behalf') && ! $this->coordinatorIdHasUser((int) old('coordinator_id', 0)))
+                || ($project && $project->exists && $project->coordinator_filled_by && ! $project->coordinatorHasUserAccount())
             ));
 
         return [
             'centers' => Center::orderBy('name')->get(),
             'funders' => Funder::orderBy('name')->get(),
             'projectManagers' => Person::withRole('project_manager')->orderBy('name')->get(),
+            'people' => Person::orderBy('name')->get(),
             'coordinators' => Person::withRole('coordinator')->orderBy('name')->get(),
+            'coordinatorUserMap' => Person::withRole('coordinator')->get()->mapWithKeys(
+                fn (Person $person) => [(string) $person->id => (bool) $person->user_id]
+            )->all(),
             'projectTypes' => $this->constantOptions('project_types'),
             'monitoringMethods' => $this->constantOptions('monitoring_methods'),
             'monitoringStages' => $this->constantOptions('monitoring_stages'),
@@ -822,7 +903,16 @@ class ProjectController extends Controller
         }
 
         if ($mode === 'person') {
-            return $request->boolean('fill_on_behalf');
+            if ($request->boolean('fill_on_behalf')) {
+                $coordinatorId = (int) $request->input('coordinator_id', 0);
+                if ($coordinatorId && Person::where('id', $coordinatorId)->whereNotNull('user_id')->exists()) {
+                    return false;
+                }
+
+                return true;
+            }
+
+            return false;
         }
 
         return false;
@@ -868,13 +958,16 @@ class ProjectController extends Controller
             'monitoringMethods' => $this->constantOptions('monitoring_methods'),
             'monitoringStages' => $this->constantOptions('monitoring_stages'),
             'showCoordinatorFillOnDraft' => $this->canFillCoordinatorOnDraft($project),
+            'canSubmitToProjectManager' => $this->canSubmitToProjectManager($project),
             'canSubmitToDeptManager' => $this->canSubmitToDeptManager($project),
             'canManageCoordinatorColumn' => $canManageCoordinatorColumn,
             'requiresFillOnBehalfConfirm' => $isProjectManager
                 && ! $isAssignedCoordinator
                 && ! $project->isSelfCoordinator()
+                && ! $project->coordinatorHasUserAccount()
                 && $project->hasCoordinatorAssignment()
                 && $canManageCoordinatorColumn,
+            'readinessBreakdown' => $project->readinessBreakdown(),
             'coordinatorFillActorLabel' => $project->coordinatorFilledByLabel(),
             'canApproveThisProject' => auth()->user()?->can('approve_department', Project::class)
                 && $project->workflow_status === 'pending_dept_manager'
@@ -893,6 +986,8 @@ class ProjectController extends Controller
                 auth()->user()?->person,
                 (bool) auth()->user()?->super_admin
             ),
+            'canViewRejectionHistory' => $project->canUserViewRejectionHistory(auth()->user()),
+            'canViewMonitoringStatusPanel' => $project->canViewMonitoringStatusPanel(auth()->user()),
         ];
     }
 
@@ -1008,7 +1103,7 @@ class ProjectController extends Controller
         abort_if(! $allowed, 403, 'غير مصرّح لك بتعبئة عمود المنسق لهذا المشروع.');
     }
 
-    private function canSubmitToDeptManager(Project $project): bool
+    private function canSubmitToProjectManager(Project $project): bool
     {
         $user = auth()->user();
 
@@ -1020,12 +1115,54 @@ class ProjectController extends Controller
             return false;
         }
 
-        // الإرسال لمدير الدائرة مسموح للمنسق أو مدير المشروع بعد اكتمال تعبئة المنسق.
         if (! $this->isCoordinatorFillActor($project, $user)) {
             return false;
         }
 
-        return $this->coordinatorChecklistReadyForDeptSubmission($project);
+        return $this->coordinatorChecklistReadyForSubmission($project);
+    }
+
+    private function canSubmitToDeptManager(Project $project): bool
+    {
+        $user = auth()->user();
+
+        if (! $user) {
+            return false;
+        }
+
+        if ($project->workflow_status !== 'pending_project_manager') {
+            return false;
+        }
+
+        if ($user->super_admin) {
+            return $this->coordinatorChecklistReadyForSubmission($project);
+        }
+
+        $personId = $user->person?->id;
+
+        if (! $personId || (int) $personId !== (int) $project->project_manager_id) {
+            return false;
+        }
+
+        return $user->can('update', Project::class)
+            && $this->coordinatorChecklistReadyForSubmission($project);
+    }
+
+    private function authorizeProjectManagerReview(Project $project): void
+    {
+        $user = auth()->user();
+
+        if ($user?->super_admin) {
+            return;
+        }
+
+        $personId = $user?->person?->id;
+
+        abort_if(
+            ! $personId || (int) $personId !== (int) $project->project_manager_id,
+            403,
+            'غير مصرّح لك بإرسال المشروع لمدير الدائرة.'
+        );
     }
 
     private function isCoordinatorFillActor(Project $project, $user): bool
@@ -1081,6 +1218,10 @@ class ProjectController extends Controller
             return true;
         }
 
+        if ($project->coordinatorHasUserAccount()) {
+            return false;
+        }
+
         // إذا المنسق الرسمي عبّى بنفسه (بدون نيابة)، يتحول مدير المشروع لعرض فقط.
         if ($project->coordinator_readiness_pct !== null && (int) ($project->coordinator_filled_by ?? 0) !== (int) $user->id) {
             return false;
@@ -1089,27 +1230,47 @@ class ProjectController extends Controller
         return true;
     }
 
-    private function coordinatorChecklistReadyForDeptSubmission(Project $project): bool
+    private function coordinatorChecklistReadyForSubmission(Project $project): bool
     {
-        $hasActiveChecklistItems = ChecklistGroup::query()
-            ->where('is_active', true)
-            ->whereHas('items', fn ($query) => $query->where('is_active', true))
-            ->exists();
+        $activeItemIds = $this->activeChecklistItemIds();
 
-        if (! $hasActiveChecklistItems) {
+        if ($activeItemIds === []) {
             return true;
         }
 
-        if ($project->coordinator_readiness_pct !== null) {
+        $filledCount = $project->checklistValues()
+            ->whereIn('checklist_item_id', $activeItemIds)
+            ->whereNotNull('coordinator_value')
+            ->where('coordinator_value', '!=', '')
+            ->count();
+
+        return $filledCount === count($activeItemIds);
+    }
+
+    private function monitorChecklistReadyForSubmission(Project $project): bool
+    {
+        $activeItemIds = $this->activeChecklistItemIds();
+
+        if ($activeItemIds === []) {
             return true;
         }
 
-        return $project->checklistValues()
-            ->where(function ($query) {
-                $query->whereNotNull('coordinator_value')
-                    ->orWhereNotNull('person_name');
-            })
-            ->exists();
+        $filledCount = $project->checklistValues()
+            ->whereIn('checklist_item_id', $activeItemIds)
+            ->whereNotNull('monitor_value')
+            ->where('monitor_value', '!=', '')
+            ->count();
+
+        return $filledCount === count($activeItemIds);
+    }
+
+    private function coordinatorIdHasUser(int $coordinatorId): bool
+    {
+        if ($coordinatorId <= 0) {
+            return false;
+        }
+
+        return Person::where('id', $coordinatorId)->whereNotNull('user_id')->exists();
     }
 
     private function authorizeMonitorFill(Project $project): void
@@ -1135,23 +1296,23 @@ class ProjectController extends Controller
 
         $rules = [
             'project_name' => ['required', 'string', 'max:255'],
-            'project_type' => ['nullable', 'string', Rule::in($projectTypes)],
-            'funder_id' => ['nullable', 'exists:funders,id'],
-            'procurement_rep' => ['nullable', 'string', 'max:255'],
+            'project_type' => ['required', 'string', Rule::in($projectTypes)],
+            'funder_id' => ['required', 'exists:funders,id'],
+            'procurement_rep_id' => ['required', 'exists:people,id'],
             'project_manager_id' => ['required', 'exists:people,id'],
             'coordinator_mode' => ['required', 'in:self,person,external'],
             'coordinator_id' => ['nullable', 'exists:people,id'],
             'coordinator_external_name' => ['nullable', 'string', 'max:255'],
-            'center_id' => ['nullable', 'exists:centers,id'],
-            'department_id' => ['nullable', 'exists:departments,id'],
-            'section_id' => ['nullable', 'exists:sections,id'],
-            'planned_start_date' => ['nullable', 'date'],
-            'planned_end_date' => ['nullable', 'date', 'after_or_equal:planned_start_date'],
-            'location' => ['nullable', 'string'],
-            'target_beneficiaries' => ['nullable', 'integer', 'min:0'],
-            'execution_zones' => ['nullable', 'integer', 'min:0'],
-            'estimated_duration' => ['nullable', 'string', 'max:255'],
-            'allocated_budget' => ['nullable', 'numeric', 'min:0'],
+            'center_id' => ['required', 'exists:centers,id'],
+            'department_id' => ['required', 'exists:departments,id'],
+            'section_id' => ['required', 'exists:sections,id'],
+            'planned_start_date' => ['required', 'date'],
+            'planned_end_date' => ['required', 'date', 'after_or_equal:planned_start_date'],
+            'location' => ['required', 'string'],
+            'target_beneficiaries' => ['required', 'integer', 'min:0'],
+            'execution_zones' => ['required', 'integer', 'min:0'],
+            'estimated_duration' => ['required', 'string', 'max:255'],
+            'allocated_budget' => ['required', 'numeric', 'min:0'],
         ];
 
         $rules['project_number_seq'] = ['required', 'integer', 'min:1'];
@@ -1588,6 +1749,10 @@ class ProjectController extends Controller
             && (int) $personId === (int) $project->project_manager_id
             && ! $project->isSelfCoordinator()
             && (int) $personId !== (int) ($project->coordinator_id ?? 0);
+
+        if ($isPmFillingOnBehalf && $project->coordinatorHasUserAccount()) {
+            abort(422, 'لا يمكن التعبئة نيابةً عن منسق له حساب في النظام.');
+        }
 
         if ($isPmFillingOnBehalf && ! $request->boolean('fill_on_behalf') && ! filled($project->coordinator_external_name)) {
             abort(422, 'يجب تأكيد التعبئة نيابةً عن المنسق.');

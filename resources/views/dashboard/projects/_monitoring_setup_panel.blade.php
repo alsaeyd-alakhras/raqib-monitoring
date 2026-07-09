@@ -128,7 +128,7 @@
                         <div class="row g-3 align-items-end">
                             <div class="col-md-6">
                                 <label class="form-label" for="monitor_person_id">المراقب</label>
-                                <select name="monitor_person_id" id="monitor_person_id" class="form-select" required>
+                                <select name="monitor_person_id" id="monitor_person_id" class="form-select select2-searchable" required>
                                     <option value="">إختر القيمة</option>
                                     @foreach ($monitors as $person)
                                         <option value="{{ $person->id }}" @selected($project->monitor_person_id == $person->id)>{{ $person->name }}</option>
@@ -160,3 +160,14 @@
         @endif
     </div>
 </div>
+
+@once
+    @push('styles')
+        <link rel="stylesheet" href="{{ asset('assets/vendor/libs/select2/select2.css') }}">
+        <link rel="stylesheet" href="{{ asset('css/searchable-select.css') }}">
+    @endpush
+    @push('scripts')
+        <script src="{{ asset('assets/vendor/libs/select2/select2.full.min.js') }}"></script>
+        <script src="{{ asset('js/searchable-select.js') }}"></script>
+    @endpush
+@endonce

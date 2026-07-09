@@ -18,6 +18,7 @@
                 'project' => $linkedProject,
                 'canViewCoordinatorData' => $canViewCoordinatorData,
                 'canViewMonitorData' => $canViewMonitorData,
+                'showCoordinatorInSummary' => true,
                 'approverDepartmentManagerLabel' => $linkedProject->approverDepartmentManagerLabel(),
                 'projectManagerDepartmentName' => $linkedProject->projectManagerDepartmentName(),
                 'coordinatorFillActorLabel' => $linkedProject->coordinatorFilledByLabel(),
