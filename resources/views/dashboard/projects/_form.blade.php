@@ -251,7 +251,7 @@
                 <select
                     name="section_id"
                     id="section_id"
-                    class="form-select @error('section_id') is-invalid @enderror"
+                    class="form-select select2-searchable @error('section_id') is-invalid @enderror"
                     required
                 >
                     <option value="">إختر القيمة</option>
@@ -275,6 +275,15 @@
                     name="planned_end_date"
                     label="تاريخ نهاية التنفيذ المخطط"
                     :value="isset($project) && $project->planned_end_date ? $project->planned_end_date->format('Y-m-d') : ''"
+                    required
+                />
+            </div>
+            <div class="mb-4 col-md-4">
+                <x-form.input
+                    type="date"
+                    name="execution_start_date"
+                    label="تاريخ بدء التنفيذ"
+                    :value="isset($project) && $project->execution_start_date ? $project->execution_start_date->format('Y-m-d') : ''"
                     required
                 />
             </div>
@@ -310,6 +319,7 @@
                 <x-form.input
                     type="number"
                     name="execution_zones"
+                    id="execution_zones"
                     label="عدد مناطق التنفيذ"
                     :value="$project->execution_zones ?? ''"
                     min="0"
@@ -335,11 +345,59 @@
                     required
                 />
             </div>
+            <div class="mb-4 col-md-12">
+                <label class="form-label" for="allocation_image">
+                    صورة التخصيص
+                    <span class="text-danger" style="font-size: 12px;"><i class="fa fa-asterisk"></i></span>
+                </label>
+                @if (! empty($project->allocation_image_path ?? null))
+                    <div class="mb-2">
+                        <a href="{{ $project->allocationImageUrl() }}" target="_blank" rel="noopener">
+                            <img
+                                src="{{ $project->allocationImageUrl() }}"
+                                alt="صورة التخصيص"
+                                class="rounded border"
+                                style="max-height: 120px; max-width: 100%;"
+                            >
+                        </a>
+                        <div class="form-text">الصورة الحالية — يمكنك استبدالها برفع ملف جديد.</div>
+                    </div>
+                @endif
+                <input
+                    type="file"
+                    name="allocation_image"
+                    id="allocation_image"
+                    class="form-control @error('allocation_image') is-invalid @enderror"
+                    accept="image/jpeg,image/png,image/jpg,image/webp"
+                    @if (empty($project->allocation_image_path ?? null)) required @endif
+                >
+                @error('allocation_image')
+                    <div class="invalid-feedback d-block">{{ $message }}</div>
+                @enderror
+            </div>
+            <div class="col-12">
+                <div id="execution-regions-panel" class="execution-regions-panel">
+                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+                        <label class="form-label mb-0">أسماء مناطق التنفيذ</label>
+                        <span class="badge bg-label-primary" id="execution-regions-count-badge">0 منطقة</span>
+                    </div>
+                    <div id="execution-regions-fields" class="row g-3"></div>
+                    @error('execution_region_names')
+                        <div class="invalid-feedback d-block">{{ $message }}</div>
+                    @enderror
+                    @error('execution_region_names.*')
+                        <div class="invalid-feedback d-block">{{ $message }}</div>
+                    @enderror
+                </div>
+            </div>
         </div>
     </div>
 </div>
 
 @if ($canEditCoordinatorChecklistInForm ?? false)
+    @if ($isEditing ?? false)
+        @include('dashboard.projects._checklist_attachment_delete_modal')
+    @endif
     <div
         id="coordinator-checklist-section"
         class="card mb-4 {{ ($showCoordinatorChecklistInitially ?? false) ? '' : 'd-none' }}"
@@ -369,7 +427,33 @@
 
 @push('scripts')
 <script src="{{ asset('js/org-cascade.js') }}"></script>
+<script src="{{ asset('js/checklist-status-style.js') }}"></script>
+<script src="{{ asset('js/checklist-attachment-ui.js') }}"></script>
 <script src="{{ asset('js/checklist-readiness.js') }}"></script>
+<script src="{{ asset('js/checklist-person-required.js') }}"></script>
+<script src="{{ asset('js/checklist-closure-docs.js') }}"></script>
+@once
+    @push('styles')
+        <link rel="stylesheet" href="{{ asset('assets/vendor/libs/select2/select2.css') }}">
+        <link rel="stylesheet" href="{{ asset('css/searchable-select.css') }}">
+        <style>
+            .execution-regions-panel {
+                border: 1px solid rgba(67, 89, 113, 0.12);
+                border-radius: 0.5rem;
+                padding: 1rem 1.125rem;
+                background: rgba(67, 89, 113, 0.03);
+            }
+
+            .execution-region-field .region-index-badge {
+                min-width: 2rem;
+            }
+        </style>
+    @endpush
+    @push('scripts')
+        <script src="{{ asset('assets/vendor/libs/select2/select2.full.min.js') }}"></script>
+        <script src="{{ asset('js/searchable-select.js') }}"></script>
+    @endpush
+@endonce
 <script>
 (function () {
     const modeRadios = document.querySelectorAll('.coordinator-mode-radio');
@@ -471,8 +555,25 @@
         setChecklistInputsEnabled(show);
         updateChecklistIntro();
 
-        if (show && window.initChecklistReadiness) {
-            window.initChecklistReadiness(checklistSection);
+        if (show) {
+            if (window.initChecklistReadiness) {
+                window.initChecklistReadiness(checklistSection);
+            }
+            if (window.initChecklistStatusStyle) {
+                window.initChecklistStatusStyle(checklistSection);
+            }
+            if (window.initChecklistPersonRequired) {
+                window.initChecklistPersonRequired(checklistSection);
+            }
+            if (window.initChecklistAttachmentUi) {
+                window.initChecklistAttachmentUi(checklistSection);
+            }
+            if (window.initChecklistClosureDocs) {
+                window.initChecklistClosureDocs(checklistSection);
+            }
+            if (window.refreshChecklistReadiness) {
+                window.refreshChecklistReadiness(checklistSection);
+            }
         }
 
         const currentKey = getCoordinatorKey();
@@ -621,11 +722,63 @@ document.addEventListener('DOMContentLoaded', function () {
         window.initOrgCascade({
             departmentsUrl: @json($departmentsByCenterUrl),
             sectionsUrl: @json($sectionsByDepartmentUrl),
+            allSectionsUrl: @json($allSectionsUrl),
+            showAllSections: true,
             selectedCenterId: @json($selectedCenterId ?? ''),
             selectedDepartmentId: @json($selectedDepartmentId ?? ''),
             selectedSectionId: @json($selectedSectionId ?? ''),
         });
     }
+
+    const zonesInput = document.getElementById('execution_zones');
+    const regionsFields = document.getElementById('execution-regions-fields');
+    const regionsCountBadge = document.getElementById('execution-regions-count-badge');
+    const savedRegionNames = @json(old('execution_region_names', isset($project) ? ($project->execution_region_names ?? []) : []));
+
+    function renderExecutionRegions() {
+        if (!zonesInput || !regionsFields) {
+            return;
+        }
+
+        const count = Math.max(0, parseInt(zonesInput.value || '0', 10) || 0);
+        regionsFields.innerHTML = '';
+
+        if (regionsCountBadge) {
+            regionsCountBadge.textContent = count === 1 ? 'منطقة واحدة' : `${count} منطقة`;
+        }
+
+        if (count === 0) {
+            return;
+        }
+
+        for (let index = 0; index < count; index += 1) {
+            const col = document.createElement('div');
+            col.className = 'col-md-6 col-lg-4 execution-region-field';
+
+            const value = savedRegionNames[index] ?? '';
+            col.innerHTML = `
+                <label class="form-label d-flex align-items-center gap-2" for="execution_region_names_${index}">
+                    <span class="badge bg-label-secondary region-index-badge">${index + 1}</span>
+                    <span>اسم المنطقة ${index + 1}</span>
+                </label>
+                <input
+                    type="text"
+                    name="execution_region_names[${index}]"
+                    id="execution_region_names_${index}"
+                    class="form-control"
+                    value="${String(value).replace(/"/g, '&quot;')}"
+                    placeholder="مثال: شمال غزة"
+                    required
+                >
+            `;
+
+            regionsFields.appendChild(col);
+        }
+    }
+
+    zonesInput?.addEventListener('input', renderExecutionRegions);
+    zonesInput?.addEventListener('change', renderExecutionRegions);
+    renderExecutionRegions();
 });
 </script>
 @endpush

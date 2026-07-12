@@ -137,7 +137,8 @@
                             </div>
                             <div class="col-md-6">
                                 <label class="form-label" for="monitoring_date">تاريخ المراقبة</label>
-                                <input type="date" name="monitoring_date" id="monitoring_date" class="form-control" value="{{ $project->monitoring_date?->format('Y-m-d') }}">
+                                <input type="date" name="monitoring_date" id="monitoring_date" class="form-control" value="{{ old('monitoring_date', $defaultMonitoringDate ?? $project->monitoring_date?->format('Y-m-d')) }}">
+                                <div class="form-text">يُعبّأ تلقائياً من تاريخ بدء التنفيذ ويمكن تعديله.</div>
                             </div>
                             <div class="col-12">
                                 <button type="submit" class="btn btn-success">

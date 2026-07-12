@@ -1,8 +1,12 @@
 @php
-    $initialNotes = $project->monitor_notes ?? [];
+    $initialPositiveNotes = $project->monitor_notes ?? [];
+    $initialNegativeNotes = $project->monitor_negative_notes ?? [];
     $initialRecommendations = $project->monitor_recommendations ?? [];
-    if (empty($initialNotes)) {
-        $initialNotes = [''];
+    if (empty($initialPositiveNotes)) {
+        $initialPositiveNotes = [''];
+    }
+    if (empty($initialNegativeNotes)) {
+        $initialNegativeNotes = [''];
     }
     if (empty($initialRecommendations)) {
         $initialRecommendations = [''];
@@ -60,42 +64,109 @@
             color: var(--bs-primary);
             margin-bottom: 0.5rem;
         }
+
+        .monitor-notes-editor-group-title {
+            font-size: 0.9375rem;
+            font-weight: 700;
+            color: #566a7f;
+            margin-bottom: 0.75rem;
+            padding-bottom: 0.375rem;
+            border-bottom: 2px solid rgba(105, 108, 255, 0.2);
+        }
+
+        .monitor-notes-editor-subsection-title {
+            font-size: 0.8125rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+
+        .monitor-notes-editor-subsection-title--positive {
+            color: #28a745;
+        }
+
+        .monitor-notes-editor-subsection-title--negative {
+            color: #dc3545;
+        }
+
+        .monitor-notes-editor-field-notes-block {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
     </style>
     @endpush
 @endonce
 
 <div class="row g-3 mt-3 monitor-notes-editor" id="monitor-notes-editor">
     <div class="col-lg-6">
-        <div class="monitor-notes-editor-section-title">الملاحظات الميدانية</div>
-        <div class="table-responsive">
-            <table class="monitor-notes-editor-table" data-editor-table="notes">
-                <thead>
-                    <tr>
-                        <th class="col-index">#</th>
-                        <th>النص</th>
-                        <th class="col-action"></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach ($initialNotes as $note)
-                        <tr>
-                            <td class="col-index row-num">1</td>
-                            <td>
-                                <input type="text" class="form-control form-control-sm editor-row-input" value="{{ $note }}">
-                            </td>
-                            <td class="col-action">
-                                <button type="button" class="btn btn-sm btn-outline-danger btn-remove-row" title="حذف">
-                                    <i class="bx bx-trash"></i>
-                                </button>
-                            </td>
-                        </tr>
-                    @endforeach
-                </tbody>
-            </table>
+        <div class="monitor-notes-editor-group-title">الملاحظات الميدانية</div>
+        <div class="monitor-notes-editor-field-notes-block">
+            <div>
+                <div class="monitor-notes-editor-subsection-title monitor-notes-editor-subsection-title--positive">ملاحظات إيجابية</div>
+                <div class="table-responsive">
+                    <table class="monitor-notes-editor-table" data-editor-table="positive-notes">
+                        <thead>
+                            <tr>
+                                <th class="col-index">#</th>
+                                <th>النص</th>
+                                <th class="col-action"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach ($initialPositiveNotes as $note)
+                                <tr>
+                                    <td class="col-index row-num">1</td>
+                                    <td>
+                                        <input type="text" class="form-control form-control-sm editor-row-input" value="{{ $note }}">
+                                    </td>
+                                    <td class="col-action">
+                                        <button type="button" class="btn btn-sm btn-outline-danger btn-remove-row" title="حذف">
+                                            <i class="bx bx-trash"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+                <button type="button" class="btn btn-sm btn-outline-success mt-2 btn-add-row" data-target="positive-notes">
+                    <i class="bx bx-plus"></i> إضافة ملاحظة إيجابية
+                </button>
+            </div>
+
+            <div>
+                <div class="monitor-notes-editor-subsection-title monitor-notes-editor-subsection-title--negative">ملاحظات سلبية</div>
+                <div class="table-responsive">
+                    <table class="monitor-notes-editor-table" data-editor-table="negative-notes">
+                        <thead>
+                            <tr>
+                                <th class="col-index">#</th>
+                                <th>النص</th>
+                                <th class="col-action"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach ($initialNegativeNotes as $note)
+                                <tr>
+                                    <td class="col-index row-num">1</td>
+                                    <td>
+                                        <input type="text" class="form-control form-control-sm editor-row-input" value="{{ $note }}">
+                                    </td>
+                                    <td class="col-action">
+                                        <button type="button" class="btn btn-sm btn-outline-danger btn-remove-row" title="حذف">
+                                            <i class="bx bx-trash"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+                <button type="button" class="btn btn-sm btn-outline-danger mt-2 btn-add-row" data-target="negative-notes">
+                    <i class="bx bx-plus"></i> إضافة ملاحظة سلبية
+                </button>
+            </div>
         </div>
-        <button type="button" class="btn btn-sm btn-outline-primary mt-2 btn-add-row" data-target="notes">
-            <i class="bx bx-plus"></i> إضافة ملاحظة
-        </button>
     </div>
     <div class="col-lg-6">
         <div class="monitor-notes-editor-section-title">التوصيات</div>
@@ -132,6 +203,7 @@
 </div>
 
 <textarea name="monitor_notes_text" id="monitor_notes_text" class="d-none" aria-hidden="true">{{ implode("\n", array_filter($project->monitor_notes ?? [])) }}</textarea>
+<textarea name="monitor_negative_notes_text" id="monitor_negative_notes_text" class="d-none" aria-hidden="true">{{ implode("\n", array_filter($project->monitor_negative_notes ?? [])) }}</textarea>
 <textarea name="monitor_recommendations_text" id="monitor_recommendations_text" class="d-none" aria-hidden="true">{{ implode("\n", array_filter($project->monitor_recommendations ?? [])) }}</textarea>
 
 @push('scripts')
@@ -140,7 +212,8 @@ document.addEventListener('DOMContentLoaded', function () {
     const editor = document.getElementById('monitor-notes-editor');
     if (!editor) return;
 
-    const notesHidden = document.getElementById('monitor_notes_text');
+    const positiveNotesHidden = document.getElementById('monitor_notes_text');
+    const negativeNotesHidden = document.getElementById('monitor_negative_notes_text');
     const recsHidden = document.getElementById('monitor_recommendations_text');
     const form = editor.closest('form');
 
@@ -160,8 +233,11 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     function syncHiddenFields() {
-        if (notesHidden) {
-            notesHidden.value = collectLines('notes').join('\n');
+        if (positiveNotesHidden) {
+            positiveNotesHidden.value = collectLines('positive-notes').join('\n');
+        }
+        if (negativeNotesHidden) {
+            negativeNotesHidden.value = collectLines('negative-notes').join('\n');
         }
         if (recsHidden) {
             recsHidden.value = collectLines('recommendations').join('\n');

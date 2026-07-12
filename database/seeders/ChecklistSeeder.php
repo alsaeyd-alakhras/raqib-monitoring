@@ -46,9 +46,9 @@ class ChecklistSeeder extends Seeder
                     ['name' => 'المطابقة', 'order' => 2, 'has_person_field' => true],
                     ['name' => 'التسليم', 'order' => 3, 'has_person_field' => true],
                     ['name' => 'المستودع', 'order' => 4, 'has_person_field' => true],
-                    ['name' => 'التوثيق', 'order' => 5, 'has_person_field' => true],
-                    ['name' => 'تقرير ختامي + رابط توثيق', 'order' => 6, 'has_person_field' => true],
-                    ['name' => 'كشوفات توقيع ختامية', 'order' => 7, 'has_person_field' => true],
+                    ['name' => 'التوثيق', 'order' => 5, 'has_person_field' => true, 'has_file_field' => true],
+                    ['name' => 'تقرير ختامي + رابط توثيق', 'order' => 6, 'has_person_field' => true, 'has_file_field' => true],
+                    ['name' => 'كشوفات توقيع ختامية', 'order' => 7, 'has_person_field' => true, 'has_file_field' => true],
                 ],
             ],
         ];
@@ -66,17 +66,22 @@ class ChecklistSeeder extends Seeder
             );
 
             foreach ($items as $itemData) {
-                ChecklistItem::firstOrCreate(
+                $item = ChecklistItem::firstOrCreate(
                     [
                         'group_id' => $group->id,
                         'name' => $itemData['name'],
                     ],
                     [
                         'has_person_field' => $itemData['has_person_field'],
+                        'has_file_field' => $itemData['has_file_field'] ?? false,
                         'order' => $itemData['order'],
                         'is_active' => true,
                     ]
                 );
+
+                if (($itemData['has_file_field'] ?? false) && ! $item->has_file_field) {
+                    $item->update(['has_file_field' => true]);
+                }
             }
         }
     }

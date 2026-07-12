@@ -38,6 +38,11 @@ return [
         'used_in' => ['project_checklist_values UI labels'],
         'value_shape' => 'list<string>',
     ],
+    'checklist_closure_late_score' => [
+        'label' => 'وزن بند مستندات الإغلاق عند التأخر',
+        'used_in' => ['Project::groupReadinessPercent — بنود has_file_field بعد planned_end_date'],
+        'value_shape' => 'float 0..1',
+    ],
     'scale_execution' => [
         'label' => 'مقياس التنفيذ',
         'used_in' => ['monitoring_activities.execution_value scales'],

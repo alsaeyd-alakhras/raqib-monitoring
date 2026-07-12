@@ -237,7 +237,7 @@
     </div>
 </div>
 
-@if (isset($linkedProject) && $linkedProject && ($linkedProject->monitor_notes || $linkedProject->monitor_recommendations))
+@if (isset($linkedProject) && $linkedProject && ($linkedProject->monitor_notes || $linkedProject->monitor_negative_notes || $linkedProject->monitor_recommendations))
     @once
         @push('styles')
         <style>
@@ -294,10 +294,25 @@
             <table class="activity-notes-table">
                 <tbody>
                     <tr>
-                        <th scope="row">ملاحظات المراقب</th>
+                        <th scope="row">الملاحظات الميدانية</th>
                         <td>
-                            @if ($linkedProject->monitor_notes)
-                                <ul>@foreach ($linkedProject->monitor_notes as $note)<li>{{ $note }}</li>@endforeach</ul>
+                            @if ($linkedProject->monitor_notes || $linkedProject->monitor_negative_notes)
+                                <div class="mb-2">
+                                    <div class="fw-semibold text-success small mb-1">ملاحظات إيجابية</div>
+                                    @if ($linkedProject->monitor_notes)
+                                        <ul>@foreach ($linkedProject->monitor_notes as $note)<li>{{ $note }}</li>@endforeach</ul>
+                                    @else
+                                        <span class="text-muted">— لا توجد —</span>
+                                    @endif
+                                </div>
+                                <div>
+                                    <div class="fw-semibold text-danger small mb-1">ملاحظات سلبية</div>
+                                    @if ($linkedProject->monitor_negative_notes)
+                                        <ul>@foreach ($linkedProject->monitor_negative_notes as $note)<li>{{ $note }}</li>@endforeach</ul>
+                                    @else
+                                        <span class="text-muted">— لا توجد —</span>
+                                    @endif
+                                </div>
                             @else
                                 <span class="text-muted">—</span>
                             @endif

@@ -151,6 +151,12 @@
                 </td>
             </tr>
             <tr>
+                <th scope="row">تاريخ بدء التنفيذ</th>
+                <td class="{{ $project->execution_start_date ? '' : 'text-empty' }}">
+                    {{ $project->execution_start_date?->format('Y-m-d') ?? '—' }}
+                </td>
+            </tr>
+            <tr>
                 <th scope="row">الموقع الجغرافي</th>
                 <td class="{{ $project->location ? '' : 'text-empty' }}">
                     @if ($project->location)
@@ -237,6 +243,16 @@
                             {{ $project->execution_zones !== null ? number_format($project->execution_zones) : '—' }}
                         </td>
                     </tr>
+                    @if (! empty($project->execution_region_names))
+                    <tr>
+                        <th scope="row">أسماء المناطق</th>
+                        <td>
+                            @foreach ($project->execution_region_names as $index => $regionName)
+                                <span class="org-chip">{{ $index + 1 }}. {{ $regionName }}</span>
+                            @endforeach
+                        </td>
+                    </tr>
+                    @endif
                     <tr>
                         <th scope="row">المدة الزمنية المقدّرة</th>
                         <td class="{{ $project->estimated_duration ? '' : 'text-empty' }}">
@@ -247,6 +263,18 @@
                         <th scope="row">الميزانية المرصودة</th>
                         <td class="{{ $project->allocated_budget !== null ? '' : 'text-empty' }}">
                             {{ $project->allocated_budget !== null ? number_format((float) $project->allocated_budget, 2) : '—' }}
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">صورة التخصيص</th>
+                        <td class="{{ $project->allocation_image_path ? '' : 'text-empty' }}">
+                            @if ($project->allocation_image_path)
+                                <a href="{{ $project->allocationImageUrl() }}" target="_blank" rel="noopener">
+                                    عرض الصورة
+                                </a>
+                            @else
+                                —
+                            @endif
                         </td>
                     </tr>
                 </tbody>

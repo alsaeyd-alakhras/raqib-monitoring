@@ -120,5 +120,6 @@
 
     @push('scripts')
         <script src="{{ asset('js/checklist-readiness.js') }}"></script>
+        <script src="{{ asset('js/checklist-person-required.js') }}"></script>
     @endpush
 </x-front-layout>

@@ -7,7 +7,7 @@
     <thead>
         <tr>
             <th width="8mm">#</th>
-            <th width="18mm">النوع</th>
+            <th width="22mm">النوع</th>
             <th>النص</th>
         </tr>
     </thead>
@@ -16,7 +16,15 @@
             @php $noteIndex++; @endphp
             <tr>
                 <td style="text-align:center; color:{{ $c['muted'] }}; font-weight:600; direction:ltr; unicode-bidi:embed;">{{ $noteIndex }}</td>
-                <td><span class="badge badge-info">ملاحظة</span></td>
+                <td><span class="badge badge-success">ملاحظة إيجابية</span></td>
+                <td class="cell-wrap">{{ $note }}</td>
+            </tr>
+        @endforeach
+        @foreach ($linkedProject->monitor_negative_notes ?? [] as $note)
+            @php $noteIndex++; @endphp
+            <tr>
+                <td style="text-align:center; color:{{ $c['muted'] }}; font-weight:600; direction:ltr; unicode-bidi:embed;">{{ $noteIndex }}</td>
+                <td><span class="badge badge-danger">ملاحظة سلبية</span></td>
                 <td class="cell-wrap">{{ $note }}</td>
             </tr>
         @endforeach

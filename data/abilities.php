@@ -75,6 +75,7 @@ return [
         'create' => 'اضافة',
         'update' => 'تعديل',
         'delete' => 'حذف',
+        'approve_section' => 'موافقة مدير القسم',
         'approve_department' => 'موافقة مدير الدائرة',
         'fill_coordinator' => 'تعبئة عمود المنسق',
         'fill_monitor' => 'تعبئة عمود المراقب',

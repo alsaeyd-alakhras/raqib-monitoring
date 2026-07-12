@@ -1,6 +1,8 @@
 @php
-    $notes = $notes ?? ($project->monitor_notes ?? []);
+    $positiveNotes = $positiveNotes ?? ($project->monitor_notes ?? []);
+    $negativeNotes = $negativeNotes ?? ($project->monitor_negative_notes ?? []);
     $recommendations = $recommendations ?? ($project->monitor_recommendations ?? []);
+    $hasFieldNotes = count($positiveNotes) || count($negativeNotes);
 @endphp
 
 @once
@@ -52,41 +54,101 @@
             margin-bottom: 0.5rem;
         }
 
+        .monitor-notes-display-group-title {
+            font-size: 0.9375rem;
+            font-weight: 700;
+            color: #566a7f;
+            margin-bottom: 0.75rem;
+            padding-bottom: 0.375rem;
+            border-bottom: 2px solid rgba(105, 108, 255, 0.2);
+        }
+
+        .monitor-notes-display-subsection-title {
+            font-size: 0.8125rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+
+        .monitor-notes-display-subsection-title--positive {
+            color: #28a745;
+        }
+
+        .monitor-notes-display-subsection-title--negative {
+            color: #dc3545;
+        }
+
         .monitor-notes-display-empty {
             color: rgba(67, 89, 113, 0.45);
             font-size: 0.875rem;
             padding: 0.75rem 0;
         }
+
+        .monitor-notes-display-field-notes-block {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
     </style>
     @endpush
 @endonce
 
-@if (count($notes) || count($recommendations))
+@if ($hasFieldNotes || count($recommendations))
     <div class="row g-3 mt-3">
         <div class="col-lg-6">
-            <div class="monitor-notes-display-section-title">الملاحظات الميدانية</div>
-            @if (count($notes))
-                <div class="table-responsive">
-                    <table class="monitor-notes-display-table">
-                        <thead>
-                            <tr>
-                                <th class="col-index">#</th>
-                                <th>النص</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach ($notes as $index => $note)
-                                <tr>
-                                    <td class="col-index">{{ $index + 1 }}</td>
-                                    <td>{{ $note }}</td>
-                                </tr>
-                            @endforeach
-                        </tbody>
-                    </table>
+            <div class="monitor-notes-display-group-title">الملاحظات الميدانية</div>
+            <div class="monitor-notes-display-field-notes-block">
+                <div>
+                    <div class="monitor-notes-display-subsection-title monitor-notes-display-subsection-title--positive">ملاحظات إيجابية</div>
+                    @if (count($positiveNotes))
+                        <div class="table-responsive">
+                            <table class="monitor-notes-display-table">
+                                <thead>
+                                    <tr>
+                                        <th class="col-index">#</th>
+                                        <th>النص</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach ($positiveNotes as $index => $note)
+                                        <tr>
+                                            <td class="col-index">{{ $index + 1 }}</td>
+                                            <td>{{ $note }}</td>
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        </div>
+                    @else
+                        <p class="monitor-notes-display-empty mb-0">— لا توجد ملاحظات إيجابية —</p>
+                    @endif
                 </div>
-            @else
-                <p class="monitor-notes-display-empty mb-0">— لا توجد ملاحظات —</p>
-            @endif
+
+                <div>
+                    <div class="monitor-notes-display-subsection-title monitor-notes-display-subsection-title--negative">ملاحظات سلبية</div>
+                    @if (count($negativeNotes))
+                        <div class="table-responsive">
+                            <table class="monitor-notes-display-table">
+                                <thead>
+                                    <tr>
+                                        <th class="col-index">#</th>
+                                        <th>النص</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach ($negativeNotes as $index => $note)
+                                        <tr>
+                                            <td class="col-index">{{ $index + 1 }}</td>
+                                            <td>{{ $note }}</td>
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        </div>
+                    @else
+                        <p class="monitor-notes-display-empty mb-0">— لا توجد ملاحظات سلبية —</p>
+                    @endif
+                </div>
+            </div>
         </div>
         <div class="col-lg-6">
             <div class="monitor-notes-display-section-title">التوصيات</div>

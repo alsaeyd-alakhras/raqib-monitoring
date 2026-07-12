@@ -152,7 +152,7 @@
         ],
     ])
 
-    @if (($canViewMonitorData ?? false) && ($linkedProject->monitor_notes || $linkedProject->monitor_recommendations))
+    @if (($canViewMonitorData ?? false) && ($linkedProject->monitor_notes || $linkedProject->monitor_negative_notes || $linkedProject->monitor_recommendations))
         @include('reports.monitoring-activities.partials._section', [
             'num' => '3',
             'title' => 'ملاحظات وتوصيات المراقب على المشروع',

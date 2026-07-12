@@ -29,6 +29,10 @@ class MonitoringActivityController extends Controller
         $this->authorize('view', MonitoringActivity::class);
 
         $query = MonitoringActivity::with(['center', 'department', 'section', 'monitorPerson', 'responsiblePerson']);
+        $closureItemIds = Project::closureDocumentItemIds();
+        if ($closureItemIds !== []) {
+            $query->with(['project.checklistValues' => fn ($q) => $q->whereIn('checklist_item_id', $closureItemIds)]);
+        }
         $query = $this->applyMonitorScope($query);
 
         if ($request->ajax()) {
@@ -47,6 +51,11 @@ class MonitoringActivityController extends Controller
             $workflowLabels = MonitoringActivity::workflowStatusLabels();
 
             $rows = $query->get()->map(function (MonitoringActivity $activity) use ($sourceTypes, $workflowLabels) {
+                $closureDocs = ['total' => 0, 'attached' => 0, 'complete' => true, 'label' => '—'];
+                if ($activity->source_type === 'project' && $activity->project) {
+                    $closureDocs = $activity->project->closureAttachmentSummary();
+                }
+
                 return [
                     'id' => $activity->id,
                     'reference_code' => $activity->reference_code,
@@ -60,6 +69,10 @@ class MonitoringActivityController extends Controller
                     'kpi_value' => $activity->kpi_value !== null ? number_format((float) $activity->kpi_value, 2) : '-',
                     'kpi_rating' => $activity->kpi_rating ?? '-',
                     'workflow_status_label' => $workflowLabels[$activity->workflow_status] ?? $activity->workflow_status,
+                    'closure_docs_attached' => $closureDocs['attached'],
+                    'closure_docs_total' => $closureDocs['total'],
+                    'closure_docs_complete' => $closureDocs['complete'],
+                    'closure_docs_label' => $closureDocs['label'],
                     'is_verified' => $activity->is_verified,
                     'verification_issues' => $activity->verificationIssues(),
                 ];
@@ -73,6 +86,7 @@ class MonitoringActivityController extends Controller
         return view('dashboard.monitoring-activities.index', [
             'sourceTypes' => $this->sourceTypeLabels(),
             'workflowStatusLabels' => MonitoringActivity::workflowStatusLabels(),
+            'canViewClosureDocsColumnInList' => $this->userCanViewClosureDocsColumnInList(),
         ]);
     }
 
@@ -81,6 +95,10 @@ class MonitoringActivityController extends Controller
         $this->authorize('view', MonitoringActivity::class);
 
         $query = MonitoringActivity::with(['center', 'department', 'monitorPerson', 'responsiblePerson']);
+        $closureItemIds = Project::closureDocumentItemIds();
+        if ($closureItemIds !== []) {
+            $query->with(['project.checklistValues' => fn ($q) => $q->whereIn('checklist_item_id', $closureItemIds)]);
+        }
         $query = $this->applyMonitorScope($query);
 
         if ($request->from_date) {
@@ -108,6 +126,13 @@ class MonitoringActivityController extends Controller
             'kpi_value' => $rows->map(fn ($a) => $a->kpi_value !== null ? number_format((float) $a->kpi_value, 2) : null)->filter()->unique()->values()->toArray(),
             'kpi_rating' => $rows->pluck('kpi_rating')->filter()->unique()->values()->toArray(),
             'workflow_status_label' => $rows->map(fn ($a) => $workflowLabels[$a->workflow_status] ?? $a->workflow_status)->unique()->values()->toArray(),
+            'closure_docs_label' => $rows->map(function (MonitoringActivity $activity) {
+                if ($activity->source_type !== 'project' || ! $activity->project) {
+                    return '—';
+                }
+
+                return $activity->project->closureAttachmentSummary()['label'];
+            })->unique()->values()->toArray(),
             'reference_code' => $rows->pluck('reference_code')->filter()->unique()->values()->toArray(),
             default => [],
         };
@@ -568,6 +593,11 @@ class MonitoringActivityController extends Controller
                 case 'kpi_value':
                     $query->whereIn('kpi_value', array_map('floatval', $filteredValues));
                     break;
+                case 'closure_docs_label':
+                    $query->where('source_type', 'project')->whereHas('project', function ($projectQuery) use ($filteredValues) {
+                        Project::applyClosureDocsLabelScope($projectQuery, $filteredValues);
+                    });
+                    break;
                 default:
                     $query->whereIn($fieldName, $filteredValues);
                     break;
@@ -773,5 +803,18 @@ class MonitoringActivityController extends Controller
         $nextNumber = ((int) $lastNumber) + 1;
 
         return $prefix . '-' . $nextNumber;
+    }
+
+    private function userCanViewClosureDocsColumnInList(): bool
+    {
+        $user = auth()->user();
+        if (! $user) {
+            return false;
+        }
+        if ($user->super_admin) {
+            return true;
+        }
+
+        return $user->person?->role !== 'monitor';
     }
 }

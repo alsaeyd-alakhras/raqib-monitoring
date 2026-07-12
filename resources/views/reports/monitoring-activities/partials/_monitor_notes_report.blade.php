@@ -54,7 +54,7 @@
         }
 
         .monitor-notes-report-table .col-type {
-            width: 6.5rem;
+            width: 8rem;
         }
 
         .monitor-notes-report-table .col-action {
@@ -70,7 +70,8 @@
 @endonce
 
 @php
-    $notesCount = count($linkedProject->monitor_notes ?? []);
+    $positiveNotesCount = count($linkedProject->monitor_notes ?? []);
+    $negativeNotesCount = count($linkedProject->monitor_negative_notes ?? []);
     $recsCount = count($linkedProject->monitor_recommendations ?? []);
     $rowIndex = 0;
 @endphp
@@ -79,8 +80,11 @@
     <p class="small text-muted mb-3">هذه من قائمة تحقق المشروع — وليست «ملاحظة النشاط» أعلاه.</p>
 
     <div class="monitor-notes-stats">
-        @if ($notesCount)
-            <span class="badge bg-label-info">{{ $notesCount }} {{ $notesCount === 1 ? 'ملاحظة' : 'ملاحظات' }}</span>
+        @if ($positiveNotesCount)
+            <span class="badge bg-label-success">{{ $positiveNotesCount }} {{ $positiveNotesCount === 1 ? 'ملاحظة إيجابية' : 'ملاحظات إيجابية' }}</span>
+        @endif
+        @if ($negativeNotesCount)
+            <span class="badge bg-label-danger">{{ $negativeNotesCount }} {{ $negativeNotesCount === 1 ? 'ملاحظة سلبية' : 'ملاحظات سلبية' }}</span>
         @endif
         @if ($recsCount)
             <span class="badge bg-label-warning">{{ $recsCount }} {{ $recsCount === 1 ? 'توصية' : 'توصيات' }}</span>
@@ -104,7 +108,7 @@
                     @php $rowIndex++; @endphp
                     <tr>
                         <td class="col-index">{{ $rowIndex }}</td>
-                        <td class="col-type"><span class="badge bg-label-info">ملاحظة</span></td>
+                        <td class="col-type"><span class="badge bg-label-success">ملاحظة إيجابية</span></td>
                         <td><span class="item-text">{{ $note }}</span></td>
                         @if ($canConvertToSecondary ?? false)
                             <td class="col-action">
@@ -116,7 +120,35 @@
                                         'department_id' => $linkedProject->department_id,
                                         'section_id' => $linkedProject->section_id,
                                         'monitor_person_id' => $linkedProject->monitor_person_id,
-                                        'subject' => 'متابعة ملاحظة مراقب',
+                                        'subject' => 'متابعة ملاحظة إيجابية',
+                                        'notes' => $note,
+                                    ]) }}"
+                                    class="btn btn-sm btn-outline-primary"
+                                >
+                                    <i class="bx bx-transfer-alt"></i> تحويل لنشاط تابع
+                                </a>
+                            </td>
+                        @endif
+                    </tr>
+                @endforeach
+
+                @foreach ($linkedProject->monitor_negative_notes ?? [] as $note)
+                    @php $rowIndex++; @endphp
+                    <tr>
+                        <td class="col-index">{{ $rowIndex }}</td>
+                        <td class="col-type"><span class="badge bg-label-danger">ملاحظة سلبية</span></td>
+                        <td><span class="item-text">{{ $note }}</span></td>
+                        @if ($canConvertToSecondary ?? false)
+                            <td class="col-action">
+                                <a
+                                    href="{{ route('dashboard.monitoring-activities.create', [
+                                        'source_type' => 'project',
+                                        'source_id' => $linkedProject->id,
+                                        'center_id' => $linkedProject->center_id,
+                                        'department_id' => $linkedProject->department_id,
+                                        'section_id' => $linkedProject->section_id,
+                                        'monitor_person_id' => $linkedProject->monitor_person_id,
+                                        'subject' => 'متابعة ملاحظة سلبية',
                                         'notes' => $note,
                                     ]) }}"
                                     class="btn btn-sm btn-outline-primary"

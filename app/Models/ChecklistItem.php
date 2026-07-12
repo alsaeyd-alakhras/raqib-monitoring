@@ -14,8 +14,15 @@ class ChecklistItem extends Model
         'group_id',
         'name',
         'has_person_field',
+        'has_file_field',
         'order',
         'is_active',
+    ];
+
+    protected $casts = [
+        'has_person_field' => 'boolean',
+        'has_file_field' => 'boolean',
+        'is_active' => 'boolean',
     ];
 
     public function group(): BelongsTo

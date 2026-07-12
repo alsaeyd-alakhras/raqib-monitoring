@@ -163,7 +163,7 @@
 @endif
 
 {{-- ملاحظات وتوصيات --}}
-@if (($canViewMonitorData ?? false) && (($project->monitor_notes ?? []) || ($project->monitor_recommendations ?? [])))
+@if (($canViewMonitorData ?? false) && (($project->monitor_notes ?? []) || ($project->monitor_negative_notes ?? []) || ($project->monitor_recommendations ?? [])))
     @include('reports.projects.partials._section', [
         'num' => $sectionNum++,
         'title' => 'ملاحظات وتوصيات المراقب الميداني',

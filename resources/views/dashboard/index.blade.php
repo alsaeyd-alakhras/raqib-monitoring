@@ -3,6 +3,7 @@
         'project_manager' => 'مدير مشروع',
         'coordinator' => 'منسق',
         'department_manager' => 'مدير دائرة',
+        'section_manager' => 'مدير قسم',
         'monitoring_director' => 'مدير الرقابة العامة',
         'monitor' => 'مراقب',
         'general_management' => 'الإدارة العامة',

@@ -70,7 +70,15 @@
                 <div class="alert alert-info py-2 mb-3">
                     المشروع بانتظار مراجعة
                     <strong>{{ $project->projectManager?->name }}</strong>
-                    وإرساله لمدير الدائرة.
+                    وإرساله لمدير القسم.
+                </div>
+            @endif
+
+            @if ($project->workflow_status === 'pending_section_manager')
+                <div class="alert alert-info py-2 mb-3">
+                    المشروع بانتظار موافقة
+                    <strong>{{ $approverSectionManagerLabel }}</strong>
+                    — مدير قسم المشروع التنظيمي.
                 </div>
             @endif
 
@@ -98,14 +106,28 @@
                 </form>
             @endif
 
-            @if ($canSubmitToDeptManager ?? false)
-                <form action="{{ route('dashboard.projects.submit-to-dept-manager', $project) }}" method="post" class="d-inline">
+            @if ($canSubmitToSectionManager ?? false)
+                <form action="{{ route('dashboard.projects.submit-to-section-manager', $project) }}" method="post" class="d-inline">
                     @csrf
-                    <button type="submit" class="btn btn-primary">إرسال لمدير الدائرة</button>
+                    <button type="submit" class="btn btn-primary">إرسال لمدير القسم</button>
                 </form>
             @elseif (in_array($project->workflow_status, ['pending_coordinator', 'coordinator_filling']) && ($canManageCoordinatorColumn ?? false))
                 <div class="alert alert-secondary py-2 mb-0">
                     قبل الإرسال لمدير المشروع يجب حفظ تعبئة المنسق أولاً (من المنسق نفسه أو نيابةً عنه إن وُجدت).
+                </div>
+            @endif
+
+            @if ($project->workflow_status === 'pending_section_manager' && ($canApproveSection ?? false))
+                <div class="d-flex flex-wrap gap-2 mb-0">
+                    <form action="{{ route('dashboard.projects.approve-section', $project) }}" method="post" class="d-inline">
+                        @csrf
+                        <button type="submit" class="btn btn-primary">موافقة وإرسال لمدير الدائرة</button>
+                    </form>
+                    @if ($canRejectThisProject ?? false)
+                        <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#projectRejectModal">
+                            رفض المشروع
+                        </button>
+                    @endif
                 </div>
             @endif
 
@@ -171,6 +193,27 @@
         @endpush
     @endif
 
+    {{-- قائمة التحقق — دمج المنسق والمراقب لمدير الرقابة --}}
+    @if ($canViewMergedChecklist ?? false)
+    <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <h5 class="mb-0">قائمة التحقق — المنسق والمراقب</h5>
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+                <span class="badge bg-label-primary">المنسق: <strong>{{ $project->coordinator_readiness_pct !== null ? $project->coordinator_readiness_pct . '%' : '—' }}</strong></span>
+                <span class="badge bg-label-info">المراقب: <strong>{{ $project->monitor_readiness_pct !== null ? $project->monitor_readiness_pct . '%' : '—' }}</strong></span>
+            </div>
+        </div>
+        <div class="card-body">
+            @include('dashboard.projects._checklist_merged_display', [
+                'groups' => $groups,
+                'values' => $values,
+                'valueLabels' => $valueLabels,
+                'readinessBreakdown' => $readinessBreakdown ?? null,
+            ])
+            @include('dashboard.projects._monitor_notes_display', ['project' => $project])
+        </div>
+    </div>
+    @else
     {{-- قائمة التحقق — عمود المنسق --}}
     @if ($canViewCoordinatorData)
     <div class="card mb-4">
@@ -193,7 +236,7 @@
                     in_array($project->workflow_status, ['pending_coordinator', 'coordinator_filling'])
                     || ($showCoordinatorFillOnDraft ?? false)
                 ) && ($canManageCoordinatorColumn ?? false))
-                <form action="{{ route('dashboard.projects.fill-coordinator', $project) }}" method="post">
+                <form action="{{ route('dashboard.projects.fill-coordinator', $project) }}" method="post" enctype="multipart/form-data">
                     @csrf
                     @if ($requiresFillOnBehalfConfirm ?? false)
                         <div class="mb-3">
@@ -224,6 +267,7 @@
                                 'values' => $values,
                                 'valueLabels' => $valueLabels,
                                 'readinessBreakdown' => $readinessBreakdown ?? null,
+                                'project' => $project,
                             ])
                             <button type="submit" class="btn btn-primary">حفظ عمود المنسق</button>
                         </div>
@@ -233,6 +277,7 @@
                             'values' => $values,
                             'valueLabels' => $valueLabels,
                             'readinessBreakdown' => $readinessBreakdown ?? null,
+                            'project' => $project,
                         ])
                         <button type="submit" class="btn btn-primary">حفظ عمود المنسق</button>
                     @endif
@@ -244,10 +289,48 @@
                     'valueLabels' => $valueLabels,
                     'valueField' => 'coordinator_value',
                     'readinessBreakdown' => $readinessBreakdown ?? null,
+                    'project' => $project,
                 ])
             @endif
         </div>
     </div>
+
+    @php
+        $coordinatorChecklistEditable = (
+            in_array($project->workflow_status, ['pending_coordinator', 'coordinator_filling'])
+            || ($showCoordinatorFillOnDraft ?? false)
+        ) && ($canManageCoordinatorColumn ?? false);
+        $showClosureDocsCard = ($canViewCoordinatorData ?? false) && ($closureDocItems ?? collect())->isNotEmpty();
+        $showClosureDocsEditor = ($canFillClosureDocs ?? false) && ! $coordinatorChecklistEditable;
+    @endphp
+
+    @if ($showClosureDocsCard)
+    <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <h5 class="mb-0">مستندات الإغلاق — الموارد البشرية</h5>
+            @if ($project->hasPendingClosureDocs())
+                <span class="badge bg-label-warning">مستندات ناقصة</span>
+            @endif
+        </div>
+        <div class="card-body">
+            @if ($showClosureDocsEditor)
+                @include('dashboard.projects._closure_docs_editor', [
+                    'project' => $project,
+                    'closureDocItems' => $closureDocItems,
+                    'values' => $values,
+                    'requiresFillOnBehalfConfirm' => $requiresFillOnBehalfConfirm ?? false,
+                    'closureLateScore' => $closureLateScore ?? 0.5,
+                ])
+            @else
+                @include('dashboard.projects._closure_docs_display', [
+                    'project' => $project,
+                    'closureDocItems' => $closureDocItems,
+                    'values' => $values,
+                ])
+            @endif
+        </div>
+    </div>
+    @endif
     @endif
 
     {{-- قائمة التحقق — عمود المراقب (عرض فقط هنا، التعديل من شاشة المراقب المعزولة) --}}
@@ -274,11 +357,52 @@
         </div>
     </div>
     @endif
+    @endif
+
+    @php
+        $showAttachmentDeleteModal = ($canManageCoordinatorColumn ?? false)
+            || ($canFillClosureDocs ?? false)
+            || ($coordinatorChecklistEditable ?? false)
+            || ($showClosureDocsEditor ?? false);
+    @endphp
+
+    @if ($showAttachmentDeleteModal)
+        @include('dashboard.projects._checklist_attachment_delete_modal')
+    @endif
 
     @push('scripts')
+        <script src="{{ asset('js/checklist-status-style.js') }}"></script>
+        <script src="{{ asset('js/checklist-attachment-ui.js') }}"></script>
         <script src="{{ asset('js/checklist-readiness.js') }}"></script>
+        <script src="{{ asset('js/checklist-person-required.js') }}"></script>
+        <script src="{{ asset('js/checklist-closure-docs.js') }}"></script>
         <script>
+            function initCoordinatorChecklistUi(root) {
+                const scope = root || document;
+
+                if (window.initChecklistReadiness) {
+                    window.initChecklistReadiness(scope);
+                }
+                if (window.initChecklistStatusStyle) {
+                    window.initChecklistStatusStyle(scope);
+                }
+                if (window.initChecklistPersonRequired) {
+                    window.initChecklistPersonRequired(scope);
+                }
+                if (window.initChecklistClosureDocs) {
+                    window.initChecklistClosureDocs(scope);
+                }
+                if (window.initChecklistAttachmentUi) {
+                    window.initChecklistAttachmentUi(scope);
+                }
+                if (window.refreshChecklistReadiness) {
+                    window.refreshChecklistReadiness(scope);
+                }
+            }
+
             document.addEventListener('DOMContentLoaded', function () {
+                initCoordinatorChecklistUi(document);
+
                 const toggleBtn = document.getElementById('toggle-coordinator-on-behalf-fill');
                 const panel = document.getElementById('coordinator-on-behalf-fill-panel');
                 const checkbox = document.getElementById('fill-on-behalf');
@@ -293,6 +417,10 @@
                     toggleBtn.textContent = enabled
                         ? 'إخفاء تعبئة النيابة'
                         : 'أعبّئ قائمة التحقق نيابةً عن المنسق';
+
+                    if (enabled) {
+                        initCoordinatorChecklistUi(panel);
+                    }
                 };
 
                 syncOnBehalfUi(Boolean(checkbox?.checked));

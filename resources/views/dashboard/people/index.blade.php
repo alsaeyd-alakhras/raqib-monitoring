@@ -11,6 +11,12 @@
             </div>
         </div>
         <div class="card-body">
+            @if ($sectionManagerNotice ?? null)
+                <div class="alert alert-warning py-2 mb-3">
+                    {{ $sectionManagerNotice }}
+                </div>
+            @endif
+
             <div class="table-responsive text-nowrap">
                 <table class="table table-bordered table-hover">
                     <thead class="table-light">
@@ -18,6 +24,7 @@
                             <th>الاسم</th>
                             <th>الدور</th>
                             <th>الدائرة</th>
+                            <th>القسم</th>
                             <th>الحساب المرتبط</th>
                             <th>المسمى الوظيفي</th>
                             <th>الجهة</th>
@@ -31,6 +38,7 @@
                                 <td>{{ $person->name }}</td>
                                 <td>{{ $person->role_label }}</td>
                                 <td>{{ $person->department?->name ?? '-' }}</td>
+                                <td>{{ $person->section?->name ?? '-' }}</td>
                                 <td>{{ $person->user?->name ?? '-' }}</td>
                                 <td>{{ $person->job_title ?: '-' }}</td>
                                 <td>{{ $person->organization ?: '-' }}</td>
@@ -38,9 +46,15 @@
                                 <td>
                                     <div class="d-flex align-items-center gap-2">
                                         @can('update', 'App\Models\Person')
-                                            <a href="{{ route('dashboard.people.edit', $person) }}" class="btn btn-sm btn-outline-primary">
-                                                تعديل
-                                            </a>
+                                            @if (auth()->user()?->person?->role === 'section_manager' && (int) auth()->user()?->person?->id === (int) $person->id)
+                                                <a href="{{ route('dashboard.profile.settings') }}" class="btn btn-sm btn-outline-primary">
+                                                    الملف الشخصي
+                                                </a>
+                                            @else
+                                                <a href="{{ route('dashboard.people.edit', $person) }}" class="btn btn-sm btn-outline-primary">
+                                                    تعديل
+                                                </a>
+                                            @endif
                                         @endcan
                                         @can('delete', 'App\Models\Person')
                                             <form action="{{ route('dashboard.people.destroy', $person) }}" method="post" data-confirm="هل أنت متأكد من حذف هذا الشخص؟" data-confirm-title="تأكيد الحذف" data-confirm-variant="danger">
@@ -56,7 +70,7 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="8" class="text-center py-4">لا توجد بيانات متاحة.</td>
+                                <td colspan="9" class="text-center py-4">لا توجد بيانات متاحة.</td>
                             </tr>
                         @endforelse
                     </tbody>

@@ -60,6 +60,11 @@
                             <td class="cell-wrap">
                                 @if ($item->has_person_field)
                                     {{ $current?->person_name ?: '—' }}
+                                    @if ($showCoordinator && $item->has_file_field && $current?->hasAttachment())
+                                        <div style="margin-top:2px;font-size:9px;">
+                                            {{ $current->attachment_original_name ?: 'مرفق' }}
+                                        </div>
+                                    @endif
                                 @else
                                     <span class="text-empty">—</span>
                                 @endif

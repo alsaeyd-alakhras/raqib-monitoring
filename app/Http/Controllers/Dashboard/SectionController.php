@@ -98,4 +98,34 @@ class SectionController extends Controller
 
         return response()->json($sections);
     }
+
+    public function forProject(Request $request): JsonResponse
+    {
+        $departmentId = (int) ($request->route('department') ?? $request->department_id);
+
+        $mapSection = fn (Section $section) => [
+            'id' => $section->id,
+            'name' => $section->name,
+            'department_name' => $section->department?->name,
+        ];
+
+        $departmentSections = Section::with('department')
+            ->where('department_id', $departmentId)
+            ->orderBy('name')
+            ->get()
+            ->map($mapSection)
+            ->values();
+
+        $otherSections = Section::with('department')
+            ->when($departmentId > 0, fn ($query) => $query->where('department_id', '!=', $departmentId))
+            ->orderBy('name')
+            ->get()
+            ->map($mapSection)
+            ->values();
+
+        return response()->json([
+            'department_sections' => $departmentSections,
+            'other_sections' => $otherSections,
+        ]);
+    }
 }

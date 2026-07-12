@@ -62,6 +62,7 @@ Route::group([
     // Foundation — organizational hierarchy + people + funders ************************
     Route::get('departments/by-center/{center}', [DepartmentController::class, 'byCenter'])->name('departments.by-center');
     Route::get('sections/by-department/{department}', [SectionController::class, 'byDepartment'])->name('sections.by-department');
+    Route::get('sections/for-project/{department}', [SectionController::class, 'forProject'])->name('sections.for-project');
 
     Route::resources([
         'centers' => CenterController::class,
@@ -108,8 +109,11 @@ Route::group([
     Route::prefix('projects/{project}')->name('projects.')->group(function () {
         Route::post('submit-to-coordinator', [ProjectController::class, 'submitToCoordinator'])->name('submit-to-coordinator');
         Route::post('fill-coordinator', [ProjectController::class, 'fillCoordinator'])->name('fill-coordinator');
+        Route::post('fill-closure-docs', [ProjectController::class, 'fillClosureDocs'])->name('fill-closure-docs');
+        Route::post('delete-checklist-attachment', [ProjectController::class, 'deleteChecklistAttachment'])->name('delete-checklist-attachment');
         Route::post('submit-to-project-manager', [ProjectController::class, 'submitToProjectManager'])->name('submit-to-project-manager');
-        Route::post('submit-to-dept-manager', [ProjectController::class, 'submitToDeptManager'])->name('submit-to-dept-manager');
+        Route::post('submit-to-section-manager', [ProjectController::class, 'submitToSectionManager'])->name('submit-to-section-manager');
+        Route::post('approve-section', [ProjectController::class, 'approveSection'])->name('approve-section');
         Route::post('approve-department', [ProjectController::class, 'approveDepartment'])->name('approve-department');
         Route::post('set-monitoring-info', [ProjectController::class, 'setMonitoringInfo'])->name('set-monitoring-info');
         Route::post('assign-monitor', [ProjectController::class, 'assignMonitor'])->name('assign-monitor');

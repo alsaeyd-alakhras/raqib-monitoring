@@ -8,6 +8,37 @@
         <link rel="stylesheet" href="{{ asset('css/custom2/datatableIndex.css') }}">
         <link rel="stylesheet" href="{{ asset('css/custom2/datatableIndex2.css') }}">
         <link rel="stylesheet" href="{{ asset('css/custom2/raqib-datatable-sticky.css') }}">
+        <style>
+            .closure-docs-indicator {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                gap: 0.25rem;
+                min-width: 3.25rem;
+                padding: 0.2rem 0.55rem;
+                border-radius: 0.35rem;
+                font-size: 0.75rem;
+                font-weight: 700;
+                line-height: 1.2;
+                white-space: nowrap;
+            }
+
+            .closure-docs-indicator.complete {
+                background: #d1fae5;
+                color: #047857;
+                border: 1px solid #6ee7b7;
+            }
+
+            .closure-docs-indicator.complete i {
+                font-size: 0.95rem;
+            }
+
+            .closure-docs-indicator.partial {
+                background: #fef3c7;
+                color: #b45309;
+                border: 1px solid #fcd34d;
+            }
+        </style>
     @endpush
 
     <x-slot:extra_nav>
@@ -46,6 +77,7 @@
 
     @php
         $stickyColCount = 5;
+        $canClosureDocs = $canViewClosureDocsColumnInList ?? true;
 
         $scrollFields = [
             'activity_date' => 'التاريخ',
@@ -59,6 +91,9 @@
             'kpi_rating' => 'التصنيف',
             'workflow_status_label' => 'الحالة',
         ];
+        if ($canClosureDocs) {
+            $scrollFields['closure_docs_label'] = 'مستندات الإغلاق';
+        }
     @endphp
 
     <div class="shadow-lg enhanced-card raqib-dt-layout">
@@ -175,12 +210,32 @@
             const abilityView = {{ Auth::user()->can('view', 'App\Models\MonitoringActivity') ? 'true' : 'false' }};
             const abilityEdit = {{ Auth::user()->can('update', 'App\Models\MonitoringActivity') ? 'true' : 'false' }};
             const abilityDelete = {{ Auth::user()->can('delete', 'App\Models\MonitoringActivity') ? 'true' : 'false' }};
+            const canClosureDocs = {{ $canClosureDocs ? 'true' : 'false' }};
+
+            function renderClosureDocsIndicator(row) {
+                if (!row.closure_docs_total) {
+                    return '<span class="text-muted">—</span>';
+                }
+
+                if (row.closure_docs_complete) {
+                    return '<span class="closure-docs-indicator complete" title="مكتمل — ' + row.closure_docs_total + ' مستندات">'
+                        + '<i class="ti ti-circle-check"></i>'
+                        + '<span>' + row.closure_docs_total + '/' + row.closure_docs_total + '</span>'
+                        + '</span>';
+                }
+
+                return '<span class="closure-docs-indicator partial" title="ناقص — ' + row.closure_docs_attached + ' من ' + row.closure_docs_total + '">'
+                    + '<span>' + row.closure_docs_label + '</span>'
+                    + '</span>';
+            }
 
             const fields = [
                 '#', 'verification', 'view', 'edit', 'reference_code',
                 'activity_date', 'source_type_label', 'activity_type', 'org_label',
                 'responsible_name', 'monitor_name', 'subject',
-                'kpi_value', 'kpi_rating', 'workflow_status_label', 'actions'
+                'kpi_value', 'kpi_rating', 'workflow_status_label',
+                ...(canClosureDocs ? ['closure_docs_label'] : []),
+                'actions'
             ];
 
             function buildVerificationHtml(isVerified, issues) {
@@ -229,7 +284,22 @@
                 { data: 'subject', name: 'subject', orderable: false },
                 { data: 'kpi_value', name: 'kpi_value', orderable: false, className: 'text-center' },
                 { data: 'kpi_rating', name: 'kpi_rating', orderable: false, className: 'text-center' },
-                { data: 'workflow_status_label', name: 'workflow_status_label', orderable: false },
+                { data: 'workflow_status_label', name: 'workflow_status_label', orderable: false }
+            ];
+
+            if (canClosureDocs) {
+                columnsTable.push({
+                    data: 'closure_docs_label',
+                    name: 'closure_docs_label',
+                    orderable: false,
+                    className: 'text-center',
+                    render: function (data, type, row) {
+                        return renderClosureDocsIndicator(row);
+                    }
+                });
+            }
+
+            columnsTable.push(
                 {
                     data: 'id', name: 'actions', orderable: false, searchable: false, className: 'sticky-l col-icon',
                     render: function (data) {
@@ -237,7 +307,7 @@
                         return '<button type="button" class="action-btn btn-delete delete_row" data-id="' + data + '" title="حذف"><i class="fas fa-trash"></i></button>';
                     }
                 }
-            ];
+            );
 
             const SUMMABLE_COLUMNS = { enabled: false, columns: {} };
             const sortConfig = { enabled: true };

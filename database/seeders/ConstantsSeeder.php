@@ -76,6 +76,7 @@ class ConstantsSeeder extends Seeder
                 'غير جاهز',
                 'غير مطلوب',
             ],
+            'checklist_closure_late_score' => 0.5,
             'source_types' => [
                 'project',
                 'external',

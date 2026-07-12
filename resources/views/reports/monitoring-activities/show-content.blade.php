@@ -27,7 +27,7 @@
         </div>
     </div>
 
-    @if ($canViewMonitorData && ($linkedProject->monitor_notes || $linkedProject->monitor_recommendations))
+    @if ($canViewMonitorData && ($linkedProject->monitor_notes || $linkedProject->monitor_negative_notes || $linkedProject->monitor_recommendations))
         <div class="card mb-4">
             <div class="card-header"><h5 class="mb-0">ملاحظات وتوصيات المراقب على المشروع</h5></div>
             <div class="card-body">

@@ -8,6 +8,37 @@
         <link rel="stylesheet" href="{{ asset('css/custom2/datatableIndex.css') }}">
         <link rel="stylesheet" href="{{ asset('css/custom2/datatableIndex2.css') }}">
         <link rel="stylesheet" href="{{ asset('css/custom2/raqib-datatable-sticky.css') }}">
+        <style>
+            .closure-docs-indicator {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                gap: 0.25rem;
+                min-width: 3.25rem;
+                padding: 0.2rem 0.55rem;
+                border-radius: 0.35rem;
+                font-size: 0.75rem;
+                font-weight: 700;
+                line-height: 1.2;
+                white-space: nowrap;
+            }
+
+            .closure-docs-indicator.complete {
+                background: #d1fae5;
+                color: #047857;
+                border: 1px solid #6ee7b7;
+            }
+
+            .closure-docs-indicator.complete i {
+                font-size: 0.95rem;
+            }
+
+            .closure-docs-indicator.partial {
+                background: #fef3c7;
+                color: #b45309;
+                border: 1px solid #fcd34d;
+            }
+        </style>
     @endpush
 
     <x-slot:extra_nav>
@@ -65,6 +96,9 @@
         $scrollFields['funder_name'] = 'الممول';
         $scrollFields['workflow_status_label'] = 'الحالة';
         $scrollFields['current_action_label'] = 'الإجراء الحالي';
+        if ($canCoordinator) {
+            $scrollFields['closure_docs_label'] = 'مستندات الإغلاق';
+        }
     @endphp
 
     <div class="shadow-lg enhanced-card raqib-dt-layout">
@@ -168,11 +202,30 @@
             const canCoordinator = {{ $canCoordinator ? 'true' : 'false' }};
             const canMonitor = {{ $canMonitor ? 'true' : 'false' }};
 
+            function renderClosureDocsIndicator(row) {
+                if (!row.closure_docs_total) {
+                    return '<span class="text-muted">—</span>';
+                }
+
+                if (row.closure_docs_complete) {
+                    return '<span class="closure-docs-indicator complete" title="مكتمل — ' + row.closure_docs_total + ' مستندات">'
+                        + '<i class="ti ti-circle-check"></i>'
+                        + '<span>' + row.closure_docs_total + '/' + row.closure_docs_total + '</span>'
+                        + '</span>';
+                }
+
+                return '<span class="closure-docs-indicator partial" title="ناقص — ' + row.closure_docs_attached + ' من ' + row.closure_docs_total + '">'
+                    + '<span>' + row.closure_docs_label + '</span>'
+                    + '</span>';
+            }
+
             const fields = [
                 '#', 'view', 'edit', 'project_number', 'project_name', 'project_type', 'org_label', 'project_manager_name',
                 ...(canCoordinator ? ['coordinator_name', 'coordinator_readiness_pct'] : []),
                 ...(canMonitor ? ['monitor_name', 'monitor_readiness_pct'] : []),
-                'funder_name', 'workflow_status_label', 'current_action_label', 'actions'
+                'funder_name', 'workflow_status_label', 'current_action_label',
+                ...(canCoordinator ? ['closure_docs_label'] : []),
+                'actions'
             ];
 
             const columnsTable = [
@@ -227,7 +280,22 @@
             columnsTable.push(
                 { data: 'funder_name', name: 'funder_name', orderable: false },
                 { data: 'workflow_status_label', name: 'workflow_status_label', orderable: false },
-                { data: 'current_action_label', name: 'current_action_label', orderable: false },
+                { data: 'current_action_label', name: 'current_action_label', orderable: false }
+            );
+
+            if (canCoordinator) {
+                columnsTable.push({
+                    data: 'closure_docs_label',
+                    name: 'closure_docs_label',
+                    orderable: false,
+                    className: 'text-center',
+                    render: function (data, type, row) {
+                        return renderClosureDocsIndicator(row);
+                    }
+                });
+            }
+
+            columnsTable.push(
                 {
                     data: 'id', name: 'actions', orderable: false, searchable: false, className: 'sticky-l col-icon',
                     render: function (data) {

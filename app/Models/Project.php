@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\Storage;
 
 class Project extends Model
 {
@@ -26,11 +27,14 @@ class Project extends Model
         'section_id',
         'planned_start_date',
         'planned_end_date',
+        'execution_start_date',
         'location',
         'target_beneficiaries',
         'execution_zones',
+        'execution_region_names',
         'estimated_duration',
         'allocated_budget',
+        'allocation_image_path',
         'monitor_person_id',
         'monitoring_date',
         'monitoring_method',
@@ -38,12 +42,15 @@ class Project extends Model
         'coordinator_readiness_pct',
         'monitor_readiness_pct',
         'monitor_notes',
+        'monitor_negative_notes',
         'monitor_recommendations',
         'workflow_status',
         'primary_monitoring_activity_id',
         'coordinator_submitted_at',
         'coordinator_submitted_by',
         'coordinator_filled_by',
+        'section_manager_approved_at',
+        'section_manager_approved_by',
         'dept_manager_approved_at',
         'dept_manager_approved_by',
         'monitoring_manager_received_at',
@@ -60,13 +67,17 @@ class Project extends Model
     protected $casts = [
         'planned_start_date' => 'date',
         'planned_end_date' => 'date',
+        'execution_start_date' => 'date',
         'monitoring_date' => 'date',
+        'execution_region_names' => 'array',
         'allocated_budget' => 'decimal:2',
         'coordinator_readiness_pct' => 'float',
         'monitor_readiness_pct' => 'float',
         'monitor_notes' => 'array',
+        'monitor_negative_notes' => 'array',
         'monitor_recommendations' => 'array',
         'coordinator_submitted_at' => 'datetime',
+        'section_manager_approved_at' => 'datetime',
         'dept_manager_approved_at' => 'datetime',
         'monitoring_manager_received_at' => 'datetime',
         'rejected_at' => 'datetime',
@@ -119,6 +130,94 @@ class Project extends Model
     public static function isValidProjectNumberFormat(string $number): bool
     {
         return (bool) preg_match('/^P-\d+$/', self::normalizeProjectNumber($number));
+    }
+
+    /**
+     * مسار مجلد ملفات المشروع على قرص public (مثل projects/P-12).
+     */
+    public function storageDirectory(?string $projectNumber = null): string
+    {
+        $number = $projectNumber ?? $this->project_number;
+
+        if ($number && self::isValidProjectNumberFormat($number)) {
+            return 'projects/' . self::normalizeProjectNumber($number);
+        }
+
+        if ($this->id) {
+            return 'projects/id-' . $this->id;
+        }
+
+        return 'projects/unassigned';
+    }
+
+    public static function storageDirectoryForNumber(?string $projectNumber): string
+    {
+        if ($projectNumber && self::isValidProjectNumberFormat($projectNumber)) {
+            return 'projects/' . self::normalizeProjectNumber($projectNumber);
+        }
+
+        return 'projects/unassigned';
+    }
+
+    /**
+     * نقل مجلد ملفات المشروع عند تغيير رقم المشروع وتحديث مسار صورة التخصيص.
+     */
+    public function relocateStorageOnNumberChange(string $oldProjectNumber, string $newProjectNumber): ?string
+    {
+        $oldNumber = self::normalizeProjectNumber($oldProjectNumber);
+        $newNumber = self::normalizeProjectNumber($newProjectNumber);
+
+        if ($oldNumber === $newNumber) {
+            return null;
+        }
+
+        $oldDir = self::storageDirectoryForNumber($oldNumber);
+        $newDir = self::storageDirectoryForNumber($newNumber);
+
+        if ($oldDir === $newDir) {
+            return null;
+        }
+
+        $disk = Storage::disk('public');
+
+        if ($disk->exists($oldDir)) {
+            if ($disk->exists($newDir)) {
+                foreach ($disk->allFiles($oldDir) as $file) {
+                    $target = $newDir . '/' . basename($file);
+
+                    if (! $disk->exists($target)) {
+                        $disk->move($file, $target);
+                    } else {
+                        $disk->delete($file);
+                    }
+                }
+
+                $disk->deleteDirectory($oldDir);
+            } else {
+                $disk->move($oldDir, $newDir);
+            }
+        }
+
+        if (! $this->allocation_image_path) {
+            return null;
+        }
+
+        $path = str_replace('\\', '/', $this->allocation_image_path);
+
+        if (str_starts_with($path, $oldDir . '/')) {
+            return $newDir . '/' . basename($path);
+        }
+
+        $relocatedAllocation = $newDir . '/' . basename($path);
+
+        return $disk->exists($relocatedAllocation) ? $relocatedAllocation : null;
+    }
+
+    public function allocationImageUrl(): ?string
+    {
+        return $this->allocation_image_path
+            ? asset('storage/' . $this->allocation_image_path)
+            : null;
     }
 
     public function coordinatorFilledByLabel(): ?string
@@ -252,6 +351,9 @@ class Project extends Model
 
         return match ($person->role) {
             'project_manager' => $query->where('project_manager_id', $person->id),
+            'section_manager' => $person->section_id
+                ? $query->where('section_id', $person->section_id)
+                : $query->whereRaw('1 = 0'),
             'department_manager' => $person->department_id
                 ? $query->whereHas('projectManager', fn (Builder $q) => $q->where('department_id', $person->department_id))
                 : $query->whereRaw('1 = 0'),
@@ -275,6 +377,8 @@ class Project extends Model
 
         return match ($person->role) {
             'project_manager' => (int) $this->project_manager_id === (int) $person->id,
+            'section_manager' => $person->section_id
+                && (int) $this->section_id === (int) $person->section_id,
             'department_manager' => $person->department_id
                 && (int) $this->projectManager?->department_id === (int) $person->department_id,
             'coordinator' => (int) $this->coordinator_id === (int) $person->id,
@@ -309,9 +413,11 @@ class Project extends Model
         return match ($person->role) {
             'project_manager' => (int) $this->project_manager_id === (int) $person->id,
             'coordinator' => (int) $this->coordinator_id === (int) $person->id,
+            'section_manager' => $this->approvableBySectionManager($person),
             'department_manager' => $this->approvableByDepartmentManager($person),
             'monitoring_director', 'general_management' => true,
             default => $user->can('fill_coordinator', self::class)
+                || $user->can('approve_section', self::class)
                 || $user->can('approve_department', self::class)
                 || $user->can('update', self::class)
                 || $user->can('reject', self::class),
@@ -377,6 +483,7 @@ class Project extends Model
             'return_project_manager' => 'إرجاع لمدير المشروع (مسودة)',
             'return_project_manager_review' => 'إرجاع لمدير المشروع (مراجعة)',
             'return_coordinator' => 'إرجاع للمنسق (تعبئة)',
+            'return_section_manager' => 'إرجاع لمدير القسم (موافقة)',
             'return_department_manager' => 'إرجاع لمدير الدائرة (موافقة)',
             'reject_final' => 'رفض قاطع نهائي (لا إرجاع)',
         ];
@@ -386,8 +493,9 @@ class Project extends Model
         }
 
         $allowedKeys = match ($person->role) {
-            'department_manager' => ['return_project_manager', 'return_project_manager_review', 'return_coordinator', 'reject_final'],
-            'monitoring_director' => ['return_project_manager', 'return_project_manager_review', 'return_coordinator', 'return_department_manager', 'reject_final'],
+            'section_manager' => ['return_project_manager', 'return_project_manager_review', 'return_coordinator', 'reject_final'],
+            'department_manager' => ['return_project_manager', 'return_project_manager_review', 'return_coordinator', 'return_section_manager', 'reject_final'],
+            'monitoring_director' => ['return_project_manager', 'return_project_manager_review', 'return_coordinator', 'return_section_manager', 'return_department_manager', 'reject_final'],
             default => array_keys($all),
         };
 
@@ -405,6 +513,7 @@ class Project extends Model
             'return_project_manager' => 'draft',
             'return_project_manager_review' => 'pending_project_manager',
             'return_coordinator' => 'coordinator_filling',
+            'return_section_manager' => 'pending_section_manager',
             'return_department_manager' => 'pending_dept_manager',
             'reject_final' => 'rejected',
             default => null,
@@ -431,6 +540,7 @@ class Project extends Model
             'return_coordinator' => $this->isSelfCoordinator()
                 ? $this->project_manager_id
                 : $this->coordinator_id,
+            'return_section_manager' => $this->approverSectionManager()?->id,
             'return_department_manager' => $this->approverDepartmentManager()?->id,
             default => null,
         };
@@ -471,6 +581,10 @@ class Project extends Model
             return true;
         }
 
+        if ($person->role === 'section_manager' && $this->approvableBySectionManager($person)) {
+            return true;
+        }
+
         if ($person->role === 'department_manager' && $this->approvableByDepartmentManager($person)) {
             return true;
         }
@@ -493,6 +607,45 @@ class Project extends Model
             'return_target' => null,
             'gap_owner' => null,
         ])->save();
+    }
+
+    public function approvableBySectionManager(?Person $person): bool
+    {
+        if (! $person || $person->role !== 'section_manager' || ! $person->section_id) {
+            return false;
+        }
+
+        return (int) $person->section_id === (int) $this->section_id;
+    }
+
+    public function approverSectionManager(): ?Person
+    {
+        if (! $this->section_id) {
+            return null;
+        }
+
+        static $cache = null;
+        $cache ??= Person::query()
+            ->where('role', 'section_manager')
+            ->get()
+            ->keyBy('section_id');
+
+        return $cache->get($this->section_id);
+    }
+
+    public function approverSectionManagerLabel(): string
+    {
+        $manager = $this->approverSectionManager();
+
+        if ($manager) {
+            return $manager->name;
+        }
+
+        if (! $this->section_id) {
+            return '— (المشروع غير مرتبط بقسم)';
+        }
+
+        return '— (لا يوجد مدير قسم معيّن لهذا القسم)';
     }
 
     public function approvableByDepartmentManager(?Person $person): bool
@@ -552,6 +705,7 @@ class Project extends Model
         return [
             'project_manager' => 'مدير المشروع',
             'coordinator' => 'المنسق',
+            'section_manager' => 'مدير القسم',
             'department_manager' => 'مدير الدائرة',
             'monitor' => 'المراقب',
             'other' => 'أخرى',
@@ -577,9 +731,10 @@ class Project extends Model
         }
 
         $allowedKeys = match ($person->role) {
-            'department_manager' => ['project_manager', 'coordinator', 'other'],
-            'monitoring_director' => ['project_manager', 'coordinator', 'department_manager', 'monitor', 'other'],
-            'monitor' => ['project_manager', 'coordinator', 'department_manager', 'other'],
+            'section_manager' => ['project_manager', 'coordinator', 'other'],
+            'department_manager' => ['project_manager', 'coordinator', 'section_manager', 'other'],
+            'monitoring_director' => ['project_manager', 'coordinator', 'section_manager', 'department_manager', 'monitor', 'other'],
+            'monitor' => ['project_manager', 'coordinator', 'section_manager', 'department_manager', 'other'],
             default => array_keys($labels),
         };
 
@@ -594,6 +749,7 @@ class Project extends Model
             'draft' => 'مدير المشروع: ' . ($this->projectManager?->name ?? '—'),
             'pending_coordinator', 'coordinator_filling' => 'المنسق: ' . $this->coordinatorDisplayName(),
             'pending_project_manager' => 'مدير المشروع: ' . ($this->projectManager?->name ?? '—') . ' — مراجعة وإرسال',
+            'pending_section_manager' => 'مدير القسم: ' . $this->approverSectionManagerLabel(),
             'pending_dept_manager' => 'مدير الدائرة: ' . $this->approverDepartmentManagerLabel(),
             'pending_monitoring_manager' => 'مدير الرقابة العامة — تعيين مراقب',
             'monitoring_in_progress' => 'المراقب: ' . ($this->monitorPerson?->name ?? '—') . ' — تعبئة وإرسال',
@@ -614,7 +770,12 @@ class Project extends Model
             'project_manager' => (int) $this->project_manager_id === (int) $person->id
                 && in_array($this->workflow_status, ['draft', 'pending_coordinator', 'coordinator_filling', 'pending_project_manager'], true),
             'coordinator' => (int) $this->coordinator_id === (int) $person->id
-                && in_array($this->workflow_status, ['pending_coordinator', 'coordinator_filling'], true),
+                && (
+                    in_array($this->workflow_status, ['pending_coordinator', 'coordinator_filling'], true)
+                    || $this->hasPendingClosureDocs()
+                ),
+            'section_manager' => $this->workflow_status === 'pending_section_manager'
+                && $this->approvableBySectionManager($person),
             'department_manager' => $this->workflow_status === 'pending_dept_manager'
                 && $this->approvableByDepartmentManager($person),
             'monitoring_director' => in_array($this->workflow_status, ['pending_monitoring_manager', 'pending_monitoring_confirmation'], true),
@@ -632,6 +793,7 @@ class Project extends Model
             'pending_coordinator' => 'بانتظار المنسق',
             'coordinator_filling' => 'المنسق يعمل',
             'pending_project_manager' => 'بانتظار مدير المشروع',
+            'pending_section_manager' => 'بانتظار مدير القسم',
             'pending_dept_manager' => 'بانتظار مدير الدائرة',
             'pending_monitoring_manager' => 'بانتظار مدير الرقابة العامة',
             'monitoring_in_progress' => 'قيد المراقبة',
@@ -710,7 +872,7 @@ class Project extends Model
             return true;
         }
 
-        if (filled($this->monitor_notes) || filled($this->monitor_recommendations)) {
+        if (filled($this->monitor_notes) || filled($this->monitor_negative_notes) || filled($this->monitor_recommendations)) {
             return true;
         }
 
@@ -797,6 +959,9 @@ class Project extends Model
                 return (object) [
                     'coordinator_value' => $saved?->coordinator_value,
                     'monitor_value' => $saved?->monitor_value,
+                    'has_file_field' => (bool) $item->has_file_field,
+                    'attachment_uploaded_at' => $saved?->attachment_uploaded_at,
+                    'has_attachment' => $saved?->hasAttachment(),
                 ];
             });
 
@@ -840,6 +1005,9 @@ class Project extends Model
                 return (object) [
                     'coordinator_value' => $saved?->coordinator_value,
                     'monitor_value' => $saved?->monitor_value,
+                    'has_file_field' => (bool) $item->has_file_field,
+                    'attachment_uploaded_at' => $saved?->attachment_uploaded_at,
+                    'has_attachment' => $saved?->hasAttachment(),
                 ];
             });
 
@@ -863,6 +1031,145 @@ class Project extends Model
         ];
     }
 
+    /** @return list<int> */
+    public static function closureDocumentItemIds(): array
+    {
+        static $ids = null;
+
+        $ids ??= ChecklistItem::query()
+            ->where('is_active', true)
+            ->where('has_file_field', true)
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        return $ids;
+    }
+
+    /**
+     * @return array{total: int, attached: int, complete: bool, label: string}
+     */
+    public function closureAttachmentSummary(): array
+    {
+        $itemIds = self::closureDocumentItemIds();
+        $total = count($itemIds);
+
+        if ($total === 0) {
+            return [
+                'total' => 0,
+                'attached' => 0,
+                'complete' => true,
+                'label' => '—',
+            ];
+        }
+
+        $values = $this->relationLoaded('checklistValues')
+            ? $this->checklistValues->whereIn('checklist_item_id', $itemIds)
+            : $this->checklistValues()->whereIn('checklist_item_id', $itemIds)->get();
+
+        $attached = $values->filter(fn (ProjectChecklistValue $row) => $row->hasAttachment())->count();
+        $complete = $attached >= $total;
+
+        return [
+            'total' => $total,
+            'attached' => $attached,
+            'complete' => $complete,
+            'label' => $complete ? 'مكتمل' : "{$attached}/{$total}",
+        ];
+    }
+
+    public static function applyClosureDocsLabelScope(Builder $query, array $labels): void
+    {
+        $itemIds = self::closureDocumentItemIds();
+        $total = count($itemIds);
+
+        if ($total === 0 || $labels === []) {
+            return;
+        }
+
+        $idList = implode(',', array_map('intval', $itemIds));
+
+        $query->where(function ($outer) use ($labels, $total, $idList) {
+            foreach ($labels as $label) {
+                $outer->orWhere(function ($sub) use ($label, $total, $idList) {
+                    if ($label === 'مكتمل') {
+                        $sub->whereRaw(
+                            "(SELECT COUNT(*) FROM project_checklist_values WHERE project_id = projects.id AND checklist_item_id IN ({$idList}) AND attachment_path IS NOT NULL AND attachment_path != '') = ?",
+                            [$total]
+                        );
+
+                        return;
+                    }
+
+                    if (preg_match('/^(\d+)\/' . preg_quote((string) $total, '/') . '$/', (string) $label, $matches)) {
+                        $sub->whereRaw(
+                            "(SELECT COUNT(*) FROM project_checklist_values WHERE project_id = projects.id AND checklist_item_id IN ({$idList}) AND attachment_path IS NOT NULL AND attachment_path != '') = ?",
+                            [(int) $matches[1]]
+                        );
+                    }
+                });
+            }
+        });
+    }
+
+    public function hasPendingClosureDocs(): bool
+    {
+        $closureItemIds = self::closureDocumentItemIds();
+
+        if ($closureItemIds === []) {
+            return false;
+        }
+
+        if (in_array($this->workflow_status, ['draft', 'pending_coordinator', 'coordinator_filling'], true)) {
+            return false;
+        }
+
+        $values = $this->checklistValues()
+            ->whereIn('checklist_item_id', $closureItemIds)
+            ->get()
+            ->keyBy('checklist_item_id');
+
+        foreach ($closureItemIds as $itemId) {
+            $row = $values->get($itemId);
+            $status = $row?->coordinator_value ?? 'not_ready';
+
+            if ($status !== 'ready' || ! $row?->hasAttachment()) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public static function coordinatorCanFillClosureDocsStatuses(): array
+    {
+        return [
+            'coordinator_filling',
+            'pending_project_manager',
+            'pending_section_manager',
+            'pending_dept_manager',
+            'pending_monitoring_manager',
+            'monitoring_in_progress',
+            'pending_monitoring_confirmation',
+            'passage_complete',
+            'rejected',
+        ];
+    }
+
+    public function coordinatorCanFillClosureDocs(): bool
+    {
+        return in_array($this->workflow_status, self::coordinatorCanFillClosureDocsStatuses(), true);
+    }
+
+    public static function closureLateScore(): float
+    {
+        $raw = Constant::where('key', 'checklist_closure_late_score')->value('value');
+        $decoded = is_string($raw) ? json_decode($raw, true) : $raw;
+        $score = is_numeric($decoded) ? (float) $decoded : 0.5;
+
+        return max(0.0, min(1.0, $score));
+    }
+
     protected function groupReadinessPercent($items, string $column): ?float
     {
         $total = $items->count();
@@ -873,10 +1180,42 @@ class Project extends Model
             return $total > 0 ? 100.0 : null;
         }
 
-        $ready = $items->filter(fn ($item) => ($item->{$column} ?? null) === 'ready')->count();
-        $partial = $items->filter(fn ($item) => ($item->{$column} ?? null) === 'partial')->count();
+        $weightSum = $items
+            ->filter(fn ($item) => ($item->{$column} ?? null) !== 'not_required')
+            ->sum(fn ($item) => $this->checklistItemReadinessWeight($item, $column));
 
-        return round((($ready + 0.5 * $partial) / $denominator) * 100, 2);
+        return round(($weightSum / $denominator) * 100, 2);
+    }
+
+    protected function checklistItemReadinessWeight(object $item, string $column): float
+    {
+        $status = $item->{$column} ?? null;
+
+        if ($column === 'coordinator_value' && ($item->has_file_field ?? false)) {
+            if ($status !== 'ready' || ! ($item->has_attachment ?? false)) {
+                return 0.0;
+            }
+
+            if (! $this->planned_end_date || ! ($item->attachment_uploaded_at ?? null)) {
+                return 1.0;
+            }
+
+            $uploadedAt = $item->attachment_uploaded_at instanceof \Carbon\CarbonInterface
+                ? $item->attachment_uploaded_at
+                : \Carbon\Carbon::parse($item->attachment_uploaded_at);
+
+            if ($uploadedAt->toDateString() <= $this->planned_end_date->toDateString()) {
+                return 1.0;
+            }
+
+            return self::closureLateScore();
+        }
+
+        return match ($status) {
+            'ready' => 1.0,
+            'partial' => 0.5,
+            default => 0.0,
+        };
     }
 
     protected function averageReadiness($groupedValues, string $column): ?float
