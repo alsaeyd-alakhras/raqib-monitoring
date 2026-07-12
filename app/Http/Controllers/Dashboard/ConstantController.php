@@ -26,8 +26,6 @@ class ConstantController extends Controller
             'tabGroups' => $this->tabGroups(),
             'registry' => $registry,
             'decodedValues' => $decodedValues,
-            'legacyFields' => $this->legacyNumericFields(),
-            'legacyValues' => $this->legacyValues($stored),
         ]);
     }
 
@@ -37,7 +35,6 @@ class ConstantController extends Controller
 
         $registry = $this->registry();
         $allowedStructuredKeys = array_keys($registry);
-        $allowedLegacyKeys = array_keys($this->legacyNumericFields());
 
         foreach ($request->input('constants', []) as $key => $values) {
             if (! in_array($key, $allowedStructuredKeys, true)) {
@@ -49,17 +46,6 @@ class ConstantController extends Controller
             Constant::updateOrCreate(
                 ['key' => $key],
                 ['value' => json_encode($cleaned, JSON_UNESCAPED_UNICODE)]
-            );
-        }
-
-        foreach ($allowedLegacyKeys as $key) {
-            if (! $request->has($key)) {
-                continue;
-            }
-
-            Constant::updateOrCreate(
-                ['key' => $key],
-                ['value' => (string) $request->input($key)]
             );
         }
 
@@ -104,76 +90,7 @@ class ConstantController extends Controller
                 'icon' => 'fa-chart-line',
                 'keys' => ['scale_execution', 'scale_quality', 'scale_closure', 'scale_deduction', 'scale_kpi'],
             ],
-            'legacy' => [
-                'label' => 'ثوابت إدارية',
-                'icon' => 'fa-coins',
-                'type' => 'legacy',
-            ],
         ];
-    }
-
-    /** @return array<string, array<string, string>> */
-    private function legacyNumericFields(): array
-    {
-        return [
-            'advance_payment_permanent' => [
-                'label' => 'مبلغ السلفة — مداوم',
-                'suffix' => '₪',
-                'group' => 'advance',
-            ],
-            'advance_payment_non_permanent' => [
-                'label' => 'مبلغ السلفة — غير مداوم',
-                'suffix' => '₪',
-                'group' => 'advance',
-            ],
-            'advance_payment_rate' => [
-                'label' => 'مبلغ السلفة — نسبة',
-                'suffix' => '₪',
-                'group' => 'advance',
-            ],
-            'advance_payment_riyadh' => [
-                'label' => 'مبلغ السلفة — رياض',
-                'suffix' => '₪',
-                'group' => 'advance',
-            ],
-            'termination_service' => [
-                'label' => 'نسبة نهاية الخدمة للمؤسسة',
-                'suffix' => '%',
-                'group' => 'termination',
-            ],
-            'termination_employee' => [
-                'label' => 'نسبة إدخار للموظف',
-                'suffix' => '%',
-                'group' => 'termination',
-            ],
-            'health_bachelor' => [
-                'label' => 'رواتب الصحة — بكالوريوس',
-                'suffix' => '₪',
-                'group' => 'health',
-            ],
-            'health_diploma' => [
-                'label' => 'رواتب الصحة — دبلوم',
-                'suffix' => '₪',
-                'group' => 'health',
-            ],
-            'health_secondary' => [
-                'label' => 'رواتب الصحة — ثانوية عامة',
-                'suffix' => '₪',
-                'group' => 'health',
-            ],
-        ];
-    }
-
-    /** @param \Illuminate\Support\Collection<string, Constant> $stored */
-    private function legacyValues($stored): array
-    {
-        $values = [];
-
-        foreach (array_keys($this->legacyNumericFields()) as $key) {
-            $values[$key] = $stored->get($key)?->value ?? '0';
-        }
-
-        return $values;
     }
 
     private function decodeValue(mixed $value): mixed

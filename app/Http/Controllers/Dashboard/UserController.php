@@ -106,12 +106,8 @@ class UserController extends Controller
     public function settings(Request $request)
     {
         $user = Auth::user();
-        if (Auth::user()->id != $user->id && !Auth::user()->can('update', User::class)) {
-            abort(403);
-        }
-        $btn_label = "تعديل";
-        $settings_profile = true;
-        return view('dashboard.users.settings', compact('user', 'btn_label', 'settings_profile'));
+
+        return view('dashboard.users.settings', compact('user'));
     }
     /**
      * Show the form for editing the specified resource.
@@ -124,13 +120,41 @@ class UserController extends Controller
     }
 
     /**
+     * Update the authenticated user's profile (name and username only).
+     */
+    public function updateProfile(Request $request)
+    {
+        $user = Auth::user();
+
+        $request->validate([
+            'name' => 'required',
+            'username' => 'required|string|unique:users,username,' . $user->id,
+        ]);
+
+        $userOld = $user->toArray();
+
+        $user->update([
+            'name' => $request->name,
+            'username' => $request->username,
+        ]);
+
+        ActivityLogService::log(
+            'Updated',
+            'User',
+            "تم تحديث الملف الشخصي : {$user->name}.",
+            $userOld,
+            $user->getChanges()
+        );
+
+        return redirect()->route('dashboard.profile.settings')->with('success', 'تم تحديث الملف الشخصي');
+    }
+
+    /**
      * Update the specified resource in storage.
      */
     public function update(Request $request, User $user)
     {
-        if (Auth::user()->id != $user->id && !Auth::user()->can('update', User::class)) {
-            abort(403);
-        }
+        $this->authorize('update', User::class);
         $request->validate([
             'name' => 'required',
             'username' => 'required|string|unique:users,username,' . $user->id,
@@ -177,9 +201,6 @@ class UserController extends Controller
         } catch (\Exception $e) {
             DB::rollBack();
             throw $e;
-        }
-        if (Auth::user()->id == $user->id) {
-            return redirect()->route('dashboard.home')->with('success', 'تم تعديل المستخدم');
         }
         return redirect()->route('dashboard.users.index')->with('success', 'تم تعديل المستخدم');
     }

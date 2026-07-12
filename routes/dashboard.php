@@ -36,7 +36,8 @@ Route::group([
     Route::get('getLogs',[ActivityLogController::class,'getLogs'])->name('logs.getLogs');
 
     // users ************************
-    Route::get('profile/settings',[UserController::class,'settings'])->name('profile.settings');
+    Route::get('profile/settings', [UserController::class, 'settings'])->name('profile.settings');
+    Route::put('profile/settings', [UserController::class, 'updateProfile'])->name('profile.update');
 
     // Reports ************************
     Route::get('reports', [ReportController::class, 'index'])->name('reports.index');

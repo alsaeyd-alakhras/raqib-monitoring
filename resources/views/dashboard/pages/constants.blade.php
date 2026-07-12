@@ -61,20 +61,13 @@
                                     id="tab-{{ $tabId }}"
                                     role="tabpanel"
                                 >
-                                    @if (($tab['type'] ?? null) === 'legacy')
-                                        @include('dashboard.pages.constants._legacy', [
-                                            'legacyFields' => $legacyFields,
-                                            'legacyValues' => $legacyValues,
+                                    @foreach ($tab['keys'] as $key)
+                                        @include('dashboard.pages.constants._editor', [
+                                            'key' => $key,
+                                            'meta' => $registry[$key],
+                                            'decodedValues' => $decodedValues,
                                         ])
-                                    @else
-                                        @foreach ($tab['keys'] as $key)
-                                            @include('dashboard.pages.constants._editor', [
-                                                'key' => $key,
-                                                'meta' => $registry[$key],
-                                                'decodedValues' => $decodedValues,
-                                            ])
-                                        @endforeach
-                                    @endif
+                                    @endforeach
 
                                     @can('update', 'App\Models\Constant')
                                         <div class="d-flex justify-content-end">

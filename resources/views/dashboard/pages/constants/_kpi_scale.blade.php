@@ -7,18 +7,12 @@
 
 <div class="card mb-4 constant-editor-card" data-editor-type="kpi-scale" data-constant-key="{{ $key }}">
     <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
-        <div>
-            <h6 class="mb-0">{{ $meta['label'] }}</h6>
-            <small class="text-muted"><code>{{ $key }}</code></small>
-        </div>
+        <h6 class="mb-0">{{ $meta['label'] }}</h6>
         <button type="button" class="btn btn-sm btn-outline-primary btn-add-kpi-scale-row">
             <i class="fa-solid fa-plus me-1"></i> إضافة
         </button>
     </div>
     <div class="card-body">
-        @if (! empty($meta['used_in']))
-            <p class="text-muted small mb-3">يُستخدم في: {{ implode('، ', $meta['used_in']) }}</p>
-        @endif
         <p class="text-muted small mb-3">يُرتَّب تلقائياً تنازلياً حسب الحد الأدنى عند الحفظ.</p>
 
         <div class="table-responsive">
