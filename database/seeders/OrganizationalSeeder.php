@@ -129,6 +129,18 @@ class OrganizationalSeeder extends Seeder
             }
         }
 
+        $monitoringDeptId = Department::query()
+            ->where('name', 'دائرة الرقابة العامة')
+            ->whereHas('center', fn ($query) => $query->where('name', 'الجمعية'))
+            ->value('id');
+
+        $monitorAbilities = [
+            'projects.view',
+            'projects.fill_monitor',
+            'monitoringactivities.view',
+            'monitoringactivities.update',
+        ];
+
         $monitors = [
             [
                 'name' => 'سمير نصار',
@@ -159,16 +171,23 @@ class OrganizationalSeeder extends Seeder
                 ]
             );
 
-            Person::firstOrCreate(
+            Person::updateOrCreate(
                 ['user_id' => $user->id],
-                ['name' => $monitor['name']]
+                [
+                    'name' => $monitor['name'],
+                    'role' => 'monitor',
+                    'department_id' => $monitoringDeptId,
+                    'job_title' => 'مراقب ميداني',
+                ]
             );
 
-            RoleUser::firstOrCreate([
-                'role_name' => 'people.view',
-                'user_id' => $user->id,
-                'ability' => 'allow',
-            ]);
+            foreach ($monitorAbilities as $ability) {
+                RoleUser::firstOrCreate([
+                    'role_name' => $ability,
+                    'user_id' => $user->id,
+                    'ability' => 'allow',
+                ]);
+            }
         }
     }
 }
