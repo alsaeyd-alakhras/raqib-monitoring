@@ -14,7 +14,9 @@ return new class extends Migration
             $table->foreignId('coordinator_filled_by')->nullable()->after('coordinator_submitted_by')->constrained('users')->nullOnDelete();
         });
 
-        DB::statement('ALTER TABLE projects MODIFY project_number VARCHAR(50) NULL');
+        if (Schema::getConnection()->getDriverName() !== 'sqlite') {
+            DB::statement('ALTER TABLE projects MODIFY project_number VARCHAR(50) NULL');
+        }
 
         DB::table('projects')
             ->whereNotNull('project_number')
@@ -44,6 +46,8 @@ return new class extends Migration
                     ->update(['project_number' => $numeric ?: null]);
             });
 
-        DB::statement('ALTER TABLE projects MODIFY project_number INT NULL');
+        if (Schema::getConnection()->getDriverName() !== 'sqlite') {
+            DB::statement('ALTER TABLE projects MODIFY project_number INT NULL');
+        }
     }
 };

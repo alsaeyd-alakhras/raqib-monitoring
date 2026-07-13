@@ -22,7 +22,7 @@ use Illuminate\Support\Facades\Route;
 
 Route::group([
     'prefix' => '',
-    'middleware' => ['check.cookie'],
+    'middleware' => ['check.cookie', 'ensure.phone'],
     'as' => 'dashboard.'
 ], function () {
     /* ********************************************************** */
@@ -36,6 +36,8 @@ Route::group([
     Route::get('getLogs',[ActivityLogController::class,'getLogs'])->name('logs.getLogs');
 
     // users ************************
+    Route::get('profile/complete-phone', [UserController::class, 'completePhone'])->name('profile.complete-phone');
+    Route::put('profile/complete-phone', [UserController::class, 'storeCompletePhone'])->name('profile.complete-phone.store');
     Route::get('profile/settings', [UserController::class, 'settings'])->name('profile.settings');
     Route::put('profile/settings', [UserController::class, 'updateProfile'])->name('profile.update');
 

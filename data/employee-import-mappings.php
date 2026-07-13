@@ -1,0 +1,180 @@
+<?php
+
+return [
+    'centers' => [
+        'association' => 'الجمعية',
+        'health' => 'المراكز الصحية',
+    ],
+
+    'employee_sheet' => 'بانات للداخلية',
+
+    'columns' => [
+        'number' => 'الرقم',
+        'association' => 'الجمعية',
+        'department' => 'الدائرة',
+        'role_label' => 'الدور',
+        'section' => 'القسم',
+        'name' => 'الاسم',
+        'national_id' => 'رقم الهوية',
+        'job_nature' => 'طبيعة العمل',
+        'workplace' => 'مكان العمل',
+    ],
+
+    'health_section_marker' => 'الصحة',
+
+    'legacy_section_to_department' => [
+        'الصحة' => null,
+        'فروع' => 'دائرة المشاريع والتسويق والإعلام',
+        'مدارس' => 'دائرة التنمية الاجتماعية',
+        'الرقابة' => 'دائرة الرقابة العامة',
+        'الاعلام' => 'دائرة المشاريع والتسويق والإعلام',
+        'الإعلام' => 'دائرة المشاريع والتسويق والإعلام',
+        'المشتريات' => 'دائرة الشؤون المالية',
+        'المالية' => 'دائرة الشؤون المالية',
+        'الخدمات' => 'دائرة الشؤون الإدارية',
+        'الحراسات' => 'دائرة الشؤون الإدارية',
+        'الصيانة' => 'دائرة الشؤون الإدارية',
+        'المقر' => 'دائرة الشؤون الإدارية',
+        'سكرتاريا' => 'سكرتاريا',
+        'مطبخ البركة' => 'دائرة الاستثمار الخيري',
+        'إدارة' => null,
+        'تدقيق' => 'دائرة الشؤون المالية',
+    ],
+
+    'legacy_section_to_section' => [
+        'مدارس' => 'المدارس',
+        'المالية' => 'قسم الحسابات',
+        'تدقيق' => 'قسم الموازنة والتدقيق',
+        'الخدمات' => 'قسم الخدمات',
+        'المشتريات' => 'قسم المشتريات',
+        'مطبخ البركة' => 'مطبخ البركة',
+        'سكرتاريا' => null,
+        'إدارة' => null,
+        'الرقابة' => null,
+        'فروع' => null,
+        'الصحة' => null,
+    ],
+
+    'health_workplace_to_department' => [
+        'مستشفى يافا' => 'يافا',
+        'مركز الكويتي' => 'الكويتي',
+        'مركز الوسطى' => 'الوسطى',
+    ],
+
+    'branch_workplace_to_section' => [
+        'فرع غزة' => 'مكتب غزة',
+        'فرع رفح' => 'مكتب رفح',
+        'فرع دير البلح' => 'مكتب دير البلح',
+        'فرع المغازي' => 'مكتب المغازي',
+        'فرع الزوايدة' => 'مكتب الزوايدة',
+        'فرع البريج' => 'مكتب البريج',
+        'فرع جباليا' => 'مكتب جباليا',
+        'فرع خانيونس' => 'مكتب خانيونس',
+    ],
+
+    'health_nature_to_section' => [
+        'بصريات' => 'عيادة بصريات',
+        'عمليات' => 'عيادة العمليات',
+        'صيدلية' => 'الصيدلية',
+        'فني اشعة' => 'قسم اشعة',
+        'اشعة' => 'قسم اشعة',
+        'مختبر' => 'المختبر',
+        'سمعيات' => 'عيادة فحص السمع',
+        'فحص السمع' => 'عيادة فحص السمع',
+        'مسالك بولية' => 'عيادة مسالك بولية',
+        'عيون' => 'عيادة طب العيون',
+        'اسنان' => 'عيادة الاسنان- رجال',
+        'أشعة' => 'قسم اشعة',
+        'بانوراما' => 'قسم البانوراما',
+    ],
+
+    'health_nature_null_roles' => [
+        'آذن',
+        'تمريض',
+        'ممرض',
+        'ممرضة',
+        'كاتب',
+        'خدمات',
+        'حارس',
+        'سائق',
+        'مدرس',
+        'مدرسة',
+        'محاسب',
+    ],
+
+    'excel_role_to_system_role' => [
+        'مدير مشروع' => 'project_manager',
+        'مدير مكتب' => 'section_manager',
+        'رئيس قسم' => 'section_manager',
+        'مدير المطبخ' => 'section_manager',
+        'مدير دائرة' => 'department_manager',
+    ],
+
+    'coordinator_nature_patterns' => [
+        'منسق مشاريع',
+        'منسق كفالات',
+        'منسق ميداني',
+    ],
+
+    'monitoring_department' => 'دائرة الرقابة العامة',
+
+    'role_abilities' => [
+        'project_manager' => [
+            'projects.view',
+            'projects.create',
+            'projects.update',
+            'projects.fill_coordinator',
+        ],
+        'coordinator' => [
+            'projects.view',
+            'projects.fill_coordinator',
+        ],
+        'section_manager' => [
+            'projects.view',
+            'projects.approve_section',
+            'projects.reject',
+            'people.view',
+            'people.create',
+            'people.update',
+        ],
+        'department_manager' => [
+            'projects.view',
+            'projects.approve_department',
+            'projects.reject',
+        ],
+        'monitor' => [
+            'projects.view',
+            'projects.fill_monitor',
+            'monitoringactivities.view',
+            'monitoringactivities.update',
+        ],
+        'monitoring_director' => [
+            'projects.view',
+            'projects.update',
+            'projects.reject',
+            'monitoringactivities.view',
+            'monitoringactivities.create',
+            'monitoringactivities.update',
+            'monitoringactivities.set_monitoring_info',
+            'monitoringactivities.assign_monitor',
+            'monitoringactivities.confirm_completion',
+            'monitoringactivities.edit_ratings',
+            'monitoringactivities.reject',
+        ],
+        'general_management' => [
+            'projects.view',
+            'monitoringactivities.view',
+            'monitoringactivities.edit_ratings',
+            'people.view',
+            'funders.view',
+            'centers.view',
+            'departments.view',
+        ],
+    ],
+
+    'manager_role_priority' => [
+        'department_manager' => ['مدير دائرة'],
+        'section_manager' => ['رئيس قسم', 'مدير مكتب', 'مدير المطبخ'],
+        'monitoring_director' => ['مدير عام'],
+    ],
+];

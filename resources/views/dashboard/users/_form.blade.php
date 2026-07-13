@@ -35,6 +35,16 @@
                         <x-form.input type="email" label="البريد الالكتروني" :value="$user->email" name="email"
                             placeholder="example@gmail.com" />
                     </div>
+                    @if (isset($settings_profile))
+                    <div class="mb-4 col-md-4">
+                        <x-form.input
+                            label="رقم الجوال"
+                            name="phone"
+                            :value="old('phone', $user->person?->phone ?? $user->phone)"
+                            placeholder="05xxxxxxxx"
+                        />
+                    </div>
+                    @endif
                     <div class="mb-4 col-md-4">
                         @if (isset($btn_label))
                             <x-form.input type="password" label="كلمة المرور" name="password" placeholder="****" />
@@ -43,9 +53,9 @@
                         @endif
                     </div>
                     <div class="mb-4 col-md-4">
-                        @if (!isset($btn_label))
-                            <x-form.input type="password" label="تأكيد كلمة المرور" name="confirm_password"
-                                placeholder="****" required />
+                        @if (!isset($btn_label) || isset($settings_profile))
+                            <x-form.input type="password" label="تأكيد كلمة المرور" name="confirm_password"
+                                placeholder="****" :required="!isset($btn_label)" />
                         @endif
                     </div>
                     @if(!isset($settings_profile))

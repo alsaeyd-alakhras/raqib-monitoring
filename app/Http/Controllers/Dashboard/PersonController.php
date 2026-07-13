@@ -125,7 +125,7 @@ class PersonController extends Controller
             ->map(fn ($name, $sectionId) => ['id' => (int) $sectionId, 'manager' => $name])
             ->values();
 
-        $roleLabels = Person::roleLabels();
+        $roleLabels = ['' => Person::ORDINARY_STAFF_LABEL] + Person::roleLabels();
         if ($isSectionManager) {
             $roleLabels = array_intersect_key($roleLabels, array_flip(['project_manager', 'coordinator']));
         }
@@ -158,7 +158,7 @@ class PersonController extends Controller
     {
         return [
             'name' => ['required', 'string', 'max:255'],
-            'role' => ['required', 'string', Rule::in(Person::ROLES)],
+            'role' => ['nullable', 'string', Rule::in(Person::ROLES)],
             'department_id' => ['nullable', 'exists:departments,id'],
             'section_id' => ['nullable', 'exists:sections,id'],
             'user_id' => ['nullable', 'exists:users,id'],
@@ -197,6 +197,10 @@ class PersonController extends Controller
             $role = $request->input('role');
             $departmentId = $request->input('department_id');
             $sectionId = $request->input('section_id');
+
+            if (empty($role)) {
+                return;
+            }
 
             if ($isSectionManager) {
                 if ((int) $sectionId !== (int) $currentPerson->section_id) {
@@ -280,10 +284,14 @@ class PersonController extends Controller
         if (! empty($validated['section_id'])) {
             $section = Section::findOrFail($validated['section_id']);
             $validated['department_id'] = $section->department_id;
-        } elseif ($validated['role'] === 'department_manager') {
+        } elseif (($validated['role'] ?? null) === 'department_manager') {
             $validated['section_id'] = null;
-        } elseif (! in_array($validated['role'], Person::rolesRequiringSection(), true)) {
+        } elseif (! in_array($validated['role'] ?? null, Person::rolesRequiringSection(), true)) {
             $validated['section_id'] = null;
+        }
+
+        if (empty($validated['role'])) {
+            $validated['role'] = null;
         }
 
         if ($isSectionManager) {

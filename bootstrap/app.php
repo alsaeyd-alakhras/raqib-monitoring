@@ -18,6 +18,7 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
         $middleware->alias([
             'check.cookie' => CheckUserCookie::class,
+            'ensure.phone' => \App\Http\Middleware\EnsurePhoneIsSet::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {

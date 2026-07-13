@@ -23,8 +23,10 @@ return new class extends Migration
 
         $this->dropPeopleRoleCheck();
 
-        $roles = implode("','", Person::ROLES);
-        DB::statement("ALTER TABLE people ADD CONSTRAINT chk_people_role CHECK (role IN ('{$roles}'))");
+        if (Schema::getConnection()->getDriverName() !== 'sqlite') {
+            $roles = implode("','", Person::ROLES);
+            DB::statement("ALTER TABLE people ADD CONSTRAINT chk_people_role CHECK (role IN ('{$roles}'))");
+        }
 
         $sectionIdsByDepartment = Section::query()
             ->orderBy('id')
@@ -52,12 +54,14 @@ return new class extends Migration
     {
         $this->dropPeopleRoleCheck();
 
-        $rolesWithoutSectionManager = array_filter(
-            Person::ROLES,
-            fn (string $role) => $role !== 'section_manager'
-        );
-        $roles = implode("','", $rolesWithoutSectionManager);
-        DB::statement("ALTER TABLE people ADD CONSTRAINT chk_people_role CHECK (role IN ('{$roles}'))");
+        if (Schema::getConnection()->getDriverName() !== 'sqlite') {
+            $rolesWithoutSectionManager = array_filter(
+                Person::ROLES,
+                fn (string $role) => $role !== 'section_manager'
+            );
+            $roles = implode("','", $rolesWithoutSectionManager);
+            DB::statement("ALTER TABLE people ADD CONSTRAINT chk_people_role CHECK (role IN ('{$roles}'))");
+        }
 
         Schema::table('people', function (Blueprint $table) {
             $table->dropForeign(['section_id']);
@@ -70,7 +74,11 @@ return new class extends Migration
         try {
             DB::statement('ALTER TABLE people DROP CHECK chk_people_role');
         } catch (\Throwable) {
-            DB::statement('ALTER TABLE people DROP CONSTRAINT chk_people_role');
+            try {
+                DB::statement('ALTER TABLE people DROP CONSTRAINT chk_people_role');
+            } catch (\Throwable) {
+                // SQLite or databases without the named constraint.
+            }
         }
     }
 };

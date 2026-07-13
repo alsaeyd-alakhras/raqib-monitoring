@@ -85,10 +85,12 @@ class ConstantsSeeder extends Seeder
         ];
 
         foreach ($constants as $key => $value) {
-            Constant::updateOrCreate(
-                ['key' => $key],
-                ['value' => json_encode($value, JSON_UNESCAPED_UNICODE)]
-            );
+            Constant::withoutEvents(function () use ($key, $value) {
+                Constant::updateOrCreate(
+                    ['key' => $key],
+                    ['value' => json_encode($value, JSON_UNESCAPED_UNICODE)]
+                );
+            });
         }
     }
 }

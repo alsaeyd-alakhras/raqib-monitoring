@@ -22,6 +22,8 @@ class Person extends Model
         'admin',
     ];
 
+    public const ORDINARY_STAFF_LABEL = 'موظف عادي';
+
     protected $fillable = [
         'name',
         'role',
@@ -79,6 +81,10 @@ class Person extends Model
 
     public function getRoleLabelAttribute(): string
     {
+        if ($this->role === null || $this->role === '') {
+            return self::ORDINARY_STAFF_LABEL;
+        }
+
         return self::roleLabels()[$this->role] ?? $this->role;
     }
 
@@ -118,6 +124,7 @@ class Person extends Model
             'section_manager' => $person->section_id
                 ? $query->where('section_id', $person->section_id)
                 : $query->whereRaw('1 = 0'),
+            null, '' => $query->whereRaw('1 = 0'),
             default => $query,
         };
     }
@@ -137,6 +144,10 @@ class Person extends Model
         if ($person->role === 'section_manager') {
             return $person->section_id
                 && (int) $this->section_id === (int) $person->section_id;
+        }
+
+        if ($person->role === null || $person->role === '') {
+            return (int) $this->user_id === (int) $user->id;
         }
 
         return true;

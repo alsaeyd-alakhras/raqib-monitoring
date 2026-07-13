@@ -109,6 +109,42 @@ class UserController extends Controller
 
         return view('dashboard.users.settings', compact('user'));
     }
+
+    public function completePhone()
+    {
+        $user = Auth::user();
+
+        if ($user->super_admin || ! empty($user->person?->phone)) {
+            return redirect()->route('dashboard.home');
+        }
+
+        return view('dashboard.profile.complete-phone');
+    }
+
+    public function storeCompletePhone(Request $request)
+    {
+        $user = Auth::user();
+        $person = $user->person;
+
+        abort_unless($person, 404);
+
+        $validated = $request->validate([
+            'phone' => ['required', 'string', 'max:50'],
+        ]);
+
+        $person->update([
+            'phone' => $validated['phone'],
+        ]);
+
+        $user->update([
+            'phone' => $validated['phone'],
+        ]);
+
+        return redirect()
+            ->route('dashboard.home')
+            ->with('success', 'تم حفظ رقم الجوال بنجاح.');
+    }
+
     /**
      * Show the form for editing the specified resource.
      */
@@ -120,31 +156,77 @@ class UserController extends Controller
     }
 
     /**
-     * Update the authenticated user's profile (name and username only).
+     * Update the authenticated user's profile settings.
      */
     public function updateProfile(Request $request)
     {
         $user = Auth::user();
 
-        $request->validate([
+        $rules = [
             'name' => 'required',
             'username' => 'required|string|unique:users,username,' . $user->id,
+            'email' => 'nullable|email',
+            'phone' => ['nullable', 'string', 'max:50'],
+        ];
+
+        if ($request->filled('password')) {
+            $rules['password'] = 'required|same:confirm_password';
+            $rules['confirm_password'] = 'required|same:password';
+        }
+
+        $validated = $request->validate($rules, [
+            'password.same' => 'كلمة المرور غير متطابقة',
+            'confirm_password.same' => 'كلمة المرور غير متطابقة',
         ]);
 
-        $userOld = $user->toArray();
+        DB::beginTransaction();
+        try {
+            $userOld = $user->toArray();
+            $oldAvatar = $user->avatar;
 
-        $user->update([
-            'name' => $request->name,
-            'username' => $request->username,
-        ]);
+            if ($request->hasFile('avatarUpload')) {
+                if ($oldAvatar !== null) {
+                    Storage::disk('public')->delete($oldAvatar);
+                }
+                $path = $request->file('avatarUpload')->store('avatars', 'public');
+            } else {
+                $path = $user->avatar;
+            }
 
-        ActivityLogService::log(
-            'Updated',
-            'User',
-            "تم تحديث الملف الشخصي : {$user->name}.",
-            $userOld,
-            $user->getChanges()
-        );
+            $updateData = [
+                'name' => $validated['name'],
+                'username' => $validated['username'],
+                'email' => $request->email,
+                'phone' => $validated['phone'] ?? null,
+                'avatar' => $path,
+            ];
+
+            if ($request->filled('password')) {
+                $updateData['password'] = $request->password;
+            }
+
+            $user->update($updateData);
+
+            if ($user->person) {
+                $user->person->update([
+                    'name' => $validated['name'],
+                    'phone' => $validated['phone'] ?? null,
+                ]);
+            }
+
+            ActivityLogService::log(
+                'Updated',
+                'User',
+                "تم تحديث الملف الشخصي : {$user->name}.",
+                $userOld,
+                $user->getChanges()
+            );
+
+            DB::commit();
+        } catch (\Exception $e) {
+            DB::rollBack();
+            throw $e;
+        }
 
         return redirect()->route('dashboard.profile.settings')->with('success', 'تم تحديث الملف الشخصي');
     }

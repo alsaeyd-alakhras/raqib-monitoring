@@ -43,7 +43,6 @@
                     label="الدور الوظيفي"
                     :options="$roleLabels"
                     :value="$person->role ?? ''"
-                    required
                 />
             </div>
 

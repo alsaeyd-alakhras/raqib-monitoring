@@ -31,10 +31,12 @@ return new class extends Migration
             })
             ->update(['role' => 'admin']);
 
-        DB::statement('ALTER TABLE people MODIFY role VARCHAR(255) NOT NULL');
+        if (Schema::getConnection()->getDriverName() !== 'sqlite') {
+            DB::statement('ALTER TABLE people MODIFY role VARCHAR(255) NOT NULL');
 
-        $roles = implode("','", Person::ROLES);
-        DB::statement("ALTER TABLE people ADD CONSTRAINT chk_people_role CHECK (role IN ('{$roles}'))");
+            $roles = implode("','", Person::ROLES);
+            DB::statement("ALTER TABLE people ADD CONSTRAINT chk_people_role CHECK (role IN ('{$roles}'))");
+        }
     }
 
     /**
@@ -42,7 +44,15 @@ return new class extends Migration
      */
     public function down(): void
     {
-        DB::statement('ALTER TABLE people DROP CHECK chk_people_role');
+        try {
+            DB::statement('ALTER TABLE people DROP CHECK chk_people_role');
+        } catch (\Throwable) {
+            try {
+                DB::statement('ALTER TABLE people DROP CONSTRAINT chk_people_role');
+            } catch (\Throwable) {
+                // SQLite or databases without the named constraint.
+            }
+        }
 
         Schema::table('people', function (Blueprint $table) {
             $table->dropForeign(['department_id']);
