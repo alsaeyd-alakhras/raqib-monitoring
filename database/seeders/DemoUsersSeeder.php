@@ -50,7 +50,7 @@ class DemoUsersSeeder extends Seeder
                 'department_id' => $projectsDeptId,
                 'section_id' => $projectsMarketingSectionId,
                 'job_title' => 'مدير مشروع',
-                'abilities' => ['projects.view', 'projects.create', 'projects.update', 'projects.fill_coordinator'],
+                'abilities' => ['projects.view', 'projects.create', 'projects.update'],
             ],
             [
                 'name' => 'سارة المنصور',
@@ -60,7 +60,7 @@ class DemoUsersSeeder extends Seeder
                 'department_id' => $socialDeptId,
                 'section_id' => $socialFamiliesSectionId,
                 'job_title' => 'مديرة مشروع',
-                'abilities' => ['projects.view', 'projects.create', 'projects.update', 'projects.fill_coordinator'],
+                'abilities' => ['projects.view', 'projects.create', 'projects.update'],
             ],
             [
                 'name' => 'خالد عوض',
@@ -70,7 +70,7 @@ class DemoUsersSeeder extends Seeder
                 'department_id' => $investDeptId,
                 'section_id' => $investSectionId,
                 'job_title' => 'مدير مشروع',
-                'abilities' => ['projects.view', 'projects.create', 'projects.update', 'projects.fill_coordinator'],
+                'abilities' => ['projects.view', 'projects.create', 'projects.update'],
             ],
             [
                 'name' => 'نور الدين',
@@ -80,7 +80,7 @@ class DemoUsersSeeder extends Seeder
                 'department_id' => $financeDeptId,
                 'section_id' => $financeSectionId,
                 'job_title' => 'مدير مشروع',
-                'abilities' => ['projects.view', 'projects.create', 'projects.update', 'projects.fill_coordinator'],
+                'abilities' => ['projects.view', 'projects.create', 'projects.update'],
             ],
 
             // === منسقون (3) ===

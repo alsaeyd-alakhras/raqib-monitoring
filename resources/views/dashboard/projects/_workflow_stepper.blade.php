@@ -17,6 +17,7 @@
     $currentIndex = $isRejected
         ? -1
         : array_search($currentStatus, $workflowSteps, true);
+    $stepTimestamps = $project->workflowStepTimestamps();
 @endphp
 
 @once
@@ -102,6 +103,19 @@
             color: var(--bs-body-color);
             font-weight: 600;
         }
+
+        .project-workflow-step-date {
+            display: block;
+            font-size: 0.625rem;
+            line-height: 1.35;
+            color: rgba(67, 89, 113, 0.55);
+            max-width: 6.5rem;
+            margin: 0.25rem auto 0;
+        }
+
+        .project-workflow-step.is-done .project-workflow-step-date {
+            color: rgba(67, 89, 113, 0.7);
+        }
     </style>
     @endpush
 @endonce
@@ -123,10 +137,18 @@
                     $currentIndex !== false && $index === $currentIndex => 'is-current',
                     default => 'is-upcoming',
                 };
+                $timestamp = $stepTimestamps[$stepKey] ?? null;
+                $stepAt = $timestamp['at'] ?? null;
+                $stepBy = $timestamp['by'] ?? null;
             @endphp
             <div class="project-workflow-step {{ $stepClass }}">
                 <span class="project-workflow-step-circle">{{ $index + 1 }}</span>
                 <span class="project-workflow-step-label">{{ $statusLabels[$stepKey] ?? $stepKey }}</span>
+                @if ($stepClass === 'is-done' && $stepAt)
+                    <span class="project-workflow-step-date" title="{{ $stepBy?->name ?? '' }}">
+                        {{ $stepAt->format('Y-m-d H:i') }}
+                    </span>
+                @endif
             </div>
         @endforeach
     </div>

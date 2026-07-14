@@ -16,7 +16,8 @@
         const isFileRow = row?.hasAttribute('data-has-file-field');
         const fileWrap = row?.querySelector('[data-closure-file-field]');
         const hasFile = fileWrap?.dataset.hasAttachment === '1'
-            || Boolean(row?.querySelector('.checklist-file-input')?.files?.length);
+            || Boolean(row?.querySelector('.checklist-file-input')?.files?.length)
+            || Boolean(row?.querySelector('.checklist-attachment-url-input')?.value?.trim());
 
         if (isFileRow) {
             if (raw !== 'ready') {

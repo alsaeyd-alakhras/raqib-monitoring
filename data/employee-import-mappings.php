@@ -123,7 +123,6 @@ return [
             'projects.view',
             'projects.create',
             'projects.update',
-            'projects.fill_coordinator',
         ],
         'coordinator' => [
             'projects.view',

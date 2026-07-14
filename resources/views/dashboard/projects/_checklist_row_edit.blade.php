@@ -15,6 +15,7 @@
         <select
             name="{{ $prefix }}[{{ $item->id }}][value]"
             class="form-select form-select-sm {{ $inputClass }} checklist-status-select"
+            data-default-value="not_ready"
             required
         >
             @foreach ($itemValueLabels as $key => $label)

@@ -70,6 +70,13 @@ class ConstantsSeeder extends Seeder
                 'إنشائي',
                 'خدمات',
             ],
+            'association_offices' => [
+                'مكتب غزة',
+                'مكتب خانيونس',
+                'مكتب رفح',
+                'مكتب الوسطى',
+                'مكتب الشمال',
+            ],
             'checklist_options' => [
                 'جاهز',
                 'جزئي',

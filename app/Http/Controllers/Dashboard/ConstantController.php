@@ -78,7 +78,7 @@ class ConstantController extends Controller
             'projects' => [
                 'label' => 'قوائم المشاريع',
                 'icon' => 'fa-diagram-project',
-                'keys' => ['project_types'],
+                'keys' => ['project_types', 'association_offices'],
             ],
             'monitoring' => [
                 'label' => 'قوائم الرقابة',

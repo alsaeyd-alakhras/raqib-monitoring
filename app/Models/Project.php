@@ -31,9 +31,14 @@ class Project extends Model
         'location',
         'target_beneficiaries',
         'execution_zones',
-        'execution_region_names',
+        'execution_regions',
         'estimated_duration',
-        'allocated_budget',
+        'currency_id',
+        'project_budget',
+        'revenue_amount',
+        'net_amount',
+        'exchange_rate',
+        'execution_amount_ils',
         'allocation_image_path',
         'monitor_person_id',
         'monitoring_date',
@@ -49,12 +54,19 @@ class Project extends Model
         'coordinator_submitted_at',
         'coordinator_submitted_by',
         'coordinator_filled_by',
+        'coordinator_filled_at',
+        'submitted_to_project_manager_at',
+        'submitted_to_project_manager_by',
+        'submitted_to_section_manager_at',
+        'submitted_to_section_manager_by',
         'section_manager_approved_at',
         'section_manager_approved_by',
         'dept_manager_approved_at',
         'dept_manager_approved_by',
         'monitoring_manager_received_at',
         'monitoring_manager_received_by',
+        'monitor_submitted_at',
+        'monitor_submitted_by',
         'rejection_reason',
         'rejected_by',
         'rejected_at',
@@ -69,23 +81,82 @@ class Project extends Model
         'planned_end_date' => 'date',
         'execution_start_date' => 'date',
         'monitoring_date' => 'date',
-        'execution_region_names' => 'array',
-        'allocated_budget' => 'decimal:2',
+        'execution_regions' => 'array',
+        'project_budget' => 'decimal:2',
+        'revenue_amount' => 'decimal:2',
+        'net_amount' => 'decimal:2',
+        'exchange_rate' => 'decimal:6',
+        'execution_amount_ils' => 'decimal:2',
         'coordinator_readiness_pct' => 'float',
         'monitor_readiness_pct' => 'float',
         'monitor_notes' => 'array',
         'monitor_negative_notes' => 'array',
         'monitor_recommendations' => 'array',
         'coordinator_submitted_at' => 'datetime',
+        'coordinator_filled_at' => 'datetime',
+        'submitted_to_project_manager_at' => 'datetime',
+        'submitted_to_section_manager_at' => 'datetime',
         'section_manager_approved_at' => 'datetime',
         'dept_manager_approved_at' => 'datetime',
         'monitoring_manager_received_at' => 'datetime',
+        'monitor_submitted_at' => 'datetime',
         'rejected_at' => 'datetime',
     ];
 
     public function funder(): BelongsTo
     {
         return $this->belongsTo(Funder::class);
+    }
+
+    public function currency(): BelongsTo
+    {
+        return $this->belongsTo(Currency::class);
+    }
+
+    /** @return list<array{name: string, beneficiaries: int|null}> */
+    public function executionRegionsForDisplay(): array
+    {
+        $regions = $this->execution_regions;
+
+        if (! is_array($regions) || $regions === []) {
+            return [];
+        }
+
+        return array_values(array_map(function ($region) {
+            if (is_string($region)) {
+                return [
+                    'name' => trim($region),
+                    'beneficiaries' => null,
+                ];
+            }
+
+            $beneficiaries = $region['beneficiaries'] ?? null;
+
+            return [
+                'name' => trim((string) ($region['name'] ?? '')),
+                'beneficiaries' => $beneficiaries === null || $beneficiaries === ''
+                    ? null
+                    : (int) $beneficiaries,
+            ];
+        }, $regions));
+    }
+
+    public function executionRegionsBeneficiariesTotal(): ?int
+    {
+        $regions = $this->executionRegionsForDisplay();
+        $hasAny = false;
+        $total = 0;
+
+        foreach ($regions as $region) {
+            if ($region['beneficiaries'] === null) {
+                continue;
+            }
+
+            $hasAny = true;
+            $total += $region['beneficiaries'];
+        }
+
+        return $hasAny ? $total : null;
     }
 
     public function procurementRep(): BelongsTo
@@ -106,6 +177,86 @@ class Project extends Model
     public function coordinatorFilledByUser(): BelongsTo
     {
         return $this->belongsTo(User::class, 'coordinator_filled_by');
+    }
+
+    public function coordinatorSubmittedByUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'coordinator_submitted_by');
+    }
+
+    public function submittedToProjectManagerByUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'submitted_to_project_manager_by');
+    }
+
+    public function submittedToSectionManagerByUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'submitted_to_section_manager_by');
+    }
+
+    public function sectionManagerApprovedByUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'section_manager_approved_by');
+    }
+
+    public function deptManagerApprovedByUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'dept_manager_approved_by');
+    }
+
+    public function monitoringManagerReceivedByUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'monitoring_manager_received_by');
+    }
+
+    public function monitorSubmittedByUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'monitor_submitted_by');
+    }
+
+    /**
+     * @return array<string, array{at: ?\Illuminate\Support\Carbon, by: ?User}>
+     */
+    public function workflowStepTimestamps(): array
+    {
+        return [
+            'pending_coordinator' => [
+                'at' => $this->coordinator_submitted_at,
+                'by' => $this->coordinatorSubmittedByUser,
+            ],
+            'coordinator_filling' => [
+                'at' => $this->coordinator_filled_at,
+                'by' => $this->coordinatorFilledByUser,
+            ],
+            'pending_project_manager' => [
+                'at' => $this->submitted_to_project_manager_at,
+                'by' => $this->submittedToProjectManagerByUser,
+            ],
+            'pending_section_manager' => [
+                'at' => $this->submitted_to_section_manager_at,
+                'by' => $this->submittedToSectionManagerByUser,
+            ],
+            'pending_dept_manager' => [
+                'at' => $this->section_manager_approved_at,
+                'by' => $this->sectionManagerApprovedByUser,
+            ],
+            'pending_monitoring_manager' => [
+                'at' => $this->dept_manager_approved_at,
+                'by' => $this->deptManagerApprovedByUser,
+            ],
+            'monitoring_in_progress' => [
+                'at' => $this->monitoring_manager_received_at,
+                'by' => $this->monitoringManagerReceivedByUser,
+            ],
+            'pending_monitoring_confirmation' => [
+                'at' => $this->monitor_submitted_at,
+                'by' => $this->monitorSubmittedByUser,
+            ],
+            'passage_complete' => [
+                'at' => $this->primaryMonitoringActivity?->passage_completed_at,
+                'by' => $this->primaryMonitoringActivity?->passageCompletedByUser,
+            ],
+        ];
     }
 
     public static function formatFromSequence(int $sequence): string
@@ -388,6 +539,56 @@ class Project extends Model
     }
 
     /**
+     * هل يُعرَض اسم/هوية المنسق في ملخص المشروع وسير العمل؟
+     * أوسع من showsCoordinatorDataTo — مدير المشروع يرى المنسق حتى أثناء مرحلة التعبئة.
+     */
+    public function showsCoordinatorIdentityTo(?User $user): bool
+    {
+        if (! $user) {
+            return false;
+        }
+
+        if ($this->showsCoordinatorDataTo($user)) {
+            return true;
+        }
+
+        $person = $user->person;
+
+        if (! $person) {
+            return false;
+        }
+
+        return $person->role === 'project_manager'
+            && (int) $this->project_manager_id === (int) $person->id
+            && $this->hasCoordinatorAssignment();
+    }
+
+    /**
+     * هل يرى مدير المشروع تفاصيل عمود المنسق؟
+     * بدون صلاحية fill_coordinator: يرى فقط بعد انتهاء تعبئة المنسق (مرحلة المراجعة فما بعد).
+     */
+    public function projectManagerCanViewCoordinatorData(User $user, Person $person): bool
+    {
+        if ((int) $this->project_manager_id !== (int) $person->id) {
+            return false;
+        }
+
+        if ($user->can('fill_coordinator', self::class)) {
+            return true;
+        }
+
+        return in_array($this->workflow_status, [
+            'pending_project_manager',
+            'pending_section_manager',
+            'pending_dept_manager',
+            'pending_monitoring_manager',
+            'monitoring_in_progress',
+            'pending_monitoring_confirmation',
+            'passage_complete',
+        ], true);
+    }
+
+    /**
      * هل يُعرَض عمود/بيانات المنسق لهذا المستخدم على هذا المشروع؟
      */
     public function showsCoordinatorDataTo(?User $user): bool
@@ -411,7 +612,7 @@ class Project extends Model
         }
 
         return match ($person->role) {
-            'project_manager' => (int) $this->project_manager_id === (int) $person->id,
+            'project_manager' => $this->projectManagerCanViewCoordinatorData($user, $person),
             'coordinator' => (int) $this->coordinator_id === (int) $person->id,
             'section_manager' => $this->approvableBySectionManager($person),
             'department_manager' => $this->approvableByDepartmentManager($person),
@@ -1098,7 +1299,7 @@ class Project extends Model
                 $outer->orWhere(function ($sub) use ($label, $total, $idList) {
                     if ($label === 'مكتمل') {
                         $sub->whereRaw(
-                            "(SELECT COUNT(*) FROM project_checklist_values WHERE project_id = projects.id AND checklist_item_id IN ({$idList}) AND attachment_path IS NOT NULL AND attachment_path != '') = ?",
+                            "(SELECT COUNT(*) FROM project_checklist_values WHERE project_id = projects.id AND checklist_item_id IN ({$idList}) AND ((attachment_path IS NOT NULL AND attachment_path != '') OR (attachment_url IS NOT NULL AND attachment_url != ''))) = ?",
                             [$total]
                         );
 
@@ -1107,7 +1308,7 @@ class Project extends Model
 
                     if (preg_match('/^(\d+)\/' . preg_quote((string) $total, '/') . '$/', (string) $label, $matches)) {
                         $sub->whereRaw(
-                            "(SELECT COUNT(*) FROM project_checklist_values WHERE project_id = projects.id AND checklist_item_id IN ({$idList}) AND attachment_path IS NOT NULL AND attachment_path != '') = ?",
+                            "(SELECT COUNT(*) FROM project_checklist_values WHERE project_id = projects.id AND checklist_item_id IN ({$idList}) AND ((attachment_path IS NOT NULL AND attachment_path != '') OR (attachment_url IS NOT NULL AND attachment_url != ''))) = ?",
                             [(int) $matches[1]]
                         );
                     }

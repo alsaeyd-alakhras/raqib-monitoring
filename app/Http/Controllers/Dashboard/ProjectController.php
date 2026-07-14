@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Center;
 use App\Models\ChecklistGroup;
 use App\Models\Constant;
+use App\Models\Currency;
 use App\Models\Department;
 use App\Models\Funder;
 use App\Models\MonitoringActivity;
@@ -227,7 +228,7 @@ class ProjectController extends Controller
             return redirect()->route('dashboard.projects.monitor-work', $project);
         }
 
-        $project->load(['center', 'department', 'section', 'funder', 'procurementRep', 'projectManager.department', 'monitorPerson', 'primaryMonitoringActivity', 'rejectedByUser', 'coordinatorFilledByUser', 'rejections.rejectedByUser', 'rejections.returnTargetPerson']);
+        $project->load(['center', 'department', 'section', 'funder', 'currency', 'procurementRep', 'projectManager.department', 'monitorPerson', 'primaryMonitoringActivity.passageCompletedByUser', 'rejectedByUser', 'coordinatorFilledByUser', 'coordinatorSubmittedByUser', 'submittedToProjectManagerByUser', 'submittedToSectionManagerByUser', 'sectionManagerApprovedByUser', 'deptManagerApprovedByUser', 'monitoringManagerReceivedByUser', 'monitorSubmittedByUser', 'rejections.rejectedByUser', 'rejections.returnTargetPerson']);
         $project->syncMonitoringWorkflowState();
         $project->refresh();
 
@@ -374,6 +375,7 @@ class ProjectController extends Controller
         $this->saveChecklistValues($request, $project, 'coordinator_value');
 
         $this->recordCoordinatorFilledBy($request, $project);
+        $this->recordCoordinatorFilledAt($project);
 
         if (in_array($project->workflow_status, ['pending_coordinator', 'draft'], true)) {
             $project->update(['workflow_status' => 'coordinator_filling']);
@@ -393,6 +395,7 @@ class ProjectController extends Controller
 
         $this->saveClosureDocs($request, $project);
         $this->recordCoordinatorFilledBy($request, $project);
+        $this->recordCoordinatorFilledAt($project);
 
         $project->recalculateReadiness();
 
@@ -425,12 +428,17 @@ class ProjectController extends Controller
             return back()->with('success', 'لا يوجد مرفق لحذفه.');
         }
 
-        Storage::disk('public')->delete($value->attachment_path);
+        if ($value->attachment_path) {
+            Storage::disk('public')->delete($value->attachment_path);
+        }
 
         $value->update([
             'attachment_path' => null,
             'attachment_original_name' => null,
             'attachment_uploaded_at' => null,
+            'attachment_type' => 'file',
+            'attachment_url' => null,
+            'coordinator_value' => 'not_ready',
         ]);
 
         $project->recalculateReadiness();
@@ -453,6 +461,8 @@ class ProjectController extends Controller
 
         $project->update([
             'workflow_status' => 'pending_project_manager',
+            'submitted_to_project_manager_at' => now(),
+            'submitted_to_project_manager_by' => auth()->id(),
             'updated_by' => auth()->id(),
         ]);
         $this->clearProjectReturnNotice($project);
@@ -475,6 +485,8 @@ class ProjectController extends Controller
 
         $project->update([
             'workflow_status' => 'pending_section_manager',
+            'submitted_to_section_manager_at' => now(),
+            'submitted_to_section_manager_by' => auth()->id(),
             'updated_by' => auth()->id(),
         ]);
         $this->clearProjectReturnNotice($project);
@@ -606,7 +618,10 @@ class ProjectController extends Controller
         // عزل بيانات المنسق على مستوى الاستعلام: لا يُحمَّل coordinator_value إطلاقاً
         $project->loadMissing([
             'center', 'department', 'section', 'funder', 'procurementRep',
-            'projectManager.department', 'coordinator', 'primaryMonitoringActivity',
+            'projectManager.department', 'coordinator', 'primaryMonitoringActivity.passageCompletedByUser',
+            'coordinatorSubmittedByUser', 'submittedToProjectManagerByUser', 'submittedToSectionManagerByUser',
+            'sectionManagerApprovedByUser', 'deptManagerApprovedByUser', 'monitoringManagerReceivedByUser',
+            'monitorSubmittedByUser', 'coordinatorFilledByUser',
         ]);
         $project->syncMonitoringWorkflowState();
         $project->refresh();
@@ -702,6 +717,8 @@ class ProjectController extends Controller
 
         $project->update([
             'workflow_status' => 'pending_monitoring_confirmation',
+            'monitor_submitted_at' => now(),
+            'monitor_submitted_by' => auth()->id(),
             'updated_by' => auth()->id(),
         ]);
 
@@ -877,6 +894,8 @@ class ProjectController extends Controller
             $rules["checklist.{$itemId}.person_name"] = ['nullable', 'string', 'max:255'];
             if ($column === 'coordinator_value' && in_array($itemId, $fileFieldItemIds, true)) {
                 $rules["checklist.{$itemId}.attachment"] = ['nullable', 'file', 'max:10240', 'mimes:pdf,doc,docx,xls,xlsx,jpg,jpeg,png'];
+                $rules["checklist.{$itemId}.attachment_type"] = ['nullable', 'in:file,url'];
+                $rules["checklist.{$itemId}.attachment_url"] = ['nullable', 'string', 'max:2048'];
             }
         }
 
@@ -915,9 +934,15 @@ class ProjectController extends Controller
                 }
 
                 $hasNewFile = $request->hasFile("checklist.{$itemId}.attachment");
-                $hasExisting = filled($existingValues->get($itemId)?->attachment_path);
+                $hasAttachment = $this->closureAttachmentProvided(
+                    $request,
+                    'checklist',
+                    $itemId,
+                    $existingValues->get($itemId),
+                    $hasNewFile
+                );
 
-                if (! $hasNewFile && ! $hasExisting) {
+                if (! $hasAttachment) {
                     $validator->errors()->add(
                         "checklist.{$itemId}.attachment",
                         'المرفق مطلوب عند اختيار جاهز.'
@@ -943,7 +968,7 @@ class ProjectController extends Controller
             }
 
             if ($column === 'coordinator_value' && in_array($itemId, $this->activeChecklistFileFieldItemIds(), true)) {
-                $this->mergeClosureAttachmentUpload($request, $project, $itemId, $attributes, $payload);
+                $this->mergeClosureAttachmentPayload($request, $project, $itemId, $attributes, $payload);
             }
 
             ProjectChecklistValue::updateOrCreate($attributes, $payload);
@@ -964,6 +989,8 @@ class ProjectController extends Controller
             $rules["closure_docs.{$itemId}.value"] = ['required', 'in:ready,not_ready'];
             $rules["closure_docs.{$itemId}.person_name"] = ['nullable', 'string', 'max:255'];
             $rules["closure_docs.{$itemId}.attachment"] = ['nullable', 'file', 'max:10240', 'mimes:pdf,doc,docx,xls,xlsx,jpg,jpeg,png'];
+            $rules["closure_docs.{$itemId}.attachment_type"] = ['nullable', 'in:file,url'];
+            $rules["closure_docs.{$itemId}.attachment_url"] = ['nullable', 'string', 'max:2048'];
         }
 
         $existingValues = $project->checklistValues()
@@ -992,9 +1019,15 @@ class ProjectController extends Controller
                 }
 
                 $hasNewFile = $request->hasFile("closure_docs.{$itemId}.attachment");
-                $hasExisting = filled($existingValues->get($itemId)?->attachment_path);
+                $hasAttachment = $this->closureAttachmentProvided(
+                    $request,
+                    'closure_docs',
+                    $itemId,
+                    $existingValues->get($itemId),
+                    $hasNewFile
+                );
 
-                if (! $hasNewFile && ! $hasExisting) {
+                if (! $hasAttachment) {
                     $validator->errors()->add(
                         "closure_docs.{$itemId}.attachment",
                         'المرفق مطلوب عند اختيار جاهز.'
@@ -1018,13 +1051,91 @@ class ProjectController extends Controller
                 'person_name' => $data['person_name'] ?? null,
             ];
 
-            $this->mergeClosureAttachmentUpload($request, $project, $itemId, $attributes, $payload, 'closure_docs');
+            $this->mergeClosureAttachmentPayload($request, $project, $itemId, $attributes, $payload, 'closure_docs');
 
             ProjectChecklistValue::updateOrCreate($attributes, $payload);
         }
     }
 
+    private function closureAttachmentProvided(
+        Request $request,
+        string $prefix,
+        int $itemId,
+        ?ProjectChecklistValue $existing,
+        bool $hasNewFile
+    ): bool {
+        if ($hasNewFile) {
+            return true;
+        }
+
+        $type = $request->input("{$prefix}.{$itemId}.attachment_type", $existing?->attachment_type ?? 'file');
+        $url = trim((string) $request->input("{$prefix}.{$itemId}.attachment_url", ''));
+
+        if ($type === 'url' && $url !== '') {
+            return filter_var($url, FILTER_VALIDATE_URL) !== false;
+        }
+
+        return $existing?->hasAttachment() ?? false;
+    }
+
     /**
+     * @param  array<string, mixed>  $attributes
+     * @param  array<string, mixed>  $payload
+     */
+    private function mergeClosureAttachmentPayload(
+        Request $request,
+        Project $project,
+        int $itemId,
+        array $attributes,
+        array &$payload,
+        string $prefix = 'checklist'
+    ): void {
+        $field = "{$prefix}.{$itemId}.attachment";
+        $type = $request->input("{$prefix}.{$itemId}.attachment_type", 'file');
+        $url = trim((string) $request->input("{$prefix}.{$itemId}.attachment_url", ''));
+
+        $existing = ProjectChecklistValue::query()
+            ->where($attributes)
+            ->first();
+
+        if ($request->hasFile($field)) {
+            if ($existing?->attachment_path) {
+                Storage::disk('public')->delete($existing->attachment_path);
+            }
+
+            $directory = $project->storageDirectory() . '/closure-docs';
+            $file = $request->file($field);
+            $extension = strtolower($file->getClientOriginalExtension() ?: $file->extension() ?: 'bin');
+            $filename = $itemId . '.' . $extension;
+
+            Storage::disk('public')->putFileAs($directory, $file, $filename);
+
+            $payload['attachment_path'] = $directory . '/' . $filename;
+            $payload['attachment_original_name'] = $file->getClientOriginalName();
+            $payload['attachment_uploaded_at'] = now();
+            $payload['attachment_type'] = 'file';
+            $payload['attachment_url'] = null;
+
+            return;
+        }
+
+        if ($type === 'url' && $url !== '' && filter_var($url, FILTER_VALIDATE_URL)) {
+            if ($existing?->attachment_path) {
+                Storage::disk('public')->delete($existing->attachment_path);
+            }
+
+            $host = parse_url($url, PHP_URL_HOST) ?: 'رابط خارجي';
+
+            $payload['attachment_path'] = null;
+            $payload['attachment_original_name'] = 'رابط خارجي — ' . $host;
+            $payload['attachment_url'] = $url;
+            $payload['attachment_type'] = 'url';
+            $payload['attachment_uploaded_at'] = now();
+        }
+    }
+
+    /**
+     * @deprecated use mergeClosureAttachmentPayload
      * @param  array<string, mixed>  $attributes
      * @param  array<string, mixed>  $payload
      */
@@ -1036,30 +1147,7 @@ class ProjectController extends Controller
         array &$payload,
         string $prefix = 'checklist'
     ): void {
-        $field = "{$prefix}.{$itemId}.attachment";
-
-        if (! $request->hasFile($field)) {
-            return;
-        }
-
-        $existing = ProjectChecklistValue::query()
-            ->where($attributes)
-            ->first();
-
-        if ($existing?->attachment_path) {
-            Storage::disk('public')->delete($existing->attachment_path);
-        }
-
-        $directory = $project->storageDirectory() . '/closure-docs';
-        $file = $request->file($field);
-        $extension = strtolower($file->getClientOriginalExtension() ?: $file->extension() ?: 'bin');
-        $filename = $itemId . '.' . $extension;
-
-        Storage::disk('public')->putFileAs($directory, $file, $filename);
-
-        $payload['attachment_path'] = $directory . '/' . $filename;
-        $payload['attachment_original_name'] = $file->getClientOriginalName();
-        $payload['attachment_uploaded_at'] = now();
+        $this->mergeClosureAttachmentPayload($request, $project, $itemId, $attributes, $payload, $prefix);
     }
 
     /** @return list<int> */
@@ -1156,6 +1244,9 @@ class ProjectController extends Controller
                 fn (Person $person) => [(string) $person->id => (bool) $person->user_id]
             )->all(),
             'projectTypes' => $this->constantOptions('project_types'),
+            'associationOffices' => $this->constantOptions('association_offices'),
+            'currencies' => Currency::orderBy('name')->get(['id', 'name', 'code', 'value_to_ils']),
+            'currencyRatesJson' => Currency::pluck('value_to_ils', 'id'),
             'monitoringMethods' => $this->constantOptions('monitoring_methods'),
             'monitoringStages' => $this->constantOptions('monitoring_stages'),
             'currentPerson' => $currentPerson,
@@ -1270,6 +1361,7 @@ class ProjectController extends Controller
             'values' => $values,
             'monitors' => $monitors,
             'canViewCoordinatorData' => $this->canViewCoordinatorData($project),
+            'showCoordinatorInSummary' => $project->showsCoordinatorIdentityTo(auth()->user()),
             'canViewMonitorData' => $this->canViewMonitorData($project),
             'isAssignedMonitor' => $project->isAssignedMonitor(auth()->user()),
             'canSetMonitoringInfo' => auth()->user()?->can('set_monitoring_info', MonitoringActivity::class),
@@ -1325,7 +1417,7 @@ class ProjectController extends Controller
     private function buildPdfReportData(Project $project): array
     {
         $project->load([
-            'center', 'department', 'section', 'funder',
+            'center', 'department', 'section', 'funder', 'currency',
             'projectManager.department', 'coordinator', 'monitorPerson',
             'primaryMonitoringActivity',
         ]);
@@ -1550,6 +1642,10 @@ class ProjectController extends Controller
             return false;
         }
 
+        if (! $user->can('fill_coordinator', Project::class)) {
+            return false;
+        }
+
         $personId = $user->person?->id;
         if (! $personId) {
             return false;
@@ -1703,19 +1799,65 @@ class ProjectController extends Controller
         return $validated;
     }
 
-    /** @return list<string> */
-    private function normalizeExecutionRegionNames(int $zones, mixed $rawNames): array
+    /** @return list<array{name: string, beneficiaries: int|null}> */
+    private function normalizeExecutionRegions(int $zones, mixed $rawRegions): array
     {
         if ($zones <= 0) {
             return [];
         }
 
-        $names = array_map(
-            fn ($name) => trim((string) $name),
-            is_array($rawNames) ? array_values($rawNames) : []
-        );
+        $regions = is_array($rawRegions) ? array_values($rawRegions) : [];
 
-        return array_slice($names, 0, $zones);
+        return array_slice(array_map(function ($region) {
+            if (is_string($region)) {
+                return [
+                    'name' => trim($region),
+                    'beneficiaries' => null,
+                ];
+            }
+
+            $beneficiaries = $region['beneficiaries'] ?? null;
+
+            return [
+                'name' => trim((string) ($region['name'] ?? '')),
+                'beneficiaries' => $beneficiaries === null || $beneficiaries === ''
+                    ? null
+                    : (int) $beneficiaries,
+            ];
+        }, $regions), 0, $zones);
+    }
+
+    private function applyFinancialDefaults(array $validated): array
+    {
+        $budget = isset($validated['project_budget']) ? (float) $validated['project_budget'] : null;
+        $revenue = isset($validated['revenue_amount']) ? (float) ($validated['revenue_amount'] ?? 0) : 0.0;
+
+        if (! array_key_exists('net_amount', $validated) || $validated['net_amount'] === null || $validated['net_amount'] === '') {
+            if ($budget !== null) {
+                $validated['net_amount'] = round($budget - $revenue, 2);
+            }
+        }
+
+        $netAmount = isset($validated['net_amount']) ? (float) $validated['net_amount'] : null;
+
+        if (! array_key_exists('exchange_rate', $validated) || $validated['exchange_rate'] === null || $validated['exchange_rate'] === '') {
+            $currencyId = $validated['currency_id'] ?? null;
+
+            if ($currencyId) {
+                $currency = Currency::find($currencyId);
+                $validated['exchange_rate'] = $currency?->value_to_ils ?? 1;
+            }
+        }
+
+        $exchangeRate = isset($validated['exchange_rate']) ? (float) $validated['exchange_rate'] : null;
+
+        if (! array_key_exists('execution_amount_ils', $validated) || $validated['execution_amount_ils'] === null || $validated['execution_amount_ils'] === '') {
+            if ($netAmount !== null && $exchangeRate !== null) {
+                $validated['execution_amount_ils'] = round($netAmount * $exchangeRate, 2);
+            }
+        }
+
+        return $validated;
     }
 
     private function validationRules(?Project $project = null): array
@@ -1740,10 +1882,16 @@ class ProjectController extends Controller
             'location' => ['required', 'string'],
             'target_beneficiaries' => ['required', 'integer', 'min:0'],
             'execution_zones' => ['required', 'integer', 'min:0'],
-            'execution_region_names' => ['nullable', 'array'],
-            'execution_region_names.*' => ['nullable', 'string', 'max:255'],
+            'execution_regions' => ['nullable', 'array'],
+            'execution_regions.*.name' => ['nullable', 'string', 'max:255'],
+            'execution_regions.*.beneficiaries' => ['nullable', 'integer', 'min:0'],
             'estimated_duration' => ['required', 'string', 'max:255'],
-            'allocated_budget' => ['required', 'numeric', 'min:0'],
+            'currency_id' => ['required', 'exists:currencies,id'],
+            'project_budget' => ['required', 'numeric', 'min:0'],
+            'revenue_amount' => ['nullable', 'numeric', 'min:0'],
+            'net_amount' => ['nullable', 'numeric'],
+            'exchange_rate' => ['nullable', 'numeric', 'min:0'],
+            'execution_amount_ils' => ['nullable', 'numeric', 'min:0'],
             'allocation_image' => [
                 $project && $project->allocation_image_path ? 'nullable' : 'required',
                 'image',
@@ -1851,27 +1999,53 @@ class ProjectController extends Controller
             }
 
             $zones = (int) $request->input('execution_zones', 0);
-            $regionNames = array_map(
-                fn ($name) => trim((string) $name),
-                array_values($request->input('execution_region_names', []))
+            $associationOffices = $this->constantOptions('association_offices');
+            $regions = $this->normalizeExecutionRegions(
+                $zones,
+                $request->input('execution_regions', [])
             );
+            $regionNames = array_map(fn ($region) => $region['name'], $regions);
+            $targetBeneficiaries = (int) $request->input('target_beneficiaries', 0);
+            $beneficiariesTotal = 0;
+            $hasBeneficiaries = false;
+
+            foreach ($regions as $region) {
+                if ($region['beneficiaries'] === null) {
+                    continue;
+                }
+
+                $hasBeneficiaries = true;
+                $beneficiariesTotal += $region['beneficiaries'];
+            }
 
             if ($zones > 0) {
-                if (count($regionNames) !== $zones) {
-                    $validator->errors()->add('execution_region_names', 'يجب إدخال اسم لكل منطقة تنفيذ.');
+                if (count($regions) !== $zones) {
+                    $validator->errors()->add('execution_regions', 'يجب اختيار مكتب لكل منطقة تنفيذ.');
                 } elseif (in_array('', $regionNames, true)) {
-                    $validator->errors()->add('execution_region_names', 'يجب تعبئة اسم كل منطقة تنفيذ.');
+                    $validator->errors()->add('execution_regions', 'يجب اختيار مكتب لكل منطقة تنفيذ.');
+                } elseif ($associationOffices !== [] && count(array_diff($regionNames, $associationOffices)) > 0) {
+                    $validator->errors()->add('execution_regions', 'يجب اختيار المكاتب من قائمة مكاتب الجمعية.');
+                } elseif (count($regionNames) !== count(array_unique($regionNames))) {
+                    $validator->errors()->add('execution_regions', 'لا يمكن تكرار نفس المكتب أكثر من مرة.');
                 }
-            } elseif ($regionNames !== [] && ! in_array('', $regionNames, true)) {
-                $validator->errors()->add('execution_region_names', 'لا يمكن إدخال أسماء مناطق عندما يكون عدد المناطق صفراً.');
+            } elseif ($regions !== []) {
+                $validator->errors()->add('execution_regions', 'لا يمكن إدخال مناطق عندما يكون عدد المناطق صفراً.');
+            }
+
+            if ($hasBeneficiaries && $beneficiariesTotal > $targetBeneficiaries) {
+                $validator->errors()->add(
+                    'execution_regions',
+                    'مجموع المستفيدين في المناطق (' . number_format($beneficiariesTotal) . ') يتجاوز إجمالي المستهدفين (' . number_format($targetBeneficiaries) . ').'
+                );
             }
         });
 
         $validated = $validator->validate();
-        $validated['execution_region_names'] = $this->normalizeExecutionRegionNames(
+        $validated['execution_regions'] = $this->normalizeExecutionRegions(
             (int) ($validated['execution_zones'] ?? 0),
-            $request->input('execution_region_names', [])
+            $request->input('execution_regions', [])
         );
+        $validated = $this->applyFinancialDefaults($validated);
         unset($validated['allocation_image']);
 
         if ($isMonitoringDirector && $project) {
@@ -2250,5 +2424,14 @@ class ProjectController extends Controller
         if (! $project->isSelfCoordinator() && ($isPm || $user->super_admin) && ($confirmedOnBehalf || $externalCoordinator)) {
             $project->update(['coordinator_filled_by' => $user->id]);
         }
+    }
+
+    private function recordCoordinatorFilledAt(Project $project): void
+    {
+        if ($project->coordinator_filled_at) {
+            return;
+        }
+
+        $project->update(['coordinator_filled_at' => now()]);
     }
 }

@@ -121,7 +121,7 @@
                                     </td>
                                     <td class="col-action">
                                         <button type="button" class="btn btn-sm btn-outline-danger btn-remove-row" title="حذف">
-                                            <i class="bx bx-trash"></i>
+                                            <i class="fa-solid fa-trash"></i>
                                         </button>
                                     </td>
                                 </tr>
@@ -130,7 +130,7 @@
                     </table>
                 </div>
                 <button type="button" class="btn btn-sm btn-outline-success mt-2 btn-add-row" data-target="positive-notes">
-                    <i class="bx bx-plus"></i> إضافة ملاحظة إيجابية
+                    <i class="fa-solid fa-plus me-1"></i> إضافة ملاحظة إيجابية
                 </button>
             </div>
 
@@ -154,7 +154,7 @@
                                     </td>
                                     <td class="col-action">
                                         <button type="button" class="btn btn-sm btn-outline-danger btn-remove-row" title="حذف">
-                                            <i class="bx bx-trash"></i>
+                                            <i class="fa-solid fa-trash"></i>
                                         </button>
                                     </td>
                                 </tr>
@@ -163,7 +163,7 @@
                     </table>
                 </div>
                 <button type="button" class="btn btn-sm btn-outline-danger mt-2 btn-add-row" data-target="negative-notes">
-                    <i class="bx bx-plus"></i> إضافة ملاحظة سلبية
+                    <i class="fa-solid fa-plus me-1"></i> إضافة ملاحظة سلبية
                 </button>
             </div>
         </div>
@@ -188,7 +188,7 @@
                             </td>
                             <td class="col-action">
                                 <button type="button" class="btn btn-sm btn-outline-danger btn-remove-row" title="حذف">
-                                    <i class="bx bx-trash"></i>
+                                    <i class="fa-solid fa-trash"></i>
                                 </button>
                             </td>
                         </tr>
@@ -197,7 +197,7 @@
             </table>
         </div>
         <button type="button" class="btn btn-sm btn-outline-primary mt-2 btn-add-row" data-target="recommendations">
-            <i class="bx bx-plus"></i> إضافة توصية
+            <i class="fa-solid fa-plus me-1"></i> إضافة توصية
         </button>
     </div>
 </div>
@@ -251,7 +251,7 @@ document.addEventListener('DOMContentLoaded', function () {
             '<td><input type="text" class="form-control form-control-sm editor-row-input" value=""></td>' +
             '<td class="col-action">' +
             '<button type="button" class="btn btn-sm btn-outline-danger btn-remove-row" title="حذف">' +
-            '<i class="bx bx-trash"></i></button></td>';
+            '<i class="fa-solid fa-trash"></i></button></td>';
         return tr;
     }
 

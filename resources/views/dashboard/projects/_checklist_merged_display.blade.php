@@ -21,7 +21,7 @@
             $hasPersonColumn = $group->items->contains(fn ($item) => $item->has_person_field);
             $groupHasFileField = $group->items->contains(fn ($item) => $item->has_file_field);
         @endphp
-        <div class="checklist-group-card{{ $groupHasFileField ? '' : ' checklist-group-card--compact' }}">
+        <div class="checklist-group-card{{ $groupHasFileField ? ' checklist-group-card--with-files' : ' checklist-group-card--compact' }}">
             <h6 class="checklist-group-title d-flex justify-content-between align-items-center gap-2 flex-wrap">
                 <span>{{ $group->name }}</span>
                 <span class="d-flex align-items-center gap-2 flex-wrap">
@@ -71,9 +71,7 @@
                                             {{ $current?->person_name ?: '—' }}
                                             @if ($item->has_file_field && $current?->hasAttachment())
                                                 <div class="mt-1">
-                                                    <a href="{{ $current->attachmentUrl() }}" target="_blank" rel="noopener">
-                                                        {{ $current->attachment_original_name ?: 'مرفق' }}
-                                                    </a>
+                                                    @include('dashboard.projects._checklist_attachment_link', ['current' => $current])
                                                 </div>
                                             @endif
                                         @else

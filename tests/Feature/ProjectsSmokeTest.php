@@ -5,12 +5,14 @@ namespace Tests\Feature;
 use App\Models\Center;
 use App\Models\ChecklistItem;
 use App\Models\Constant;
+use App\Models\Currency;
 use App\Models\Department;
 use App\Models\Funder;
 use App\Models\MonitoringActivity;
 use App\Models\Person;
 use App\Models\Project;
 use App\Models\ProjectChecklistValue;
+use App\Models\RoleUser;
 use App\Models\Section;
 use App\Models\User;
 use Illuminate\Http\UploadedFile;
@@ -47,6 +49,18 @@ class ProjectsSmokeTest extends TestCase
             ?? Funder::create(['name' => 'ممول تجريبي']);
         $procurementRep = Person::firstOrFail();
         $projectTypes = json_decode((string) Constant::where('key', 'project_types')->value('value'), true);
+        $associationOffices = json_decode((string) Constant::where('key', 'association_offices')->value('value'), true);
+        if (! is_array($associationOffices) || $associationOffices === []) {
+            $associationOffices = ['مكتب غزة', 'مكتب خانيونس'];
+            Constant::updateOrCreate(
+                ['key' => 'association_offices'],
+                ['value' => json_encode($associationOffices, JSON_UNESCAPED_UNICODE)]
+            );
+        }
+        $currency = Currency::firstOrCreate(
+            ['code' => 'USD'],
+            ['name' => 'دولار', 'value' => 1, 'value_to_ils' => 3.70]
+        );
 
         return array_merge([
             'project_manager_id' => $pm->id,
@@ -62,9 +76,17 @@ class ProjectsSmokeTest extends TestCase
             'location' => 'موقع تجريبي',
             'target_beneficiaries' => 100,
             'execution_zones' => 2,
-            'execution_region_names' => ['منطقة شمال', 'منطقة جنوب'],
+            'execution_regions' => [
+                ['name' => $associationOffices[0], 'beneficiaries' => 40],
+                ['name' => $associationOffices[1] ?? $associationOffices[0], 'beneficiaries' => 60],
+            ],
             'estimated_duration' => '6 أشهر',
-            'allocated_budget' => 50000,
+            'currency_id' => $currency->id,
+            'project_budget' => 50000,
+            'revenue_amount' => 5000,
+            'net_amount' => 45000,
+            'exchange_rate' => 3.70,
+            'execution_amount_ils' => 166500,
         ], $overrides);
     }
 
@@ -76,6 +98,60 @@ class ProjectsSmokeTest extends TestCase
                 'department_id' => $section->department_id,
             ]);
         }
+    }
+
+    /** @param  list<string>  $abilities
+     * @return array{0: User, 1: Person}
+     */
+    private function createEphemeralProjectManager(array $abilities, ?string $suffix = null): array
+    {
+        $suffix = $suffix ?? uniqid();
+        $section = Section::firstOrFail();
+
+        $user = User::create([
+            'name' => 'مدير مشروع اختبار ' . $suffix,
+            'username' => 'pm_test_' . $suffix,
+            'email' => 'pm_test_' . $suffix . '@test.local',
+            'user_type' => 'employee',
+            'is_active' => true,
+            'super_admin' => false,
+            'password' => bcrypt('password'),
+        ]);
+
+        $person = Person::create([
+            'user_id' => $user->id,
+            'name' => $user->name,
+            'role' => 'project_manager',
+            'department_id' => $section->department_id,
+            'section_id' => $section->id,
+            'job_title' => 'مدير مشروع اختبار',
+            'phone' => '0599' . str_pad((string) random_int(0, 9999999), 7, '0', STR_PAD_LEFT),
+        ]);
+
+        $this->syncUserAbilities($user, $abilities);
+
+        return [$user, $person];
+    }
+
+    /** @param  list<string>  $abilities */
+    private function syncUserAbilities(User $user, array $abilities): void
+    {
+        RoleUser::where('user_id', $user->id)->delete();
+
+        foreach (array_unique($abilities) as $ability) {
+            RoleUser::create([
+                'role_name' => $ability,
+                'user_id' => $user->id,
+                'ability' => 'allow',
+            ]);
+        }
+    }
+
+    private function deleteEphemeralUser(User $user): void
+    {
+        RoleUser::where('user_id', $user->id)->delete();
+        Person::where('user_id', $user->id)->delete();
+        User::withoutEvents(fn () => $user->delete());
     }
 
     private function ensureSectionManagerForSection(Section $section): Person
@@ -272,6 +348,7 @@ class ProjectsSmokeTest extends TestCase
             ->assertRedirect();
         $project->refresh();
         $this->assertSame('coordinator_filling', $project->workflow_status);
+        $this->assertNotNull($project->coordinator_filled_at);
         $this->assertNotNull($project->coordinator_readiness_pct);
         $this->assertLessThan(100.0, (float) $project->coordinator_readiness_pct);
 
@@ -279,10 +356,12 @@ class ProjectsSmokeTest extends TestCase
         $this->post(route('dashboard.projects.submit-to-project-manager', $project))->assertRedirect();
         $project->refresh();
         $this->assertSame('pending_project_manager', $project->workflow_status);
+        $this->assertNotNull($project->submitted_to_project_manager_at);
 
         $this->post(route('dashboard.projects.submit-to-section-manager', $project))->assertRedirect();
         $project->refresh();
         $this->assertSame('pending_section_manager', $project->workflow_status);
+        $this->assertNotNull($project->submitted_to_section_manager_at);
 
         $this->post(route('dashboard.projects.approve-section', $project))->assertRedirect();
         $project->refresh();
@@ -1155,42 +1234,110 @@ class ProjectsSmokeTest extends TestCase
 
     public function test_coordinator_with_user_blocks_project_manager_fill(): void
     {
-        $pm = Person::withRole('project_manager')->first() ?? Person::first();
-        $coordinator = Person::withRole('coordinator')->whereNotNull('user_id')->first()
-            ?? tap(Person::withRole('coordinator')->first() ?? Person::skip(1)->first(), function (Person $person) {
-                $person->update(['user_id' => User::first()->id]);
-            });
+        [$pmUser, $pm] = $this->createEphemeralProjectManager([
+            'projects.view',
+            'projects.create',
+            'projects.update',
+            'projects.fill_coordinator',
+        ]);
 
-        $pmUser = $pm->user_id
-            ? User::findOrFail($pm->user_id)
-            : tap(User::skip(1)->first() ?? User::first(), function (User $user) use ($pm) {
-                $pm->update(['user_id' => $user->id]);
-            });
+        try {
+            $coordinator = Person::withRole('coordinator')->whereNotNull('user_id')->first()
+                ?? tap(Person::withRole('coordinator')->first() ?? Person::skip(1)->first(), function (Person $person) {
+                    $person->update(['user_id' => User::first()->id]);
+                });
 
-        foreach (['projects.view', 'projects.create', 'projects.update', 'projects.fill_coordinator'] as $ability) {
-            $pmUser->roles()->firstOrCreate(['role_name' => $ability]);
+            $this->actingAs($pmUser);
+
+            $projectName = 'مشروع منسق بحساب ' . uniqid();
+            $this->post('/projects', $this->sampleProjectPostData([
+                'project_name' => $projectName,
+                'project_number_seq' => $this->nextProjectNumberSeq(),
+                'project_manager_id' => $pm->id,
+                'coordinator_mode' => 'person',
+                'coordinator_id' => $coordinator->id,
+            ]))->assertRedirect();
+
+            $project = Project::where('project_name', $projectName)->firstOrFail();
+            $project->update(['workflow_status' => 'coordinator_filling']);
+
+            $this->post(route('dashboard.projects.fill-coordinator', $project), [
+                'fill_on_behalf' => '1',
+                'checklist' => $this->fullChecklist(),
+            ])->assertForbidden();
+
+            ProjectChecklistValue::where('project_id', $project->id)->delete();
+            $project->delete();
+        } finally {
+            $this->deleteEphemeralUser($pmUser);
+        }
+    }
+
+    public function test_project_manager_without_fill_coordinator_cannot_manage_coordinator_column(): void
+    {
+        $pmUser = User::where('username', 'demo_pm')->first();
+        $ephemeral = false;
+
+        if ($pmUser) {
+            $this->syncUserAbilities($pmUser, \Database\Seeders\SimpleDemoUsersSeeder::DEMO_PM_ABILITIES);
+            $pm = $pmUser->person ?? Person::where('user_id', $pmUser->id)->firstOrFail();
+        } else {
+            [$pmUser, $pm] = $this->createEphemeralProjectManager(
+                \Database\Seeders\SimpleDemoUsersSeeder::DEMO_PM_ABILITIES
+            );
+            $ephemeral = true;
         }
 
-        $this->actingAs($pmUser);
+        try {
+            $this->actingAs($pmUser);
 
-        $projectName = 'مشروع منسق بحساب ' . uniqid();
-        $this->post('/projects', $this->sampleProjectPostData([
-            'project_name' => $projectName,
-            'project_number_seq' => $this->nextProjectNumberSeq(),
-            'coordinator_mode' => 'person',
-            'coordinator_id' => $coordinator->id,
-        ]))->assertRedirect();
+            $projectName = 'مشروع صلاحيات مدير مشروع ' . uniqid();
+            $this->post('/projects', $this->sampleProjectPostData([
+                'project_name' => $projectName,
+                'project_number_seq' => $this->nextProjectNumberSeq(),
+                'project_manager_id' => $pm->id,
+                'coordinator_mode' => 'external',
+                'coordinator_external_name' => 'منسق خارجي',
+            ]))->assertRedirect();
 
-        $project = Project::where('project_name', $projectName)->firstOrFail();
-        $project->update(['workflow_status' => 'coordinator_filling']);
+            $project = Project::where('project_name', $projectName)->firstOrFail();
+            $project->update(['workflow_status' => 'coordinator_filling']);
 
-        $this->post(route('dashboard.projects.fill-coordinator', $project), [
-            'fill_on_behalf' => '1',
-            'checklist' => $this->fullChecklist(),
-        ])->assertForbidden();
+            $this->post(route('dashboard.projects.fill-coordinator', $project), [
+                'checklist' => $this->fullChecklist(),
+            ])->assertForbidden();
 
-        ProjectChecklistValue::where('project_id', $project->id)->delete();
-        $project->delete();
+            $this->assertFalse($project->showsCoordinatorDataTo($pmUser));
+            $this->assertTrue($project->showsCoordinatorIdentityTo($pmUser));
+
+            $this->get(route('dashboard.projects.show', $project))
+                ->assertOk()
+                ->assertSee('المنسق', false)
+                ->assertSee('منسق خارجي', false)
+                ->assertDontSee('قائمة التحقق — عمود المنسق', false)
+                ->assertDontSee('حفظ عمود المنسق', false);
+
+            $project->update([
+                'workflow_status' => 'pending_project_manager',
+                'coordinator_readiness_pct' => 50,
+            ]);
+
+            $this->assertTrue($project->fresh()->showsCoordinatorDataTo($pmUser));
+
+            $this->get(route('dashboard.projects.show', $project))
+                ->assertOk()
+                ->assertSee('قائمة التحقق — عمود المنسق', false)
+                ->assertDontSee('حفظ عمود المنسق', false);
+
+            ProjectChecklistValue::where('project_id', $project->id)->delete();
+            $project->delete();
+        } finally {
+            if ($ephemeral) {
+                $this->deleteEphemeralUser($pmUser);
+            } elseif ($pmUser) {
+                $this->syncUserAbilities($pmUser, \Database\Seeders\SimpleDemoUsersSeeder::DEMO_PM_ABILITIES);
+            }
+        }
     }
 
     public function test_unset_checklist_items_count_as_not_ready(): void
@@ -1662,7 +1809,7 @@ class ProjectsSmokeTest extends TestCase
         $this->actingAs($sectionManager->user);
         $this->get(route('dashboard.projects.show', $project))
             ->assertOk()
-            ->assertSee('مستندات الإغلاق — الموارد البشرية')
+            ->assertSee('الموارد البشرية')
             ->assertSee($attachmentName);
 
         $this->actingAs($monitor->user);
@@ -1721,6 +1868,97 @@ class ProjectsSmokeTest extends TestCase
 
         ProjectChecklistValue::where('project_id', $project->id)->delete();
         $project->delete();
+    }
+
+    public function test_closure_docs_accepts_external_url(): void
+    {
+        $coordinator = Person::where('role', 'coordinator')->whereNotNull('user_id')->first();
+        $this->assertNotNull($coordinator);
+
+        $project = Project::create(array_merge($this->sampleProjectFields(), [
+            'project_name' => 'مشروع رابط إغلاق ' . uniqid(),
+            'project_number' => 'P-' . ($this->nextProjectNumberSeq() + random_int(60000, 69999)),
+            'coordinator_id' => $coordinator->id,
+            'workflow_status' => 'monitoring_in_progress',
+            'created_by' => User::first()->id,
+            'updated_by' => User::first()->id,
+        ]));
+
+        foreach ($this->fullChecklist('ready') as $itemId => $entry) {
+            ProjectChecklistValue::updateOrCreate(
+                ['project_id' => $project->id, 'checklist_item_id' => $itemId],
+                ['coordinator_value' => $entry['value'], 'person_name' => $entry['person_name'] ?? null]
+            );
+        }
+
+        $data = ['closure_docs' => []];
+        foreach (Project::closureDocumentItemIds() as $itemId) {
+            $data['closure_docs'][$itemId] = [
+                'value' => 'ready',
+                'person_name' => 'شخص إغلاق',
+                'attachment_type' => 'url',
+                'attachment_url' => 'https://docs.example.com/closure-' . $itemId,
+            ];
+        }
+
+        $this->actingAs($coordinator->user);
+        $this->post(route('dashboard.projects.fill-closure-docs', $project), $data)
+            ->assertRedirect();
+
+        foreach (Project::closureDocumentItemIds() as $itemId) {
+            $row = ProjectChecklistValue::where('project_id', $project->id)
+                ->where('checklist_item_id', $itemId)
+                ->first();
+            $this->assertNotNull($row);
+            $this->assertSame('url', $row->attachment_type);
+            $this->assertSame('https://docs.example.com/closure-' . $itemId, $row->attachment_url);
+            $this->assertNull($row->attachment_path);
+            $this->assertTrue($row->hasAttachment());
+        }
+
+        $summary = $project->fresh()->closureAttachmentSummary();
+        $this->assertTrue($summary['complete']);
+
+        ProjectChecklistValue::where('project_id', $project->id)->delete();
+        $project->delete();
+    }
+
+    public function test_execution_regions_beneficiaries_cannot_exceed_target(): void
+    {
+        $user = User::first();
+        $user->forceFill(['super_admin' => 1])->save();
+        $this->actingAs($user->fresh());
+
+        $fields = $this->sampleProjectPostData([
+            'target_beneficiaries' => 50,
+            'execution_zones' => 2,
+            'execution_regions' => [
+                ['name' => 'مكتب غزة', 'beneficiaries' => 30],
+                ['name' => 'مكتب خانيونس', 'beneficiaries' => 30],
+            ],
+        ]);
+
+        $response = $this->from('/projects/create')->post('/projects', $fields);
+
+        $response->assertSessionHasErrors('execution_regions');
+    }
+
+    public function test_execution_regions_must_use_association_offices(): void
+    {
+        $user = User::first();
+        $user->forceFill(['super_admin' => 1])->save();
+        $this->actingAs($user->fresh());
+
+        $fields = $this->sampleProjectPostData([
+            'execution_zones' => 1,
+            'execution_regions' => [
+                ['name' => 'مكتب وهمي غير موجود', 'beneficiaries' => null],
+            ],
+        ]);
+
+        $response = $this->from('/projects/create')->post('/projects', $fields);
+
+        $response->assertSessionHasErrors('execution_regions');
     }
 
 }

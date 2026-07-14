@@ -4,6 +4,7 @@ namespace Database\Seeders;
 
 use App\Models\Department;
 use App\Models\Person;
+use App\Models\Project;
 use App\Models\RoleUser;
 use App\Models\Section;
 use App\Models\User;
@@ -19,6 +20,13 @@ use Illuminate\Support\Facades\Hash;
 class SimpleDemoUsersSeeder extends Seeder
 {
     public const DEMO_PASSWORD = 'password';
+
+    /** صلاحيات demo_pm — إنشاء/تعديل مشاريعه فقط، بدون تعبئة عمود المنسق */
+    public const DEMO_PM_ABILITIES = [
+        'projects.view',
+        'projects.create',
+        'projects.update',
+    ];
 
     public function run(): void
     {
@@ -45,7 +53,7 @@ class SimpleDemoUsersSeeder extends Seeder
                 'department_id' => $projectsDeptId,
                 'section_id' => $projectsSectionId,
                 'job_title' => 'مدير مشروع',
-                'abilities' => ['projects.view', 'projects.create', 'projects.update', 'projects.fill_coordinator'],
+                'abilities' => self::DEMO_PM_ABILITIES,
             ],
             [
                 'name' => 'ليلى — منسقة (تجريبية)',
@@ -145,16 +153,27 @@ class SimpleDemoUsersSeeder extends Seeder
             $this->seedDemoUser($data);
         }
 
-        Person::whereNull('user_id')->delete();
+        $referencedPersonIds = collect()
+            ->merge(Project::whereNotNull('coordinator_id')->pluck('coordinator_id'))
+            ->merge(Project::whereNotNull('project_manager_id')->pluck('project_manager_id'))
+            ->merge(Project::whereNotNull('monitor_person_id')->pluck('monitor_person_id'))
+            ->unique()
+            ->filter()
+            ->all();
+
+        Person::whereNull('user_id')
+            ->when($referencedPersonIds !== [], fn ($q) => $q->whereNotIn('id', $referencedPersonIds))
+            ->delete();
 
         $this->command?->newLine();
         $this->command?->info('═══ حسابات التجربة (كلمة المرور: ' . self::DEMO_PASSWORD . ') ═══');
         $this->command?->table(
-            ['الدور', 'اسم المستخدم', 'الاسم'],
+            ['الدور', 'اسم المستخدم', 'الاسم', 'الصلاحيات'],
             collect($demoUsers)->map(fn (array $u) => [
                 Person::roleLabels()[$u['role']] ?? $u['role'],
                 $u['username'],
                 $u['name'],
+                implode(', ', $u['abilities']),
             ])->all()
         );
         $this->command?->info('للعودة للبيانات الحقيقية: php artisan raqib:setup --fresh');

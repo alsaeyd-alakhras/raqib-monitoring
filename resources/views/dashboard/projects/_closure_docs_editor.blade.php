@@ -41,6 +41,7 @@
                                 <select
                                     name="closure_docs[{{ $item->id }}][value]"
                                     class="form-select form-select-sm checklist-status-select"
+                                    data-default-value="not_ready"
                                     required
                                 >
                                     @foreach ($valueLabels as $key => $label)

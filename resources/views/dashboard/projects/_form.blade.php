@@ -292,6 +292,8 @@
                     name="location"
                     label="الموقع الجغرافي"
                     :value="$project->location ?? ''"
+                    :rows="1"
+                    class="project-location-field"
                     required
                 />
             </div>
@@ -334,16 +336,102 @@
                     required
                 />
             </div>
-            <div class="mb-4 col-md-3">
-                <x-form.input
-                    type="number"
-                    step="0.01"
-                    name="allocated_budget"
-                    label="الميزانية المرصودة"
-                    :value="$project->allocated_budget ?? ''"
-                    min="0"
-                    required
-                />
+            <div class="col-12">
+                <div id="execution-regions-panel" class="execution-regions-panel mb-4">
+                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+                        <label class="form-label mb-0">مناطق التنفيذ — مكاتب الجمعية</label>
+                        <span class="badge bg-label-primary" id="execution-regions-count-badge">0 منطقة</span>
+                    </div>
+                    <div id="execution-regions-fields" class="row g-3"></div>
+                    @error('execution_regions')
+                        <div class="invalid-feedback d-block">{{ $message }}</div>
+                    @enderror
+                    @error('execution_regions.*')
+                        <div class="invalid-feedback d-block">{{ $message }}</div>
+                    @enderror
+                </div>
+            </div>
+            <div class="col-12">
+                <div class="project-financial-panel mb-4">
+                    <label class="form-label mb-3">البيانات المالية</label>
+                    <div class="row">
+                        <div class="mb-4 col-md-3">
+                            <x-form.input
+                                type="number"
+                                step="0.01"
+                                name="project_budget"
+                                label="موازنة المشروع (بالعملة الأصلية)"
+                                :value="old('project_budget', $project->project_budget ?? '')"
+                                min="0"
+                                required
+                            />
+                        </div>
+                        <div class="mb-4 col-md-3">
+                            <label class="form-label" for="currency_id">العملة</label>
+                            <select
+                                name="currency_id"
+                                id="currency_id"
+                                class="form-select @error('currency_id') is-invalid @enderror"
+                                required
+                            >
+                                <option value="">— اختر العملة —</option>
+                                @foreach ($currencies ?? [] as $currency)
+                                    <option
+                                        value="{{ $currency->id }}"
+                                        @selected((string) old('currency_id', $project->currency_id ?? '') === (string) $currency->id)
+                                    >
+                                        {{ $currency->name }} ({{ $currency->code }})
+                                    </option>
+                                @endforeach
+                            </select>
+                            @error('currency_id')
+                                <div class="invalid-feedback d-block">{{ $message }}</div>
+                            @enderror
+                        </div>
+                        <div class="mb-4 col-md-3">
+                            <x-form.input
+                                type="number"
+                                step="0.01"
+                                name="revenue_amount"
+                                label="مبلغ الإيرادات (بالعملة الأصلية)"
+                                :value="old('revenue_amount', $project->revenue_amount ?? '')"
+                                min="0"
+                            />
+                        </div>
+                        <div class="mb-4 col-md-3">
+                            <x-form.input
+                                type="number"
+                                step="0.01"
+                                name="net_amount"
+                                label="صافي المبلغ (بالعملة الأصلية)"
+                                :value="old('net_amount', $project->net_amount ?? '')"
+                            />
+                            <div class="form-text">يُحسب تلقائياً: موازنة − إيرادات (قابل للتعديل)</div>
+                        </div>
+                        <div class="mb-4 col-md-3">
+                            <x-form.input
+                                type="number"
+                                step="0.000001"
+                                name="exchange_rate"
+                                label="سعر الصرف (للشيكل)"
+                                :value="old('exchange_rate', $project->exchange_rate ?? '')"
+                                min="0"
+                            />
+                            <div class="form-text">يُعبَّأ من جدول العملات ويمكن تعديله</div>
+                        </div>
+                        <div class="mb-4 col-md-3">
+                            <x-form.input
+                                type="number"
+                                step="0.01"
+                                name="execution_amount_ils"
+                                label="المبلغ للتنفيذ (بالشيكل)"
+                                :value="old('execution_amount_ils', $project->execution_amount_ils ?? '')"
+                                min="0"
+                            />
+                            <div class="form-text">يُحسب تلقائياً: صافي × سعر الصرف (قابل للتعديل)</div>
+                        </div>
+                    </div>
+                </div>
             </div>
             <div class="mb-4 col-md-12">
                 <label class="form-label" for="allocation_image">
@@ -375,21 +463,6 @@
                     <div class="invalid-feedback d-block">{{ $message }}</div>
                 @enderror
             </div>
-            <div class="col-12">
-                <div id="execution-regions-panel" class="execution-regions-panel">
-                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
-                        <label class="form-label mb-0">أسماء مناطق التنفيذ</label>
-                        <span class="badge bg-label-primary" id="execution-regions-count-badge">0 منطقة</span>
-                    </div>
-                    <div id="execution-regions-fields" class="row g-3"></div>
-                    @error('execution_region_names')
-                        <div class="invalid-feedback d-block">{{ $message }}</div>
-                    @enderror
-                    @error('execution_region_names.*')
-                        <div class="invalid-feedback d-block">{{ $message }}</div>
-                    @enderror
-                </div>
-            </div>
         </div>
     </div>
 </div>
@@ -397,6 +470,7 @@
 @if ($canEditCoordinatorChecklistInForm ?? false)
     @if ($isEditing ?? false)
         @include('dashboard.projects._checklist_attachment_delete_modal')
+        @include('dashboard.projects._checklist_attachment_upload_modal')
     @endif
     <div
         id="coordinator-checklist-section"
@@ -426,6 +500,8 @@
 </div>
 
 @push('scripts')
+<script src="{{ asset('js/project-execution-regions.js') }}"></script>
+<script src="{{ asset('js/project-financial-fields.js') }}"></script>
 <script src="{{ asset('js/org-cascade.js') }}"></script>
 <script src="{{ asset('js/checklist-status-style.js') }}"></script>
 <script src="{{ asset('js/checklist-attachment-ui.js') }}"></script>
@@ -442,6 +518,19 @@
                 border-radius: 0.5rem;
                 padding: 1rem 1.125rem;
                 background: rgba(67, 89, 113, 0.03);
+            }
+
+            .project-financial-panel {
+                border: 1px solid rgba(67, 89, 113, 0.12);
+                border-radius: 0.5rem;
+                padding: 1rem 1.125rem;
+                background: rgba(67, 89, 113, 0.03);
+            }
+
+            .project-location-field {
+                resize: vertical;
+                min-height: calc(1.5em + 1.625rem + 2px);
+                overflow-y: hidden;
             }
 
             .execution-region-field .region-index-badge {
@@ -498,12 +587,19 @@
     function clearCoordinatorChecklistInputs() {
         document.querySelectorAll('.coordinator-checklist-input').forEach((input) => {
             if (input.tagName === 'SELECT') {
-                input.selectedIndex = 0;
+                input.value = input.dataset.defaultValue || 'not_ready';
             } else {
                 input.value = '';
             }
             input.disabled = true;
         });
+
+        if (checklistSection && window.refreshChecklistReadiness) {
+            window.refreshChecklistReadiness(checklistSection);
+        }
+        if (checklistSection && window.initChecklistStatusStyle) {
+            window.initChecklistStatusStyle(checklistSection);
+        }
     }
 
     function setChecklistInputsEnabled(enabled) {
@@ -730,55 +826,32 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-    const zonesInput = document.getElementById('execution_zones');
-    const regionsFields = document.getElementById('execution-regions-fields');
-    const regionsCountBadge = document.getElementById('execution-regions-count-badge');
-    const savedRegionNames = @json(old('execution_region_names', isset($project) ? ($project->execution_region_names ?? []) : []));
+    const locationField = document.querySelector('.project-location-field');
 
-    function renderExecutionRegions() {
-        if (!zonesInput || !regionsFields) {
+    function autoGrowLocationField() {
+        if (!locationField) {
             return;
         }
 
-        const count = Math.max(0, parseInt(zonesInput.value || '0', 10) || 0);
-        regionsFields.innerHTML = '';
-
-        if (regionsCountBadge) {
-            regionsCountBadge.textContent = count === 1 ? 'منطقة واحدة' : `${count} منطقة`;
-        }
-
-        if (count === 0) {
-            return;
-        }
-
-        for (let index = 0; index < count; index += 1) {
-            const col = document.createElement('div');
-            col.className = 'col-md-6 col-lg-4 execution-region-field';
-
-            const value = savedRegionNames[index] ?? '';
-            col.innerHTML = `
-                <label class="form-label d-flex align-items-center gap-2" for="execution_region_names_${index}">
-                    <span class="badge bg-label-secondary region-index-badge">${index + 1}</span>
-                    <span>اسم المنطقة ${index + 1}</span>
-                </label>
-                <input
-                    type="text"
-                    name="execution_region_names[${index}]"
-                    id="execution_region_names_${index}"
-                    class="form-control"
-                    value="${String(value).replace(/"/g, '&quot;')}"
-                    placeholder="مثال: شمال غزة"
-                    required
-                >
-            `;
-
-            regionsFields.appendChild(col);
-        }
+        locationField.style.height = 'auto';
+        locationField.style.height = `${locationField.scrollHeight}px`;
     }
 
-    zonesInput?.addEventListener('input', renderExecutionRegions);
-    zonesInput?.addEventListener('change', renderExecutionRegions);
-    renderExecutionRegions();
+    locationField?.addEventListener('input', autoGrowLocationField);
+    autoGrowLocationField();
+
+    if (typeof window.initProjectExecutionRegions === 'function') {
+        window.initProjectExecutionRegions({
+            offices: @json($associationOffices ?? []),
+            savedRegions: @json(old('execution_regions', isset($project) ? ($project->execution_regions ?? []) : [])),
+        });
+    }
+
+    if (typeof window.initProjectFinancialFields === 'function') {
+        window.initProjectFinancialFields({
+            rates: @json(($currencyRatesJson ?? collect())->toArray()),
+        });
+    }
 });
 </script>
 @endpush

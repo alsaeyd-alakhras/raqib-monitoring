@@ -39,15 +39,12 @@
                         <td class="checklist-col-person text-muted small">{{ $current?->person_name ?: '—' }}</td>
                         <td class="checklist-col-file small text-center">
                             @if ($current?->hasAttachment())
-                                <a href="{{ $current->attachmentUrl() }}" target="_blank" rel="noopener">
-                                    {{ $current->attachment_original_name ?: 'مرفق' }}
-                                </a>
-                                @if ($current->attachment_uploaded_at)
-                                    <span class="text-muted">({{ $current->attachment_uploaded_at->format('Y-m-d') }})</span>
-                                @endif
-                                @if ($isLate)
-                                    <span class="badge bg-label-warning">متأخر</span>
-                                @endif
+                                <div class="checklist-file-cell-content">
+                                    @include('dashboard.projects._checklist_attachment_link', ['current' => $current])
+                                    @if ($isLate)
+                                        <span class="badge bg-label-warning checklist-file-late-badge">متأخر</span>
+                                    @endif
+                                </div>
                             @else
                                 <span class="text-muted">—</span>
                             @endif

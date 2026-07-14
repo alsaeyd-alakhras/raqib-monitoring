@@ -17,6 +17,22 @@
     $canUpdate = auth()->user()?->can('update', 'App\Models\Project');
 @endphp
 <x-front-layout>
+    @php
+        $checklistValidationMessages = collect($errors->getMessages())
+            ->filter(fn ($msgs, $key) => str_starts_with((string) $key, 'checklist.')
+                || str_starts_with((string) $key, 'closure_docs.'))
+            ->flatten()
+            ->unique()
+            ->values();
+    @endphp
+    @if ($checklistValidationMessages->isNotEmpty())
+        <div id="checklist-validation-errors" class="d-none" aria-hidden="true">
+            @foreach ($checklistValidationMessages as $message)
+                <span data-checklist-error>{{ $message }}</span>
+            @endforeach
+        </div>
+    @endif
+
     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
         <div>
             <h4 class="mb-1">{{ $project->project_name }}</h4>
@@ -89,6 +105,23 @@
                     @if ($projectManagerDepartmentName)
                         — مدير دائرة «{{ $projectManagerDepartmentName }}» (دائرة مدير المشروع، وليست بالضرورة دائرة المشروع التنظيمية أعلاه).
                     @endif
+                </div>
+            @endif
+
+            @if (in_array($project->workflow_status, ['pending_coordinator', 'coordinator_filling'], true) && $project->hasCoordinatorAssignment())
+                <div class="alert alert-info py-2 mb-3">
+                    @if ($project->workflow_status === 'pending_coordinator')
+                        المشروع بانتظار بدء تعبئة المنسق
+                    @else
+                        المشروع قيد تعبئة المنسق
+                    @endif
+                    <strong>{{ $project->coordinatorDisplayName() }}</strong>
+                    @if ($project->isSelfCoordinator())
+                        <span class="badge bg-label-info">مدير المشروع / منسق</span>
+                    @elseif ($project->coordinator_external_name)
+                        <span class="badge bg-label-secondary">منسق خارجي</span>
+                    @endif
+                    — بعد اكتمال التعبئة يراجع مدير المشروع ويرسل لمدير القسم.
                 </div>
             @endif
 
@@ -283,54 +316,50 @@
                     @endif
                 </form>
             @else
-                @include('dashboard.projects._checklist_display', [
-                    'groups' => $groups,
-                    'values' => $values,
-                    'valueLabels' => $valueLabels,
-                    'valueField' => 'coordinator_value',
-                    'readinessBreakdown' => $readinessBreakdown ?? null,
-                    'project' => $project,
-                ])
+                @php
+                    $closureFileEditMode = ($canFillClosureDocs ?? false);
+                @endphp
+                @if ($closureFileEditMode)
+                    <form
+                        action="{{ route('dashboard.projects.fill-closure-docs', $project) }}"
+                        method="post"
+                        enctype="multipart/form-data"
+                        data-closure-docs-form
+                    >
+                        @csrf
+                        @if ($requiresFillOnBehalfConfirm ?? false)
+                            <input type="hidden" name="fill_on_behalf" value="1">
+                        @endif
+                        @include('dashboard.projects._checklist_display', [
+                            'groups' => $groups,
+                            'values' => $values,
+                            'valueLabels' => $valueLabels,
+                            'valueField' => 'coordinator_value',
+                            'readinessBreakdown' => $readinessBreakdown ?? null,
+                            'project' => $project,
+                            'closureFileEditMode' => true,
+                        ])
+                        @if ($project->planned_end_date)
+                            <div class="form-text mb-3 mt-2">
+                                تاريخ نهاية التنفيذ المخطط: <strong>{{ $project->planned_end_date->format('Y-m-d') }}</strong>
+                                — الرفع بعد هذا التاريخ يُخصم من نسبة الجاهزية (معامل {{ ($closureLateScore ?? 0.5) * 100 }}%).
+                            </div>
+                        @endif
+                        <button type="submit" class="btn btn-primary">حفظ مستندات الإغلاق</button>
+                    </form>
+                @else
+                    @include('dashboard.projects._checklist_display', [
+                        'groups' => $groups,
+                        'values' => $values,
+                        'valueLabels' => $valueLabels,
+                        'valueField' => 'coordinator_value',
+                        'readinessBreakdown' => $readinessBreakdown ?? null,
+                        'project' => $project,
+                    ])
+                @endif
             @endif
         </div>
     </div>
-
-    @php
-        $coordinatorChecklistEditable = (
-            in_array($project->workflow_status, ['pending_coordinator', 'coordinator_filling'])
-            || ($showCoordinatorFillOnDraft ?? false)
-        ) && ($canManageCoordinatorColumn ?? false);
-        $showClosureDocsCard = ($canViewCoordinatorData ?? false) && ($closureDocItems ?? collect())->isNotEmpty();
-        $showClosureDocsEditor = ($canFillClosureDocs ?? false) && ! $coordinatorChecklistEditable;
-    @endphp
-
-    @if ($showClosureDocsCard)
-    <div class="card mb-4">
-        <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
-            <h5 class="mb-0">مستندات الإغلاق — الموارد البشرية</h5>
-            @if ($project->hasPendingClosureDocs())
-                <span class="badge bg-label-warning">مستندات ناقصة</span>
-            @endif
-        </div>
-        <div class="card-body">
-            @if ($showClosureDocsEditor)
-                @include('dashboard.projects._closure_docs_editor', [
-                    'project' => $project,
-                    'closureDocItems' => $closureDocItems,
-                    'values' => $values,
-                    'requiresFillOnBehalfConfirm' => $requiresFillOnBehalfConfirm ?? false,
-                    'closureLateScore' => $closureLateScore ?? 0.5,
-                ])
-            @else
-                @include('dashboard.projects._closure_docs_display', [
-                    'project' => $project,
-                    'closureDocItems' => $closureDocItems,
-                    'values' => $values,
-                ])
-            @endif
-        </div>
-    </div>
-    @endif
     @endif
 
     {{-- قائمة التحقق — عمود المراقب (عرض فقط هنا، التعديل من شاشة المراقب المعزولة) --}}
@@ -360,14 +389,18 @@
     @endif
 
     @php
+        $coordinatorChecklistEditable = (
+            in_array($project->workflow_status, ['pending_coordinator', 'coordinator_filling'])
+            || ($showCoordinatorFillOnDraft ?? false)
+        ) && ($canManageCoordinatorColumn ?? false);
         $showAttachmentDeleteModal = ($canManageCoordinatorColumn ?? false)
-            || ($canFillClosureDocs ?? false)
-            || ($coordinatorChecklistEditable ?? false)
-            || ($showClosureDocsEditor ?? false);
+            || $coordinatorChecklistEditable
+            || ($canFillClosureDocs ?? false);
     @endphp
 
     @if ($showAttachmentDeleteModal)
         @include('dashboard.projects._checklist_attachment_delete_modal')
+        @include('dashboard.projects._checklist_attachment_upload_modal')
     @endif
 
     @push('scripts')

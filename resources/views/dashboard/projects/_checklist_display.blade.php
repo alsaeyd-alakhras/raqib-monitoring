@@ -3,6 +3,7 @@
 @php
     $valueField = $valueField ?? 'coordinator_value';
     $readinessBreakdown = $readinessBreakdown ?? null;
+    $closureFileEditMode = ($closureFileEditMode ?? false) && ($valueField === 'coordinator_value');
     $breakdownField = $valueField === 'monitor_value' ? 'monitor_pct' : 'coordinator_pct';
     $groupPctMap = [];
 
@@ -20,7 +21,7 @@
             $groupHasFileField = ($valueField ?? 'coordinator_value') === 'coordinator_value'
                 && $group->items->contains(fn ($item) => $item->has_file_field);
         @endphp
-        <div class="checklist-group-card{{ $groupHasFileField ? '' : ' checklist-group-card--compact' }}">
+        <div class="checklist-group-card{{ $groupHasFileField ? ' checklist-group-card--with-files' : ' checklist-group-card--compact' }}">
             <h6 class="checklist-group-title d-flex justify-content-between align-items-center gap-2 flex-wrap">
                 <span>{{ $group->name }}</span>
                 @if ($groupPct !== null)
@@ -43,6 +44,18 @@
                     </thead>
                     <tbody>
                         @foreach ($group->items as $item)
+                            @if ($closureFileEditMode && $item->has_file_field)
+                                @include('dashboard.projects._checklist_row_edit', [
+                                    'item' => $item,
+                                    'group' => $group,
+                                    'values' => $values,
+                                    'valueLabels' => $valueLabels,
+                                    'prefix' => 'closure_docs',
+                                    'valueField' => 'coordinator_value',
+                                    'showFileColumn' => true,
+                                    'project' => $project,
+                                ])
+                            @else
                             @php
                                 $current = $values->get($item->id);
                                 $status = $current?->{$valueField} ?? null;
@@ -76,12 +89,12 @@
                                                     && $current->attachment_uploaded_at
                                                     && $current->attachment_uploaded_at->toDateString() > $plannedEnd->toDateString();
                                             @endphp
-                                            <a href="{{ $current->attachmentUrl() }}" target="_blank" rel="noopener">
-                                                {{ $current->attachment_original_name ?: 'مرفق' }}
-                                            </a>
-                                            @if ($isLate)
-                                                <span class="badge bg-label-warning">متأخر</span>
-                                            @endif
+                                            <div class="checklist-file-cell-content">
+                                                @include('dashboard.projects._checklist_attachment_link', ['current' => $current])
+                                                @if ($isLate)
+                                                    <span class="badge bg-label-warning checklist-file-late-badge">متأخر</span>
+                                                @endif
+                                            </div>
                                         @elseif ($item->has_file_field)
                                             <span class="text-muted">—</span>
                                         @else
@@ -90,6 +103,7 @@
                                     </td>
                                 @endif
                             </tr>
+                            @endif
                         @endforeach
                     </tbody>
                 </table>

@@ -25,7 +25,11 @@
 
         @media (min-width: 992px) {
             .checklist-groups-grid {
-                grid-template-columns: minmax(0, 3fr) minmax(0, 3fr) minmax(0, 5.25fr);
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+            }
+
+            .checklist-group-card--with-files {
+                grid-column: 1 / -1;
             }
         }
 
@@ -35,7 +39,6 @@
             border-radius: 0.5rem;
             padding: 0.65rem 0.65rem 0.75rem;
             background: #fff;
-            height: 100%;
         }
 
         .checklist-group-card--compact {
@@ -70,18 +73,24 @@
 
         .checklist-table-wrap {
             width: 100%;
-            overflow-x: auto;
-            -webkit-overflow-scrolling: touch;
+            overflow: visible;
+        }
+
+        @media (max-width: 575.98px) {
+            .checklist-table-wrap {
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+            }
+
+            .checklist-compact-table--with-files {
+                min-width: 20rem;
+            }
         }
 
         .checklist-compact-table {
             width: 100%;
             margin-bottom: 0;
             table-layout: fixed;
-        }
-
-        .checklist-compact-table--with-files {
-            min-width: 30rem;
         }
 
         .checklist-compact-table thead th {
@@ -100,26 +109,49 @@
         }
 
         .checklist-compact-table .checklist-col-item {
-            width: 34%;
+            width: 40%;
             word-break: normal;
             overflow-wrap: anywhere;
             line-height: 1.35;
         }
 
         .checklist-compact-table .checklist-col-status {
-            width: 18%;
+            width: 20%;
             white-space: nowrap;
             text-align: center;
         }
 
         .checklist-compact-table .checklist-col-person {
+            width: 30%;
+            overflow-wrap: anywhere;
+        }
+
+        .checklist-compact-table--with-files .checklist-col-item {
+            width: 36%;
+        }
+
+        .checklist-compact-table--with-files .checklist-col-status {
+            width: 18%;
+        }
+
+        .checklist-compact-table--with-files .checklist-col-person {
             width: 28%;
         }
 
         .checklist-compact-table .checklist-col-file {
-            width: 12%;
+            width: 2.75rem;
+            min-width: 2.75rem;
+            max-width: 2.75rem;
             white-space: nowrap;
             text-align: center;
+            overflow: visible;
+            padding-inline: 0.2rem;
+        }
+
+        .checklist-compact-table .checklist-col-file:has(.checklist-file-actions) {
+            width: 4.75rem;
+            min-width: 4.75rem;
+            max-width: 4.75rem;
         }
 
         .checklist-merged-table .checklist-col-item {
@@ -297,6 +329,69 @@
         .checklist-file-late-badge {
             font-size: 0.625rem;
             font-weight: 500;
+        }
+
+        .checklist-attachment-icon-link {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 1.65rem;
+            height: 1.65rem;
+            border-radius: 0.375rem;
+            color: var(--bs-primary);
+            text-decoration: none;
+            vertical-align: middle;
+        }
+
+        .checklist-attachment-icon-link:hover,
+        .checklist-attachment-icon-link:focus-visible {
+            color: var(--bs-primary);
+            background: rgba(var(--bs-primary-rgb), 0.08);
+        }
+
+        .checklist-file-cell-content {
+            display: inline-flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 0.15rem;
+        }
+
+        .checklist-attachment-icon-link::after {
+            content: attr(data-tooltip);
+            position: absolute;
+            top: calc(100% + 0.35rem);
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 20;
+            min-width: 8rem;
+            max-width: 16rem;
+            padding: 0.35rem 0.5rem;
+            border-radius: 0.375rem;
+            background: rgba(47, 43, 61, 0.92);
+            color: #fff;
+            font-size: 0.6875rem;
+            line-height: 1.35;
+            text-align: center;
+            white-space: normal;
+            word-break: break-word;
+            box-shadow: 0 0.25rem 0.75rem rgba(47, 43, 61, 0.2);
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
+            transition: opacity 0.15s ease, visibility 0.15s ease;
+        }
+
+        .checklist-attachment-icon-link:hover::after,
+        .checklist-attachment-icon-link:focus-visible::after {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .checklist-col-file .checklist-attachment-icon-link::after {
+            top: auto;
+            bottom: calc(100% + 0.35rem);
         }
 
         .checklist-compact-table .form-select-sm,

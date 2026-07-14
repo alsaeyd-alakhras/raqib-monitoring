@@ -23,7 +23,7 @@
             $groupPct = $groupPctMap[$group->name] ?? null;
             $groupHasFileField = $showFileColumn && $group->items->contains(fn ($item) => $item->has_file_field);
         @endphp
-        <div class="checklist-group-card{{ $groupHasFileField ? '' : ' checklist-group-card--compact' }}">
+        <div class="checklist-group-card{{ $groupHasFileField ? ' checklist-group-card--with-files' : ' checklist-group-card--compact' }}">
             <h6 class="checklist-group-title d-flex justify-content-between align-items-center gap-2 flex-wrap">
                 <span>{{ $group->name }}</span>
                 <span class="badge bg-label-primary checklist-group-pct">{{ $groupPct !== null ? $groupPct . '%' : '—' }}</span>

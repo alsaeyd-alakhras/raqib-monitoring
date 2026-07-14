@@ -37,15 +37,39 @@
         ? '<span class="num-ltr">' . e($plannedDates) . '</span>'
         : '<span class="text-empty">—</span>';
 
+    $executionRegionLabels = collect($project->executionRegionsForDisplay())
+        ->map(function ($region, $index) {
+            $label = ($index + 1) . '. ' . $region['name'];
+
+            if ($region['beneficiaries'] !== null) {
+                $label .= ' (' . number_format($region['beneficiaries']) . ')';
+            }
+
+            return e($label);
+        })
+        ->implode(' · ');
+
     $implementationRows = [
         'الموقع / المنطقة' => $project->location ? e($project->location) : '<span class="text-empty">—</span>',
         'المستفيدون المستهدفون' => $project->target_beneficiaries !== null
             ? '<span class="num-ltr">' . e(number_format($project->target_beneficiaries)) . '</span>'
             : '<span class="text-empty">—</span>',
-        'مناطق التنفيذ' => $project->execution_zones ? e($project->execution_zones) : '<span class="text-empty">—</span>',
+        'مناطق التنفيذ' => $executionRegionLabels !== ''
+            ? e($executionRegionLabels)
+            : ($project->execution_zones ? e($project->execution_zones) : '<span class="text-empty">—</span>'),
         'المدة التقديرية' => $project->estimated_duration ? e($project->estimated_duration) : '<span class="text-empty">—</span>',
-        'الميزانية المخصصة' => $project->allocated_budget !== null
-            ? '<span class="num-ltr">' . e(number_format((float) $project->allocated_budget, 2)) . '</span>'
+        'موازنة المشروع' => $project->project_budget !== null
+            ? '<span class="num-ltr">' . e(number_format((float) $project->project_budget, 2)) . '</span>'
+                . ($project->currency?->code ? ' ' . e($project->currency->code) : '')
+            : '<span class="text-empty">—</span>',
+        'مبلغ الإيرادات' => $project->revenue_amount !== null
+            ? '<span class="num-ltr">' . e(number_format((float) $project->revenue_amount, 2)) . '</span>'
+            : '<span class="text-empty">—</span>',
+        'صافي المبلغ' => $project->net_amount !== null
+            ? '<span class="num-ltr">' . e(number_format((float) $project->net_amount, 2)) . '</span>'
+            : '<span class="text-empty">—</span>',
+        'المبلغ للتنفيذ (شيكل)' => $project->execution_amount_ils !== null
+            ? '<span class="num-ltr">' . e(number_format((float) $project->execution_amount_ils, 2)) . '</span>'
             : '<span class="text-empty">—</span>',
         'حالة سير العمل' => e($statusLabel),
     ];

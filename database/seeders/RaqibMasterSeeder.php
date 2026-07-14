@@ -22,6 +22,7 @@ class RaqibMasterSeeder extends Seeder
     {
         $this->call([
             ConstantsSeeder::class,
+            CurrencySeeder::class,
             ChecklistSeeder::class,
             ExcelOrganizationalSeeder::class,
             ExcelFundersSeeder::class,

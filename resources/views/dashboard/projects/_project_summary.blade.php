@@ -243,13 +243,25 @@
                             {{ $project->execution_zones !== null ? number_format($project->execution_zones) : '—' }}
                         </td>
                     </tr>
-                    @if (! empty($project->execution_region_names))
+                    @php
+                        $executionRegions = $project->executionRegionsForDisplay();
+                        $regionsTotal = $project->executionRegionsBeneficiariesTotal();
+                    @endphp
+                    @if ($executionRegions !== [])
                     <tr>
-                        <th scope="row">أسماء المناطق</th>
+                        <th scope="row">مناطق التنفيذ</th>
                         <td>
-                            @foreach ($project->execution_region_names as $index => $regionName)
-                                <span class="org-chip">{{ $index + 1 }}. {{ $regionName }}</span>
+                            @foreach ($executionRegions as $index => $region)
+                                <span class="org-chip">
+                                    {{ $index + 1 }}. {{ $region['name'] }}
+                                    @if ($region['beneficiaries'] !== null)
+                                        ({{ number_format($region['beneficiaries']) }})
+                                    @endif
+                                </span>
                             @endforeach
+                            @if ($regionsTotal !== null)
+                                <div class="form-text mt-1">المجموع الموزَّع: {{ number_format($regionsTotal) }}</div>
+                            @endif
                         </td>
                     </tr>
                     @endif
@@ -260,9 +272,40 @@
                         </td>
                     </tr>
                     <tr>
-                        <th scope="row">الميزانية المرصودة</th>
-                        <td class="{{ $project->allocated_budget !== null ? '' : 'text-empty' }}">
-                            {{ $project->allocated_budget !== null ? number_format((float) $project->allocated_budget, 2) : '—' }}
+                        <th scope="row">موازنة المشروع</th>
+                        <td class="{{ $project->project_budget !== null ? '' : 'text-empty' }}">
+                            @if ($project->project_budget !== null)
+                                {{ number_format((float) $project->project_budget, 2) }}
+                                @if ($project->currency?->code)
+                                    <span class="text-muted">{{ $project->currency->code }}</span>
+                                @endif
+                            @else
+                                —
+                            @endif
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">مبلغ الإيرادات</th>
+                        <td class="{{ $project->revenue_amount !== null ? '' : 'text-empty' }}">
+                            {{ $project->revenue_amount !== null ? number_format((float) $project->revenue_amount, 2) : '—' }}
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">صافي المبلغ</th>
+                        <td class="{{ $project->net_amount !== null ? '' : 'text-empty' }}">
+                            {{ $project->net_amount !== null ? number_format((float) $project->net_amount, 2) : '—' }}
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">سعر الصرف</th>
+                        <td class="{{ $project->exchange_rate !== null ? '' : 'text-empty' }}">
+                            {{ $project->exchange_rate !== null ? number_format((float) $project->exchange_rate, 6) : '—' }}
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">المبلغ للتنفيذ (شيكل)</th>
+                        <td class="{{ $project->execution_amount_ils !== null ? '' : 'text-empty' }}">
+                            {{ $project->execution_amount_ils !== null ? number_format((float) $project->execution_amount_ils, 2) : '—' }}
                         </td>
                     </tr>
                     <tr>

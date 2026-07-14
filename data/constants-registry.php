@@ -13,6 +13,11 @@ return [
         'used_in' => ['projects.project_type'],
         'value_shape' => 'list<string>',
     ],
+    'association_offices' => [
+        'label' => 'مكاتب الجمعية',
+        'used_in' => ['projects.execution_regions'],
+        'value_shape' => 'list<string>',
+    ],
     'monitoring_methods' => [
         'label' => 'طرق المراقبة',
         'used_in' => ['projects.monitoring_method', 'monitoring_activities.monitoring_method'],
