@@ -1138,7 +1138,7 @@ class ProjectController extends Controller
         $lockProjectManager = $currentPerson?->role === 'project_manager';
         $coordinatorMode = $project && $project->exists
             ? $project->coordinatorMode()
-            : old('coordinator_mode', 'person');
+            : old('coordinator_mode', $lockProjectManager ? 'self' : 'person');
 
         $showCoordinatorChecklistInitially = in_array($coordinatorMode, ['self', 'external'], true)
             || ($coordinatorMode === 'person' && (
@@ -1413,14 +1413,17 @@ class ProjectController extends Controller
             return;
         }
 
-        if (! $project->section_id) {
-            abort(422, 'المشروع بلا قسم، لا يمكن توجيه الاعتماد.');
+        $project->loadMissing('projectManager');
+        $managerSectionId = $project->projectManager?->section_id;
+
+        if (! $managerSectionId) {
+            abort(422, 'مدير المشروع بلا قسم، لا يمكن توجيه الاعتماد لمدير القسم.');
         }
 
         $person = $user?->person;
 
         abort_if(! $person || $person->role !== 'section_manager', 403);
-        abort_if((int) $person->section_id !== (int) $project->section_id, 403);
+        abort_if((int) $person->section_id !== (int) $managerSectionId, 403);
     }
 
     private function authorizeDepartmentApproval(Project $project): void
@@ -1769,7 +1772,7 @@ class ProjectController extends Controller
         $currentPerson = auth()->user()?->person;
         $isMonitoringDirector = $currentPerson?->role === 'monitoring_director';
 
-        if ($currentPerson?->role === 'project_manager') {
+        if ($currentPerson?->role === 'project_manager' && ! auth()->user()?->super_admin) {
             unset($rules['project_manager_id']);
         }
 
@@ -1847,30 +1850,6 @@ class ProjectController extends Controller
                 }
             }
 
-            $projectSectionId = $request->input('section_id');
-
-            if ($projectSectionId && $request->filled('project_manager_id')) {
-                $pm = Person::find($request->input('project_manager_id'));
-
-                if (! $pm || (int) $pm->section_id !== (int) $projectSectionId) {
-                    $validator->errors()->add(
-                        'project_manager_id',
-                        'مدير المشروع يجب أن ينتمي لقسم المشروع المحدد.'
-                    );
-                }
-            }
-
-            if ($projectSectionId && $request->input('coordinator_mode') === 'person' && $request->filled('coordinator_id')) {
-                $coordinator = Person::find($request->input('coordinator_id'));
-
-                if (! $coordinator || (int) $coordinator->section_id !== (int) $projectSectionId) {
-                    $validator->errors()->add(
-                        'coordinator_id',
-                        'المنسق يجب أن ينتمي لقسم المشروع المحدد.'
-                    );
-                }
-            }
-
             $zones = (int) $request->input('execution_zones', 0);
             $regionNames = array_map(
                 fn ($name) => trim((string) $name),
@@ -1911,7 +1890,12 @@ class ProjectController extends Controller
 
     private function resolveProjectManagerId(Request $request, array $validated): int
     {
-        $person = auth()->user()?->person;
+        $user = auth()->user();
+        $person = $user?->person;
+
+        if ($user?->super_admin) {
+            return (int) ($validated['project_manager_id'] ?? $request->input('project_manager_id'));
+        }
 
         if ($person?->role === 'project_manager') {
             return (int) $person->id;

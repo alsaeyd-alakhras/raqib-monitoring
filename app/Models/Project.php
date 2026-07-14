@@ -352,7 +352,7 @@ class Project extends Model
         return match ($person->role) {
             'project_manager' => $query->where('project_manager_id', $person->id),
             'section_manager' => $person->section_id
-                ? $query->where('section_id', $person->section_id)
+                ? $query->whereHas('projectManager', fn (Builder $q) => $q->where('section_id', $person->section_id))
                 : $query->whereRaw('1 = 0'),
             'department_manager' => $person->department_id
                 ? $query->whereHas('projectManager', fn (Builder $q) => $q->where('department_id', $person->department_id))
@@ -378,7 +378,7 @@ class Project extends Model
         return match ($person->role) {
             'project_manager' => (int) $this->project_manager_id === (int) $person->id,
             'section_manager' => $person->section_id
-                && (int) $this->section_id === (int) $person->section_id,
+                && (int) $this->projectManager?->section_id === (int) $person->section_id,
             'department_manager' => $person->department_id
                 && (int) $this->projectManager?->department_id === (int) $person->department_id,
             'coordinator' => (int) $this->coordinator_id === (int) $person->id,
@@ -615,22 +615,24 @@ class Project extends Model
             return false;
         }
 
-        return (int) $person->section_id === (int) $this->section_id;
+        $this->loadMissing('projectManager');
+
+        return (int) $person->section_id === (int) $this->projectManager?->section_id;
     }
 
     public function approverSectionManager(): ?Person
     {
-        if (! $this->section_id) {
+        $this->loadMissing('projectManager');
+        $sectionId = $this->projectManager?->section_id;
+
+        if (! $sectionId) {
             return null;
         }
 
-        static $cache = null;
-        $cache ??= Person::query()
+        return Person::query()
             ->where('role', 'section_manager')
-            ->get()
-            ->keyBy('section_id');
-
-        return $cache->get($this->section_id);
+            ->where('section_id', $sectionId)
+            ->first();
     }
 
     public function approverSectionManagerLabel(): string
@@ -641,11 +643,13 @@ class Project extends Model
             return $manager->name;
         }
 
-        if (! $this->section_id) {
-            return '— (المشروع غير مرتبط بقسم)';
+        $this->loadMissing('projectManager');
+
+        if (! $this->projectManager?->section_id) {
+            return '— (مدير المشروع غير مرتبط بقسم)';
         }
 
-        return '— (لا يوجد مدير قسم معيّن لهذا القسم)';
+        return '— (لا يوجد مدير قسم معيّن لقسم مدير المشروع)';
     }
 
     public function approvableByDepartmentManager(?Person $person): bool

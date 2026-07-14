@@ -86,6 +86,10 @@ class ProjectsSmokeTest extends TestCase
             ->first();
 
         if ($manager) {
+            if (empty($manager->phone)) {
+                $manager->update(['phone' => '0599000' . str_pad((string) $section->id, 3, '0', STR_PAD_LEFT)]);
+            }
+
             return $manager;
         }
 
@@ -120,6 +124,7 @@ class ProjectsSmokeTest extends TestCase
             'department_id' => $section->department_id,
             'user_id' => $user->id,
             'job_title' => 'مدير قسم اختبار',
+            'phone' => '0599000' . str_pad((string) $section->id, 3, '0', STR_PAD_LEFT),
         ]);
     }
 
@@ -805,23 +810,14 @@ class ProjectsSmokeTest extends TestCase
         $sectionManager = $this->ensureSectionManagerForSection($section);
 
         $otherSection = Section::where('id', '!=', $section->id)->firstOrFail();
+        $otherPm = Person::withRole('project_manager')
+            ->where('id', '!=', $pm->id)
+            ->first() ?? Person::where('id', '!=', $pm->id)->firstOrFail();
+        $this->alignPersonToSection($otherPm, $otherSection);
 
         $visibleProject = Project::create([
-            'project_name' => 'مشروع قسم مدير القسم',
+            'project_name' => 'مشروع قسم مدير المشروع',
             'project_number' => 'P-' . ($this->nextProjectNumberSeq() + random_int(20000, 29999)),
-            'project_manager_id' => $pm->id,
-            'coordinator_id' => $pm->id,
-            'center_id' => $section->department?->center_id,
-            'department_id' => $section->department_id,
-            'section_id' => $section->id,
-            'workflow_status' => 'pending_section_manager',
-            'created_by' => User::first()->id,
-            'updated_by' => User::first()->id,
-        ]);
-
-        $hiddenProject = Project::create([
-            'project_name' => 'مشروع قسم آخر',
-            'project_number' => 'P-' . ($this->nextProjectNumberSeq() + random_int(30000, 39999)),
             'project_manager_id' => $pm->id,
             'coordinator_id' => $pm->id,
             'center_id' => $otherSection->department?->center_id,
@@ -832,13 +828,26 @@ class ProjectsSmokeTest extends TestCase
             'updated_by' => User::first()->id,
         ]);
 
+        $hiddenProject = Project::create([
+            'project_name' => 'مشروع مدير مشروع من قسم آخر',
+            'project_number' => 'P-' . ($this->nextProjectNumberSeq() + random_int(30000, 39999)),
+            'project_manager_id' => $otherPm->id,
+            'coordinator_id' => $otherPm->id,
+            'center_id' => $section->department?->center_id,
+            'department_id' => $section->department_id,
+            'section_id' => $section->id,
+            'workflow_status' => 'pending_section_manager',
+            'created_by' => User::first()->id,
+            'updated_by' => User::first()->id,
+        ]);
+
         $this->actingAs($sectionManager->user);
         $this->get('/projects')->assertOk()->assertSee('projects-table');
 
         $this->getJson('/projects', ['X-Requested-With' => 'XMLHttpRequest'])
             ->assertOk()
-            ->assertJsonFragment(['project_name' => 'مشروع قسم مدير القسم'])
-            ->assertJsonMissing(['project_name' => 'مشروع قسم آخر']);
+            ->assertJsonFragment(['project_name' => 'مشروع قسم مدير المشروع'])
+            ->assertJsonMissing(['project_name' => 'مشروع مدير مشروع من قسم آخر']);
 
         $this->get(route('dashboard.projects.show', $visibleProject))->assertOk();
         $this->get(route('dashboard.projects.show', $hiddenProject))->assertForbidden();
@@ -938,38 +947,46 @@ class ProjectsSmokeTest extends TestCase
         $project->delete();
     }
 
-    public function test_project_manager_must_belong_to_project_section(): void
+    public function test_project_manager_may_differ_from_project_section(): void
     {
         $user = User::first();
-        $user->super_admin = 1;
-        $this->actingAs($user);
+        $user->forceFill(['super_admin' => 1])->save();
+        $this->actingAs($user->fresh());
 
         $fields = $this->sampleProjectFields();
         $section = Section::findOrFail($fields['section_id']);
         $otherSection = Section::where('id', '!=', $section->id)->firstOrFail();
 
-        $wrongPm = Person::create([
-            'name' => 'مدير مشروع قسم خاطئ',
+        $pm = Person::create([
+            'name' => 'مدير مشروع من قسم آخر',
             'role' => 'project_manager',
             'section_id' => $otherSection->id,
             'department_id' => $otherSection->department_id,
         ]);
 
+        $projectName = 'مشروع قسم مختلف ' . uniqid();
+
         $response = $this->from('/projects/create')
             ->post('/projects', $this->sampleProjectPostData([
-                'project_name' => 'مشروع قسم خاطئ ' . uniqid(),
-                'project_number_seq' => $this->nextProjectNumberSeq() + 45000,
-                'project_manager_id' => $wrongPm->id,
+                'project_name' => $projectName,
+                'project_number_seq' => $this->nextProjectNumberSeq() + random_int(50000, 99999),
+                'project_manager_id' => $pm->id,
                 'section_id' => $section->id,
                 'department_id' => $section->department_id,
                 'center_id' => $section->department?->center_id,
                 'coordinator_mode' => 'self',
             ]));
 
-        $response->assertSessionHasErrors('project_manager_id');
-        $this->assertDatabaseMissing('projects', ['project_manager_id' => $wrongPm->id]);
+        $response->assertSessionHasNoErrors();
+        $response->assertRedirect();
+        $this->assertDatabaseHas('projects', [
+            'project_name' => $projectName,
+            'project_manager_id' => $pm->id,
+            'section_id' => $section->id,
+        ]);
 
-        $wrongPm->delete();
+        Project::where('project_manager_id', $pm->id)->delete();
+        $pm->delete();
     }
 
     public function test_project_datatable_ajax_delete_uses_model_id(): void
