@@ -53,6 +53,10 @@ class Project extends Model
         'primary_monitoring_activity_id',
         'coordinator_submitted_at',
         'coordinator_submitted_by',
+        'secretariat_submitted_at',
+        'secretariat_submitted_by',
+        'secretariat_filled_at',
+        'secretariat_filled_by',
         'coordinator_filled_by',
         'coordinator_filled_at',
         'submitted_to_project_manager_at',
@@ -93,6 +97,8 @@ class Project extends Model
         'monitor_negative_notes' => 'array',
         'monitor_recommendations' => 'array',
         'coordinator_submitted_at' => 'datetime',
+        'secretariat_submitted_at' => 'datetime',
+        'secretariat_filled_at' => 'datetime',
         'coordinator_filled_at' => 'datetime',
         'submitted_to_project_manager_at' => 'datetime',
         'submitted_to_section_manager_at' => 'datetime',
@@ -184,6 +190,16 @@ class Project extends Model
         return $this->belongsTo(User::class, 'coordinator_submitted_by');
     }
 
+    public function secretariatSubmittedByUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'secretariat_submitted_by');
+    }
+
+    public function secretariatFilledByUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'secretariat_filled_by');
+    }
+
     public function submittedToProjectManagerByUser(): BelongsTo
     {
         return $this->belongsTo(User::class, 'submitted_to_project_manager_by');
@@ -220,9 +236,13 @@ class Project extends Model
     public function workflowStepTimestamps(): array
     {
         return [
+            'pending_secretariat' => [
+                'at' => $this->secretariat_submitted_at,
+                'by' => $this->secretariatSubmittedByUser,
+            ],
             'pending_coordinator' => [
-                'at' => $this->coordinator_submitted_at,
-                'by' => $this->coordinatorSubmittedByUser,
+                'at' => $this->secretariat_filled_at ?? $this->coordinator_submitted_at,
+                'by' => $this->secretariatFilledByUser ?? $this->coordinatorSubmittedByUser,
             ],
             'coordinator_filling' => [
                 'at' => $this->coordinator_filled_at,
@@ -311,6 +331,53 @@ class Project extends Model
     }
 
     /**
+     * نقل مجلد ملفات المشروع من المسار الحالي (مثل projects/id-5) إلى رقم مشروع P-N.
+     */
+    public function relocateStorageToProjectNumber(string $newProjectNumber): ?string
+    {
+        $oldDir = $this->storageDirectory();
+        $newDir = self::storageDirectoryForNumber($newProjectNumber);
+
+        if ($oldDir === $newDir) {
+            return null;
+        }
+
+        $disk = Storage::disk('public');
+
+        if ($disk->exists($oldDir)) {
+            if ($disk->exists($newDir)) {
+                foreach ($disk->allFiles($oldDir) as $file) {
+                    $target = $newDir . '/' . basename($file);
+
+                    if (! $disk->exists($target)) {
+                        $disk->move($file, $target);
+                    } else {
+                        $disk->delete($file);
+                    }
+                }
+
+                $disk->deleteDirectory($oldDir);
+            } else {
+                $disk->move($oldDir, $newDir);
+            }
+        }
+
+        if (! $this->allocation_image_path) {
+            return null;
+        }
+
+        $path = str_replace('\\', '/', $this->allocation_image_path);
+
+        if (str_starts_with($path, $oldDir . '/')) {
+            return $newDir . '/' . basename($path);
+        }
+
+        $relocatedAllocation = $newDir . '/' . basename($path);
+
+        return $disk->exists($relocatedAllocation) ? $relocatedAllocation : null;
+    }
+
+    /**
      * نقل مجلد ملفات المشروع عند تغيير رقم المشروع وتحديث مسار صورة التخصيص.
      */
     public function relocateStorageOnNumberChange(string $oldProjectNumber, string $newProjectNumber): ?string
@@ -368,6 +435,24 @@ class Project extends Model
     {
         return $this->allocation_image_path
             ? asset('storage/' . $this->allocation_image_path)
+            : null;
+    }
+
+    public function isAllocationImagePreview(): bool
+    {
+        if (! $this->allocation_image_path) {
+            return false;
+        }
+
+        $extension = strtolower(pathinfo($this->allocation_image_path, PATHINFO_EXTENSION));
+
+        return in_array($extension, ['jpg', 'jpeg', 'png', 'webp', 'gif'], true);
+    }
+
+    public function allocationAttachmentBasename(): ?string
+    {
+        return $this->allocation_image_path
+            ? basename($this->allocation_image_path)
             : null;
     }
 
@@ -684,6 +769,7 @@ class Project extends Model
             'return_project_manager' => 'إرجاع لمدير المشروع (مسودة)',
             'return_project_manager_review' => 'إرجاع لمدير المشروع (مراجعة)',
             'return_coordinator' => 'إرجاع للمنسق (تعبئة)',
+            'return_secretariat' => 'إرجاع لسكرتاريا المشاريع',
             'return_section_manager' => 'إرجاع لمدير القسم (موافقة)',
             'return_department_manager' => 'إرجاع لمدير الدائرة (موافقة)',
             'reject_final' => 'رفض قاطع نهائي (لا إرجاع)',
@@ -694,9 +780,9 @@ class Project extends Model
         }
 
         $allowedKeys = match ($person->role) {
-            'section_manager' => ['return_project_manager', 'return_project_manager_review', 'return_coordinator', 'reject_final'],
-            'department_manager' => ['return_project_manager', 'return_project_manager_review', 'return_coordinator', 'return_section_manager', 'reject_final'],
-            'monitoring_director' => ['return_project_manager', 'return_project_manager_review', 'return_coordinator', 'return_section_manager', 'return_department_manager', 'reject_final'],
+            'section_manager' => ['return_project_manager', 'return_project_manager_review', 'return_coordinator', 'return_secretariat', 'reject_final'],
+            'department_manager' => ['return_project_manager', 'return_project_manager_review', 'return_coordinator', 'return_secretariat', 'return_section_manager', 'reject_final'],
+            'monitoring_director' => ['return_project_manager', 'return_project_manager_review', 'return_coordinator', 'return_secretariat', 'return_section_manager', 'return_department_manager', 'reject_final'],
             default => array_keys($all),
         };
 
@@ -714,6 +800,7 @@ class Project extends Model
             'return_project_manager' => 'draft',
             'return_project_manager_review' => 'pending_project_manager',
             'return_coordinator' => 'coordinator_filling',
+            'return_secretariat' => 'pending_secretariat',
             'return_section_manager' => 'pending_section_manager',
             'return_department_manager' => 'pending_dept_manager',
             'reject_final' => 'rejected',
@@ -952,6 +1039,7 @@ class Project extends Model
 
         return match ($this->workflow_status) {
             'draft' => 'مدير المشروع: ' . ($this->projectManager?->name ?? '—'),
+            'pending_secretariat' => 'سكرتاريا المشاريع — تعبئة رقم ومرفق التخصيص',
             'pending_coordinator', 'coordinator_filling' => 'المنسق: ' . $this->coordinatorDisplayName(),
             'pending_project_manager' => 'مدير المشروع: ' . ($this->projectManager?->name ?? '—') . ' — مراجعة وإرسال',
             'pending_section_manager' => 'مدير القسم: ' . $this->approverSectionManagerLabel(),
@@ -973,7 +1061,8 @@ class Project extends Model
 
         return match ($person->role) {
             'project_manager' => (int) $this->project_manager_id === (int) $person->id
-                && in_array($this->workflow_status, ['draft', 'pending_coordinator', 'coordinator_filling', 'pending_project_manager'], true),
+                && in_array($this->workflow_status, ['draft', 'pending_secretariat', 'pending_coordinator', 'coordinator_filling', 'pending_project_manager'], true),
+            'project_secretariat' => $this->workflow_status === 'pending_secretariat',
             'coordinator' => (int) $this->coordinator_id === (int) $person->id
                 && (
                     in_array($this->workflow_status, ['pending_coordinator', 'coordinator_filling'], true)
@@ -995,6 +1084,7 @@ class Project extends Model
     {
         return [
             'draft' => 'مسودة',
+            'pending_secretariat' => 'بانتظار سكرتاريا المشاريع',
             'pending_coordinator' => 'بانتظار المنسق',
             'coordinator_filling' => 'المنسق يعمل',
             'pending_project_manager' => 'بانتظار مدير المشروع',

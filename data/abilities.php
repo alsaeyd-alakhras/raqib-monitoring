@@ -78,6 +78,7 @@ return [
         'approve_section' => 'موافقة مدير القسم',
         'approve_department' => 'موافقة مدير الدائرة',
         'fill_coordinator' => 'تعبئة عمود المنسق',
+        'fill_secretariat' => 'تعبئة رقم ومرفق التخصيص',
         'fill_monitor' => 'تعبئة عمود المراقب',
         'reject' => 'رفض المشروع',
     ],

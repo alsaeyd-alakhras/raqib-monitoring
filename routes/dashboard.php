@@ -110,6 +110,8 @@ Route::group([
         ->name('projects.export-pdf');
 
     Route::prefix('projects/{project}')->name('projects.')->group(function () {
+        Route::post('submit-to-secretariat', [ProjectController::class, 'submitToSecretariat'])->name('submit-to-secretariat');
+        Route::post('fill-secretariat', [ProjectController::class, 'fillSecretariat'])->name('fill-secretariat');
         Route::post('submit-to-coordinator', [ProjectController::class, 'submitToCoordinator'])->name('submit-to-coordinator');
         Route::post('fill-coordinator', [ProjectController::class, 'fillCoordinator'])->name('fill-coordinator');
         Route::post('fill-closure-docs', [ProjectController::class, 'fillClosureDocs'])->name('fill-closure-docs');

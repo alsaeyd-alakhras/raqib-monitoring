@@ -2,12 +2,6 @@
     $selectedCoordinatorMode = old('coordinator_mode', $coordinatorMode ?? 'person');
     $isEditing = isset($project) && $project->exists;
     $lockTeamFields = (bool) ($lockTeamFieldsForMonitoringDirector ?? false);
-    $projectNumberSeq = old(
-        'project_number_seq',
-        $isEditing
-            ? (\App\Models\Project::sequenceFromProjectNumber($project->project_number ?? '') ?? '')
-            : ($nextProjectNumberSeq ?? '')
-    );
     $lockedManagerId = $lockProjectManager ? $currentPerson->id : ($isEditing ? $project->project_manager_id : old('project_manager_id'));
     $projectTypeOptions = collect($projectTypes)->mapWithKeys(fn ($label) => [$label => $label])->all();
 @endphp
@@ -35,34 +29,6 @@
                     :value="$project->project_name ?? ''"
                     required
                 />
-            </div>
-            <div class="mb-4 col-md-4">
-                <label class="form-label" for="project_number_seq">
-                    رقم المشروع
-                    <span class="text-danger" style="font-size: 12px;"><i class="fa fa-asterisk"></i></span>
-                </label>
-                <div class="input-group">
-                    <span class="input-group-text user-select-none fw-semibold">P-</span>
-                    <input
-                        type="number"
-                        name="project_number_seq"
-                        id="project_number_seq"
-                        class="form-control @error('project_number_seq') is-invalid @enderror"
-                        value="{{ $projectNumberSeq }}"
-                        min="1"
-                        step="1"
-                        required
-                        inputmode="numeric"
-                        placeholder="1"
-                    >
-                </div>
-                @error('project_number_seq')
-                    <div class="invalid-feedback d-block">{{ $message }}</div>
-                @enderror
-                <div id="project-number-feedback" class="form-text"></div>
-                <div class="form-text text-muted">
-                    البادئة P- ثابتة — عدّل الرقم فقط. يُفحَص التكرار فوراً عند مغادرة الحقل.
-                </div>
             </div>
             <div class="mb-4 col-md-4">
                 @if (! empty($projectTypes))
@@ -331,7 +297,7 @@
             <div class="mb-4 col-md-3">
                 <x-form.input
                     name="estimated_duration"
-                    label="المدة الزمنية المقدّرة"
+                    label="المدة الزمنية المقدّرة (بالأيام)"
                     :value="$project->estimated_duration ?? ''"
                     required
                 />
@@ -432,36 +398,6 @@
                         </div>
                     </div>
                 </div>
-            </div>
-            <div class="mb-4 col-md-12">
-                <label class="form-label" for="allocation_image">
-                    صورة التخصيص
-                    <span class="text-danger" style="font-size: 12px;"><i class="fa fa-asterisk"></i></span>
-                </label>
-                @if (! empty($project->allocation_image_path ?? null))
-                    <div class="mb-2">
-                        <a href="{{ $project->allocationImageUrl() }}" target="_blank" rel="noopener">
-                            <img
-                                src="{{ $project->allocationImageUrl() }}"
-                                alt="صورة التخصيص"
-                                class="rounded border"
-                                style="max-height: 120px; max-width: 100%;"
-                            >
-                        </a>
-                        <div class="form-text">الصورة الحالية — يمكنك استبدالها برفع ملف جديد.</div>
-                    </div>
-                @endif
-                <input
-                    type="file"
-                    name="allocation_image"
-                    id="allocation_image"
-                    class="form-control @error('allocation_image') is-invalid @enderror"
-                    accept="image/jpeg,image/png,image/jpg,image/webp"
-                    @if (empty($project->allocation_image_path ?? null)) required @endif
-                >
-                @error('allocation_image')
-                    <div class="invalid-feedback d-block">{{ $message }}</div>
-                @enderror
             </div>
         </div>
     </div>
@@ -732,85 +668,6 @@
 
     previousCoordinatorKey = getCoordinatorKey();
     syncCoordinatorMode();
-})();
-
-(function () {
-    const projectNumberInput = document.getElementById('project_number_seq');
-    const projectNumberFeedback = document.getElementById('project-number-feedback');
-    const checkProjectNumberUrl = @json(route('dashboard.projects.check-project-number'));
-    const exceptProjectId = @json($isEditing ? $project->id : null);
-    let projectNumberAvailable = null;
-
-    async function checkProjectNumberAvailability() {
-        if (!projectNumberInput || !projectNumberFeedback) {
-            return;
-        }
-
-        const value = projectNumberInput.value.trim();
-
-        if (!value) {
-            projectNumberFeedback.textContent = '';
-            projectNumberFeedback.className = 'form-text';
-            projectNumberInput.classList.remove('is-valid', 'is-invalid');
-            projectNumberAvailable = null;
-            return;
-        }
-
-        projectNumberFeedback.textContent = 'جاري التحقق...';
-        projectNumberFeedback.className = 'form-text text-muted';
-        projectNumberInput.classList.remove('is-valid', 'is-invalid');
-
-        const params = new URLSearchParams({ project_number_seq: value });
-        if (exceptProjectId) {
-            params.set('except_id', String(exceptProjectId));
-        }
-
-        try {
-            const response = await fetch(`${checkProjectNumberUrl}?${params.toString()}`, {
-                headers: { 'Accept': 'application/json' },
-            });
-
-            if (!response.ok) {
-                throw new Error('check failed');
-            }
-
-            const data = await response.json();
-
-            if (data.sequence) {
-                projectNumberInput.value = data.sequence;
-            }
-
-            projectNumberAvailable = Boolean(data.valid && data.available);
-            projectNumberInput.classList.toggle('is-valid', projectNumberAvailable);
-            projectNumberInput.classList.toggle('is-invalid', !projectNumberAvailable);
-
-            let message = data.message || '';
-            if (!data.available && data.suggested_sequence) {
-                message += ` — اقتراح: P-${data.suggested_sequence}`;
-            }
-
-            projectNumberFeedback.textContent = message;
-            projectNumberFeedback.className = projectNumberAvailable
-                ? 'form-text text-success'
-                : 'form-text text-danger';
-        } catch (error) {
-            projectNumberAvailable = null;
-            projectNumberFeedback.textContent = 'تعذّر التحقق من الرقم، حاول مرة أخرى.';
-            projectNumberFeedback.className = 'form-text text-warning';
-        }
-    }
-
-    projectNumberInput?.addEventListener('blur', checkProjectNumberAvailability);
-
-    projectNumberInput?.closest('form')?.addEventListener('submit', function (event) {
-        if (projectNumberAvailable === false) {
-            event.preventDefault();
-            projectNumberInput.classList.add('is-invalid');
-            projectNumberFeedback.textContent = 'رقم المشروع غير متاح، غيّره قبل الحفظ.';
-            projectNumberFeedback.className = 'form-text text-danger';
-            projectNumberInput.focus();
-        }
-    });
 })();
 
 document.addEventListener('DOMContentLoaded', function () {

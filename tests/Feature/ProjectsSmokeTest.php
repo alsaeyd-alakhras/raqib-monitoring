@@ -244,9 +244,30 @@ class ProjectsSmokeTest extends TestCase
     /** @return array<string, mixed> */
     private function sampleProjectPostData(array $overrides = []): array
     {
-        return array_merge($this->sampleProjectFields($overrides), [
-            'allocation_image' => UploadedFile::fake()->image('allocation.jpg'),
-        ]);
+        return array_merge($this->sampleProjectFields($overrides), $overrides);
+    }
+
+    /** @return array<string, mixed> */
+    private function secretariatFillData(int $seq, ?UploadedFile $file = null): array
+    {
+        return [
+            'project_number_seq' => $seq,
+            'allocation_image' => $file ?? UploadedFile::fake()->image('allocation.jpg'),
+        ];
+    }
+
+    private function advanceProjectThroughSecretariat(Project $project, ?int $seq = null): void
+    {
+        $seq ??= $this->nextProjectNumberSeq();
+
+        $this->post(route('dashboard.projects.submit-to-secretariat', $project))->assertRedirect();
+        $project->refresh();
+        $this->assertSame('pending_secretariat', $project->workflow_status);
+
+        $this->post(route('dashboard.projects.fill-secretariat', $project), $this->secretariatFillData($seq))
+            ->assertRedirect();
+        $project->refresh();
+        $this->assertSame('pending_coordinator', $project->workflow_status);
     }
 
     /** @return array<int, array{value: string, person_name?: string}> */
@@ -324,24 +345,24 @@ class ProjectsSmokeTest extends TestCase
         // 1) create draft
         $this->post('/projects', $this->sampleProjectPostData([
             'project_name' => $projectName,
-            'project_number_seq' => $this->nextProjectNumberSeq(),
             'coordinator_mode' => 'person',
             'coordinator_id' => $coordinator->id,
         ]))->assertRedirect();
 
         $project = Project::where('project_name', $projectName)->firstOrFail();
         $this->assertSame('draft', $project->workflow_status);
-        $this->assertMatchesRegularExpression('/^P-\d+$/', (string) $project->project_number);
-        $this->assertStringStartsWith('projects/' . $project->project_number . '/', (string) $project->allocation_image_path);
-        $this->assertStringContainsString('allocation.', (string) $project->allocation_image_path);
+        $this->assertNull($project->project_number);
+        $this->assertNull($project->allocation_image_path);
 
         $this->get(route('dashboard.projects.show', $project))->assertStatus(200);
         $this->get(route('dashboard.projects.edit', $project))->assertStatus(200);
 
-        // 2) submit to coordinator
-        $this->post(route('dashboard.projects.submit-to-coordinator', $project))->assertRedirect();
-        $project->refresh();
-        $this->assertSame('pending_coordinator', $project->workflow_status);
+        // 2) submit to secretariat and fill allocation data
+        $projectNumberSeq = $this->nextProjectNumberSeq();
+        $this->advanceProjectThroughSecretariat($project, $projectNumberSeq);
+        $this->assertMatchesRegularExpression('/^P-\d+$/', (string) $project->project_number);
+        $this->assertStringStartsWith('projects/' . $project->project_number . '/', (string) $project->allocation_image_path);
+        $this->assertStringContainsString('allocation.', (string) $project->allocation_image_path);
 
         // 3) fill coordinator checklist
         $this->post(route('dashboard.projects.fill-coordinator', $project), ['checklist' => $this->fullChecklist()])
@@ -385,13 +406,26 @@ class ProjectsSmokeTest extends TestCase
         $this->assertMatchesRegularExpression('/^MP-\d+$/', (string) $activity->reference_code);
 
         // 6) monitor-work isolated screen
-        $this->get(route('dashboard.projects.monitor-work', $project))->assertStatus(200);
+        $this->get(route('dashboard.projects.monitor-work', $project))
+            ->assertStatus(200)
+            ->assertSee('بيانات النشاط المتبقية');
 
         $checklistMonitor = $this->fullChecklist('partial', false);
         $this->post(route('dashboard.projects.fill-monitor', $project), [
             'checklist' => $checklistMonitor,
             'monitor_notes_text' => "ملاحظة إيجابية 1\nملاحظة إيجابية 2",
             'monitor_negative_notes_text' => "ملاحظة سلبية 1",
+            'field_problem' => 0,
+            'responsible_person_id' => $pm->id,
+            'activity_date' => '2026-07-14',
+            'activity_time' => '10:30',
+            'activity_type' => 'تفتيش ميداني',
+            'subject' => 'موضوع نشاط اختباري',
+            'notes' => 'ملاحظة نشاط رقابي',
+            'action_taken' => 'إجراء متخذ تجريبي',
+            'quality_value' => 80,
+            'closure_value' => 75,
+            'deduction_value' => 0,
         ])->assertRedirect();
 
         $project->refresh();
@@ -401,6 +435,17 @@ class ProjectsSmokeTest extends TestCase
         $this->assertSame(['ملاحظة إيجابية 1', 'ملاحظة إيجابية 2'], $project->monitor_notes);
         $this->assertSame(['ملاحظة سلبية 1'], $project->monitor_negative_notes);
         $this->assertSame('in_progress', $activity->workflow_status);
+        $this->assertSame((int) $pm->id, (int) $activity->responsible_person_id);
+        $this->assertSame('2026-07-14', $activity->activity_date->format('Y-m-d'));
+        $this->assertSame('10:30', substr((string) $activity->activity_time, 0, 5));
+        $this->assertSame('تفتيش ميداني', $activity->activity_type);
+        $this->assertSame('موضوع نشاط اختباري', $activity->subject);
+        $this->assertSame('ملاحظة نشاط رقابي', $activity->notes);
+        $this->assertSame('إجراء متخذ تجريبي', $activity->action_taken);
+        $this->assertEquals(80.0, (float) $activity->quality_value);
+        $this->assertEquals(75.0, (float) $activity->closure_value);
+        $this->assertEquals(0.0, (float) $activity->deduction_value);
+        $this->assertEquals(66.5, (float) $activity->kpi_value);
 
         // 7) monitor submits to monitoring director
         $this->post(route('dashboard.projects.confirm-monitoring', $project))->assertRedirect();
@@ -544,7 +589,6 @@ class ProjectsSmokeTest extends TestCase
 
         $this->post('/projects', $this->sampleProjectPostData([
             'project_name' => 'مشروع منسق خارجي',
-            'project_number_seq' => $this->nextProjectNumberSeq(),
             'coordinator_mode' => 'external',
             'coordinator_external_name' => 'منسق خارجي تجريبي',
         ]))->assertRedirect();
@@ -554,13 +598,12 @@ class ProjectsSmokeTest extends TestCase
 
         $this->post('/projects', $this->sampleProjectPostData([
             'project_name' => 'مشروع منسق ذاتي',
-            'project_number_seq' => $this->nextProjectNumberSeq(),
             'coordinator_mode' => 'self',
         ]))->assertRedirect();
 
         $selfProject = Project::where('project_name', 'مشروع منسق ذاتي')->firstOrFail();
         $this->assertTrue($selfProject->isSelfCoordinator());
-        $this->assertMatchesRegularExpression('/^P-\d+$/', (string) $selfProject->project_number);
+        $this->assertNull($selfProject->project_number);
 
         if ($itemId) {
             ProjectChecklistValue::updateOrCreate(
@@ -571,7 +614,6 @@ class ProjectsSmokeTest extends TestCase
 
         $this->put(route('dashboard.projects.update', $selfProject), $this->sampleProjectPostData([
             'project_name' => $selfProject->project_name,
-            'project_number_seq' => Project::sequenceFromProjectNumber($selfProject->project_number),
             'coordinator_mode' => 'person',
             'coordinator_id' => $coordinator->id,
         ]))->assertRedirect();
@@ -587,17 +629,15 @@ class ProjectsSmokeTest extends TestCase
         $selfProject->delete();
     }
 
-    public function test_project_number_unique_on_update(): void
+    public function test_project_number_unique_on_secretariat_fill(): void
     {
         $user = User::first();
         $user->super_admin = 1;
         $this->actingAs($user);
 
         $pm = Person::withRole('project_manager')->first() ?? Person::first();
-        $center = Center::first();
-        $department = Department::where('center_id', $center->id)->first();
 
-        $first = Project::create([
+        Project::create([
             'project_name' => 'مشروع رقم 1',
             'project_number' => 'P-9001',
             'project_manager_id' => $pm->id,
@@ -609,28 +649,20 @@ class ProjectsSmokeTest extends TestCase
 
         $second = Project::create([
             'project_name' => 'مشروع رقم 2',
-            'project_number' => 'P-9002',
             'project_manager_id' => $pm->id,
             'coordinator_id' => $pm->id,
-            'workflow_status' => 'draft',
+            'workflow_status' => 'pending_secretariat',
             'created_by' => $user->id,
             'updated_by' => $user->id,
         ]);
 
-        $this->from(route('dashboard.projects.edit', $second))
-            ->put(route('dashboard.projects.update', $second), [
-                'project_name' => $second->project_name,
-                'project_number_seq' => 9001,
-                'project_manager_id' => $pm->id,
-                'coordinator_mode' => 'self',
-                'center_id' => $center->id,
-                'department_id' => $department->id,
-            ])
+        $this->from(route('dashboard.projects.show', $second))
+            ->post(route('dashboard.projects.fill-secretariat', $second), $this->secretariatFillData(9001))
             ->assertRedirect()
             ->assertSessionHasErrors('project_number_seq');
 
-        $first->delete();
         $second->delete();
+        Project::where('project_number', 'P-9001')->delete();
     }
 
     public function test_external_coordinator_fill_records_filled_by(): void
@@ -646,7 +678,6 @@ class ProjectsSmokeTest extends TestCase
 
         $this->post('/projects', $this->sampleProjectPostData([
             'project_name' => 'مشروع تعبئة خارجي',
-            'project_number_seq' => $this->nextProjectNumberSeq(),
             'coordinator_mode' => 'external',
             'coordinator_external_name' => 'منسق خارجي',
         ]))->assertRedirect();
@@ -676,14 +707,13 @@ class ProjectsSmokeTest extends TestCase
 
         $this->post('/projects', $this->sampleProjectPostData([
             'project_name' => $projectName,
-            'project_number_seq' => $this->nextProjectNumberSeq(),
             'coordinator_mode' => 'person',
             'coordinator_id' => $coordinator->id,
         ]))->assertRedirect();
 
         $project = Project::where('project_name', $projectName)->firstOrFail();
+        $this->advanceProjectThroughSecretariat($project);
 
-        $this->post(route('dashboard.projects.submit-to-coordinator', $project))->assertRedirect();
         $project->refresh();
         $this->assertSame('pending_coordinator', $project->workflow_status);
 
@@ -1048,7 +1078,6 @@ class ProjectsSmokeTest extends TestCase
         $response = $this->from('/projects/create')
             ->post('/projects', $this->sampleProjectPostData([
                 'project_name' => $projectName,
-                'project_number_seq' => $this->nextProjectNumberSeq() + random_int(50000, 99999),
                 'project_manager_id' => $pm->id,
                 'section_id' => $section->id,
                 'department_id' => $section->department_id,
@@ -1153,7 +1182,6 @@ class ProjectsSmokeTest extends TestCase
         $updatedName = 'مشروع محدّث من مدير الرقابة ' . uniqid();
         $this->put(route('dashboard.projects.update', $project), $this->sampleProjectPostData([
             'project_name' => $updatedName,
-            'project_number_seq' => Project::sequenceFromProjectNumber($project->project_number),
             'coordinator_mode' => 'person',
             'coordinator_id' => $coordinator->id,
         ]))->assertRedirect(route('dashboard.projects.show', $project));
@@ -1216,7 +1244,6 @@ class ProjectsSmokeTest extends TestCase
         $this->from('/projects/create')
             ->post('/projects', [
                 'project_name' => 'مشروع ناقص',
-                'project_number_seq' => $this->nextProjectNumberSeq(),
                 'coordinator_mode' => 'self',
             ])
             ->assertRedirect('/projects/create')
@@ -1228,7 +1255,7 @@ class ProjectsSmokeTest extends TestCase
                 'department_id',
                 'section_id',
                 'execution_start_date',
-                'allocation_image',
+                'estimated_duration',
             ]);
     }
 
@@ -1252,7 +1279,6 @@ class ProjectsSmokeTest extends TestCase
             $projectName = 'مشروع منسق بحساب ' . uniqid();
             $this->post('/projects', $this->sampleProjectPostData([
                 'project_name' => $projectName,
-                'project_number_seq' => $this->nextProjectNumberSeq(),
                 'project_manager_id' => $pm->id,
                 'coordinator_mode' => 'person',
                 'coordinator_id' => $coordinator->id,
@@ -1294,7 +1320,6 @@ class ProjectsSmokeTest extends TestCase
             $projectName = 'مشروع صلاحيات مدير مشروع ' . uniqid();
             $this->post('/projects', $this->sampleProjectPostData([
                 'project_name' => $projectName,
-                'project_number_seq' => $this->nextProjectNumberSeq(),
                 'project_manager_id' => $pm->id,
                 'coordinator_mode' => 'external',
                 'coordinator_external_name' => 'منسق خارجي',
@@ -1640,7 +1665,7 @@ class ProjectsSmokeTest extends TestCase
         $project->delete();
     }
 
-    public function test_project_storage_folder_renames_when_number_changes(): void
+    public function test_secretariat_fill_stores_allocation_under_project_number(): void
     {
         Storage::fake('public');
 
@@ -1652,34 +1677,72 @@ class ProjectsSmokeTest extends TestCase
 
         $this->post('/projects', $this->sampleProjectPostData([
             'project_name' => $projectName,
-            'project_number_seq' => 77001,
             'coordinator_mode' => 'self',
         ]))->assertRedirect();
 
         $project = Project::where('project_name', $projectName)->firstOrFail();
-        $this->assertSame('P-77001', $project->project_number);
+        $this->assertNull($project->project_number);
 
-        $oldPath = $project->allocation_image_path;
-        Storage::disk('public')->assertExists($oldPath);
-        Storage::disk('public')->assertExists('projects/P-77001');
+        $this->post(route('dashboard.projects.submit-to-secretariat', $project))->assertRedirect();
+        $project->refresh();
+        $this->assertSame('pending_secretariat', $project->workflow_status);
 
-        $this->put(route('dashboard.projects.update', $project), array_merge($this->sampleProjectFields([
-            'project_name' => $projectName,
-            'project_number_seq' => 77002,
-            'coordinator_mode' => 'self',
-        ]), [
-            'coordinator_id' => $project->coordinator_id,
-        ]))->assertRedirect(route('dashboard.projects.show', $project));
+        $this->post(route('dashboard.projects.fill-secretariat', $project), $this->secretariatFillData(77001))
+            ->assertRedirect(route('dashboard.projects.show', $project));
 
         $project->refresh();
-        $this->assertSame('P-77002', $project->project_number);
-        $this->assertStringStartsWith('projects/P-77002/', (string) $project->allocation_image_path);
+        $this->assertSame('P-77001', $project->project_number);
+        $this->assertStringStartsWith('projects/P-77001/', (string) $project->allocation_image_path);
         Storage::disk('public')->assertExists($project->allocation_image_path);
-        Storage::disk('public')->assertMissing('projects/P-77001');
-        Storage::disk('public')->assertMissing($oldPath);
+        Storage::disk('public')->assertExists('projects/P-77001');
 
         ProjectChecklistValue::where('project_id', $project->id)->delete();
         $project->delete();
+    }
+
+    public function test_secretariat_rbac_only_fill_secretariat_can_submit(): void
+    {
+        Storage::fake('public');
+
+        $secretariatUser = User::where('username', 'sec_hana')->first();
+        if (! $secretariatUser) {
+            $this->artisan('db:seed', ['--class' => 'DemoUsersSeeder']);
+            $secretariatUser = User::where('username', 'sec_hana')->firstOrFail();
+        }
+
+        [$pmUser, $pm] = $this->createEphemeralProjectManager([
+            'projects.view',
+            'projects.create',
+            'projects.update',
+        ]);
+
+        try {
+            $project = Project::create(array_merge($this->sampleProjectFields(), [
+                'project_name' => 'مشروع RBAC سكرتاريا ' . uniqid(),
+                'project_manager_id' => $pm->id,
+                'coordinator_id' => $pm->id,
+                'workflow_status' => 'pending_secretariat',
+                'created_by' => User::first()->id,
+                'updated_by' => User::first()->id,
+            ]));
+
+            $this->actingAs($pmUser);
+            $this->post(route('dashboard.projects.fill-secretariat', $project), $this->secretariatFillData(88099))
+                ->assertForbidden();
+
+            $this->actingAs($secretariatUser);
+            $this->post(route('dashboard.projects.fill-secretariat', $project), $this->secretariatFillData(88099))
+                ->assertRedirect();
+
+            $project->refresh();
+            $this->assertSame('pending_coordinator', $project->workflow_status);
+            $this->assertSame('P-88099', $project->project_number);
+
+            ProjectChecklistValue::where('project_id', $project->id)->delete();
+            $project->delete();
+        } finally {
+            $this->deleteEphemeralUser($pmUser);
+        }
     }
 
     public function test_closure_docs_upload_increases_readiness(): void

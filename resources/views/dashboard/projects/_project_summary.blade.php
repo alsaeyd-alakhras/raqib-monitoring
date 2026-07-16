@@ -266,7 +266,7 @@
                     </tr>
                     @endif
                     <tr>
-                        <th scope="row">المدة الزمنية المقدّرة</th>
+                        <th scope="row">المدة الزمنية المقدّرة (بالأيام)</th>
                         <td class="{{ $project->estimated_duration ? '' : 'text-empty' }}">
                             {{ $project->estimated_duration ?: '—' }}
                         </td>
@@ -309,12 +309,18 @@
                         </td>
                     </tr>
                     <tr>
-                        <th scope="row">صورة التخصيص</th>
+                        <th scope="row">مرفق التخصيص</th>
                         <td class="{{ $project->allocation_image_path ? '' : 'text-empty' }}">
                             @if ($project->allocation_image_path)
-                                <a href="{{ $project->allocationImageUrl() }}" target="_blank" rel="noopener">
-                                    عرض الصورة
-                                </a>
+                                @if ($project->isAllocationImagePreview())
+                                    <a href="{{ $project->allocationImageUrl() }}" target="_blank" rel="noopener">
+                                        عرض الصورة
+                                    </a>
+                                @else
+                                    <a href="{{ $project->allocationImageUrl() }}" target="_blank" rel="noopener">
+                                        {{ $project->allocationAttachmentBasename() }}
+                                    </a>
+                                @endif
                             @else
                                 —
                             @endif

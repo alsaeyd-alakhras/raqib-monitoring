@@ -43,7 +43,7 @@
                     'pending_monitoring_confirmation' => 'warning',
                     default => 'info',
                 } }}">{{ $statusLabels[$project->workflow_status] ?? $project->workflow_status }}</span>
-                · {{ $project->project_number }}
+                · {{ $project->project_number ?: '—' }}
             </p>
         </div>
         <div class="d-flex gap-2 flex-wrap">
@@ -108,6 +108,12 @@
                 </div>
             @endif
 
+            @if ($project->workflow_status === 'pending_secretariat')
+                <div class="alert alert-info py-2 mb-3">
+                    المشروع بانتظار سكرتاريا المشاريع لتعبئة رقم التخصيص ومرفق التخصيص قبل إرساله للمنسق.
+                </div>
+            @endif
+
             @if (in_array($project->workflow_status, ['pending_coordinator', 'coordinator_filling'], true) && $project->hasCoordinatorAssignment())
                 <div class="alert alert-info py-2 mb-3">
                     @if ($project->workflow_status === 'pending_coordinator')
@@ -126,10 +132,14 @@
             @endif
 
             @if ($project->workflow_status === 'draft' && $canUpdate)
-                <form action="{{ route('dashboard.projects.submit-to-coordinator', $project) }}" method="post" class="d-inline">
+                <form action="{{ route('dashboard.projects.submit-to-secretariat', $project) }}" method="post" class="d-inline">
                     @csrf
-                    <button type="submit" class="btn btn-primary">إرسال للمنسق</button>
+                    <button type="submit" class="btn btn-primary">إرسال لسكرتاريا المشاريع</button>
                 </form>
+            @endif
+
+            @if ($project->workflow_status === 'pending_secretariat' && auth()->user()?->can('fill_secretariat', 'App\Models\Project'))
+                @include('dashboard.projects._secretariat_form')
             @endif
 
             @if ($canSubmitToProjectManager ?? false)

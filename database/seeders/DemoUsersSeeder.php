@@ -83,6 +83,26 @@ class DemoUsersSeeder extends Seeder
                 'abilities' => ['projects.view', 'projects.create', 'projects.update'],
             ],
 
+            // === سكرتاريا المشاريع (2) ===
+            [
+                'name' => 'هناء أبو راس',
+                'username' => 'sec_hana',
+                'email' => 'secretariat.hana@raqib.demo',
+                'role' => 'project_secretariat',
+                'department_id' => $projectsDeptId,
+                'job_title' => 'سكرتاريا المشاريع',
+                'abilities' => ['projects.view', 'projects.fill_secretariat'],
+            ],
+            [
+                'name' => 'ماجد الشاعر',
+                'username' => 'sec_majed',
+                'email' => 'secretariat.majed@raqib.demo',
+                'role' => 'project_secretariat',
+                'department_id' => $projectsDeptId,
+                'job_title' => 'سكرتاريا المشاريع',
+                'abilities' => ['projects.view', 'projects.fill_secretariat'],
+            ],
+
             // === منسقون (3) ===
             [
                 'name' => 'ليلى حمدان',

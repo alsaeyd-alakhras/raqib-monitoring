@@ -27,10 +27,15 @@ use Yajra\DataTables\Facades\DataTables;
 class ProjectController extends Controller
 {
     private const STATUSES = [
-        'draft', 'pending_coordinator', 'coordinator_filling',
+        'draft', 'pending_secretariat', 'pending_coordinator', 'coordinator_filling',
         'pending_project_manager', 'pending_section_manager', 'pending_dept_manager', 'pending_monitoring_manager',
         'monitoring_in_progress', 'pending_monitoring_confirmation',
         'passage_complete', 'rejected',
+    ];
+
+    /** @var list<string> */
+    private const ALLOCATION_ATTACHMENT_MIMES = [
+        'jpeg', 'png', 'jpg', 'webp', 'pdf', 'doc', 'docx', 'xls', 'xlsx',
     ];
 
     public function index(Request $request): View|JsonResponse
@@ -203,9 +208,8 @@ class ProjectController extends Controller
         $this->authorize('create', Project::class);
 
         $validated = $this->validateProject($request);
-        $validated['project_number'] = $this->resolveProjectNumberFromValidated($validated);
-        unset($validated['project_number_seq']);
-        $validated = $this->mergeAllocationImageUpload($request, $validated, projectNumber: $validated['project_number']);
+        unset($validated['project_number_seq'], $validated['allocation_image']);
+        $validated['project_number'] = null;
         $validated['workflow_status'] = 'draft';
         $validated['created_by'] = auth()->id();
         $validated['updated_by'] = auth()->id();
@@ -292,23 +296,10 @@ class ProjectController extends Controller
 
         $previousCoordinatorId = $project->coordinator_id;
         $previousExternalName = $project->coordinator_external_name;
-        $previousProjectNumber = $project->project_number;
 
         $validated = $this->validateProject($request, $project);
-        $validated['project_number'] = $this->resolveProjectNumberFromValidated($validated, $project);
-        $newProjectNumber = $validated['project_number'];
-        unset($validated['project_number_seq']);
-
-        $relocatedImagePath = $project->relocateStorageOnNumberChange(
-            (string) $previousProjectNumber,
-            (string) $newProjectNumber
-        );
-
-        if ($relocatedImagePath !== null) {
-            $validated['allocation_image_path'] = $relocatedImagePath;
-        }
-
-        $validated = $this->mergeAllocationImageUpload($request, $validated, $project, $newProjectNumber);
+        unset($validated['project_number_seq'], $validated['allocation_image']);
+        $validated['project_number'] = $project->project_number;
         $validated['updated_by'] = auth()->id();
 
         $project->update($validated);
@@ -344,6 +335,56 @@ class ProjectController extends Controller
     }
 
     /* ===================== Workflow: السلسلة الأولى ===================== */
+
+    public function submitToSecretariat(Project $project): RedirectResponse
+    {
+        $this->authorize('update', Project::class);
+        $this->guardStatus($project, ['draft']);
+
+        if (! $project->hasCoordinatorAssignment()) {
+            return back()->withErrors(['coordinator_mode' => 'يجب تحديد المنسق (من النظام، خارجي، أو أنت كمنسق) قبل الإرسال.']);
+        }
+
+        $project->update([
+            'workflow_status' => 'pending_secretariat',
+            'secretariat_submitted_at' => now(),
+            'secretariat_submitted_by' => auth()->id(),
+            'updated_by' => auth()->id(),
+        ]);
+        $this->clearProjectReturnNotice($project);
+
+        return back()->with('success', 'تم إرسال المشروع لسكرتاريا المشاريع.');
+    }
+
+    public function fillSecretariat(Request $request, Project $project): RedirectResponse
+    {
+        $this->authorize('fill_secretariat', Project::class);
+        $this->guardStatus($project, ['pending_secretariat']);
+
+        $validated = $this->validateSecretariatFill($request, $project);
+        $projectNumber = Project::formatFromSequence((int) $validated['project_number_seq']);
+
+        $payload = [
+            'project_number' => $projectNumber,
+            'workflow_status' => 'pending_coordinator',
+            'secretariat_filled_at' => now(),
+            'secretariat_filled_by' => auth()->id(),
+            'coordinator_submitted_at' => now(),
+            'coordinator_submitted_by' => auth()->id(),
+            'updated_by' => auth()->id(),
+        ];
+
+        $relocatedPath = $project->relocateStorageToProjectNumber($projectNumber);
+        if ($relocatedPath !== null) {
+            $payload['allocation_image_path'] = $relocatedPath;
+        }
+
+        $payload = $this->mergeAllocationImageUpload($request, $payload, $project, $projectNumber);
+        $project->update($payload);
+        $this->clearProjectReturnNotice($project);
+
+        return back()->with('success', 'تم حفظ بيانات التخصيص وإرسال المشروع للمنسق.');
+    }
 
     public function submitToCoordinator(Project $project): RedirectResponse
     {
@@ -618,7 +659,8 @@ class ProjectController extends Controller
         // عزل بيانات المنسق على مستوى الاستعلام: لا يُحمَّل coordinator_value إطلاقاً
         $project->loadMissing([
             'center', 'department', 'section', 'funder', 'procurementRep',
-            'projectManager.department', 'coordinator', 'primaryMonitoringActivity.passageCompletedByUser',
+            'projectManager.department', 'coordinator', 'primaryMonitoringActivity.responsiblePerson',
+            'primaryMonitoringActivity.passageCompletedByUser',
             'coordinatorSubmittedByUser', 'submittedToProjectManagerByUser', 'submittedToSectionManagerByUser',
             'sectionManagerApprovedByUser', 'deptManagerApprovedByUser', 'monitoringManagerReceivedByUser',
             'monitorSubmittedByUser', 'coordinatorFilledByUser',
@@ -656,6 +698,9 @@ class ProjectController extends Controller
             'approverDepartmentManagerLabel' => $project->approverDepartmentManagerLabel(),
             'projectManagerDepartmentName' => $project->projectManagerDepartmentName(),
             'readinessBreakdown' => $project->readinessBreakdown(),
+            'primaryActivity' => $project->primaryMonitoringActivity,
+            'people' => Person::orderBy('name')->get(),
+            'activityTypes' => $this->constantOptions('activity_types'),
         ]);
     }
 
@@ -671,7 +716,7 @@ class ProjectController extends Controller
             'monitor_notes_text' => ['nullable', 'string'],
             'monitor_negative_notes_text' => ['nullable', 'string'],
             'monitor_recommendations_text' => ['nullable', 'string'],
-        ]);
+        ] + $this->monitorActivityFieldRules());
 
         $project->update([
             'monitor_notes' => $this->linesToArray($validated['monitor_notes_text'] ?? ''),
@@ -681,6 +726,7 @@ class ProjectController extends Controller
         ]);
 
         $project->recalculateReadiness();
+        $this->savePrimaryActivityFields($project, $validated);
         $this->unlockMonitorSubmit($project);
 
         return redirect()
@@ -1406,6 +1452,8 @@ class ProjectController extends Controller
             'canViewMonitoringStatusPanel' => $project->canViewMonitoringStatusPanel(auth()->user()),
             'canViewMergedChecklist' => $this->canViewMergedChecklist($project),
             'canFillClosureDocs' => $canManageCoordinatorColumn && $project->coordinatorCanFillClosureDocs(),
+            'nextProjectNumberSeq' => Project::sequenceFromProjectNumber(Project::generateProjectNumber()),
+            'checkProjectNumberUrl' => route('dashboard.projects.check-project-number'),
             'closureDocItems' => $groups->flatMap(fn ($group) => $group->items)->filter(fn ($item) => $item->has_file_field)->values(),
             'closureLateScore' => Project::closureLateScore(),
             'defaultMonitoringDate' => $project->execution_start_date?->format('Y-m-d')
@@ -1495,6 +1543,52 @@ class ProjectController extends Controller
         $decoded = is_string($value) ? json_decode($value, true) : $value;
 
         return is_array($decoded) ? $decoded : [];
+    }
+
+    /** @return array<string, mixed> */
+    private function monitorActivityFieldRules(): array
+    {
+        return [
+            'responsible_person_id' => ['nullable', 'exists:people,id'],
+            'activity_date' => ['nullable', 'date'],
+            'activity_time' => ['nullable', 'date_format:H:i'],
+            'activity_type' => ['nullable', 'string'],
+            'subject' => ['nullable', 'string'],
+            'notes' => ['nullable', 'string'],
+            'field_problem' => ['required', 'boolean'],
+            'action_taken' => ['nullable', 'string'],
+            'quality_value' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'closure_value' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'deduction_value' => ['nullable', 'numeric', 'max:0'],
+        ];
+    }
+
+    /** @param  array<string, mixed>  $validated */
+    private function savePrimaryActivityFields(Project $project, array $validated): void
+    {
+        $activity = $project->primaryMonitoringActivity;
+
+        if (! $activity) {
+            return;
+        }
+
+        $activityFields = collect($validated)->only([
+            'responsible_person_id',
+            'activity_date',
+            'activity_time',
+            'activity_type',
+            'subject',
+            'notes',
+            'field_problem',
+            'action_taken',
+            'quality_value',
+            'closure_value',
+            'deduction_value',
+        ])->map(fn ($value) => $value === '' ? null : $value)->all();
+
+        $activityFields['updated_by'] = auth()->id();
+
+        $activity->update($activityFields);
     }
 
     private function authorizeSectionApproval(Project $project): void
@@ -1892,26 +1986,58 @@ class ProjectController extends Controller
             'net_amount' => ['nullable', 'numeric'],
             'exchange_rate' => ['nullable', 'numeric', 'min:0'],
             'execution_amount_ils' => ['nullable', 'numeric', 'min:0'],
-            'allocation_image' => [
-                $project && $project->allocation_image_path ? 'nullable' : 'required',
-                'image',
-                'mimes:jpeg,png,jpg,webp',
-                'max:5120',
-            ],
         ];
-
-        $rules['project_number_seq'] = ['required', 'integer', 'min:1'];
 
         return $rules;
     }
 
-    private function resolveProjectNumberFromValidated(array $validated, ?Project $project = null): string
+    /** @return array<string, mixed> */
+    private function secretariatFillRules(Project $project): array
+    {
+        return [
+            'project_number_seq' => ['required', 'integer', 'min:1'],
+            'allocation_image' => [
+                $project->allocation_image_path ? 'nullable' : 'required',
+                'file',
+                'mimes:' . implode(',', self::ALLOCATION_ATTACHMENT_MIMES),
+                'max:10240',
+            ],
+        ];
+    }
+
+    /** @return array<string, mixed> */
+    private function validateSecretariatFill(Request $request, Project $project): array
+    {
+        $validator = Validator::make($request->all(), $this->secretariatFillRules($project), [
+            'project_number_seq.required' => 'رقم المشروع مطلوب.',
+            'project_number_seq.integer' => 'رقم المشروع يجب أن يكون عدداً صحيحاً.',
+            'project_number_seq.min' => 'رقم المشروع يجب أن يكون 1 على الأقل.',
+            'allocation_image.required' => 'مرفق التخصيص مطلوب.',
+        ]);
+
+        $validator->after(function ($validator) use ($request, $project) {
+            if ($request->filled('project_number_seq')) {
+                $fullNumber = Project::formatFromSequence((int) $request->input('project_number_seq'));
+
+                if (! Project::isProjectNumberAvailable($fullNumber, $project->id)) {
+                    $validator->errors()->add(
+                        'project_number_seq',
+                        'رقم المشروع مستخدم مسبقاً، اختر رقماً آخر.'
+                    );
+                }
+            }
+        });
+
+        return $validator->validate();
+    }
+
+    private function resolveProjectNumberFromValidated(array $validated, ?Project $project = null): ?string
     {
         if (isset($validated['project_number_seq'])) {
             return Project::formatFromSequence((int) $validated['project_number_seq']);
         }
 
-        return $project?->project_number ?? Project::generateProjectNumber();
+        return $project?->project_number;
     }
 
     private function validateProject(Request $request, ?Project $project = null): array
@@ -1934,9 +2060,7 @@ class ProjectController extends Controller
         }
 
         $validator = Validator::make($request->all(), $rules, [
-            'project_number_seq.required' => 'رقم المشروع مطلوب.',
-            'project_number_seq.integer' => 'رقم المشروع يجب أن يكون عدداً صحيحاً.',
-            'project_number_seq.min' => 'رقم المشروع يجب أن يكون 1 على الأقل.',
+            'estimated_duration.required' => 'المدة الزمنية المقدّرة مطلوبة.',
         ]);
 
         $validator->after(function ($validator) use ($request, $currentPerson, $project, $isMonitoringDirector) {
@@ -1970,11 +2094,10 @@ class ProjectController extends Controller
                 }
             }
 
-            if ($request->filled('project_number_seq')) {
+            if ($request->filled('project_number_seq') && $project === null) {
                 $fullNumber = Project::formatFromSequence((int) $request->input('project_number_seq'));
-                $exceptId = $project?->id;
 
-                if (! Project::isProjectNumberAvailable($fullNumber, $exceptId)) {
+                if (! Project::isProjectNumberAvailable($fullNumber)) {
                     $validator->errors()->add(
                         'project_number_seq',
                         'رقم المشروع مستخدم مسبقاً، اختر رقماً آخر.'

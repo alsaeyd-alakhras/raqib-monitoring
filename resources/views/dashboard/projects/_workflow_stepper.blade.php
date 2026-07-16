@@ -1,6 +1,7 @@
 @php
     $workflowSteps = [
         'draft',
+        'pending_secretariat',
         'pending_coordinator',
         'coordinator_filling',
         'pending_project_manager',

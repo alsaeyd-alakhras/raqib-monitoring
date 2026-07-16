@@ -57,6 +57,7 @@ class HomeController extends Controller
         $base = [
             'total' => $projects->count(),
             'draft' => $projects->where('workflow_status', 'draft')->count(),
+            'secretariat' => $projects->where('workflow_status', 'pending_secretariat')->count(),
             'coordinator' => $projects->whereIn('workflow_status', ['pending_coordinator', 'coordinator_filling'])->count(),
             'pending_pm' => $projects->where('workflow_status', 'pending_project_manager')->count(),
             'pending_section' => $projects->where('workflow_status', 'pending_section_manager')->count(),
@@ -74,6 +75,7 @@ class HomeController extends Controller
                 'cards' => [
                     ['title' => 'إجمالي مشاريعي', 'value' => $base['total'], 'class' => 'primary'],
                     ['title' => 'مسودات', 'value' => $base['draft'], 'class' => 'secondary'],
+                    ['title' => 'عند السكرتاريا', 'value' => $base['secretariat'], 'class' => 'info'],
                     ['title' => 'بانتظار المنسق', 'value' => $base['coordinator'], 'class' => 'info'],
                     ['title' => 'بانتظار مراجعتي', 'value' => $base['pending_pm'], 'class' => 'warning'],
                     ['title' => 'قيد المراقبة', 'value' => $base['monitoring'], 'class' => 'warning'],
@@ -128,11 +130,20 @@ class HomeController extends Controller
                     ['title' => 'مكتملة', 'value' => $base['complete'], 'class' => 'success'],
                 ],
             ],
+            'project_secretariat' => [
+                'label' => 'سكرتاريا المشاريع',
+                'cards' => [
+                    ['title' => 'بانتظار تعبئتي', 'value' => $base['secretariat'], 'class' => 'warning'],
+                    ['title' => 'بانتظار المنسق', 'value' => $base['coordinator'], 'class' => 'info'],
+                    ['title' => 'قيد الدورة', 'value' => $base['pending_pm'] + $base['pending_section'] + $base['pending_dept'] + $base['pending_monitoring'] + $base['monitoring'], 'class' => 'primary'],
+                    ['title' => 'مكتملة', 'value' => $base['complete'], 'class' => 'success'],
+                ],
+            ],
             'general_management' => [
                 'label' => 'نظرة عامة',
                 'cards' => [
                     ['title' => 'إجمالي المشاريع', 'value' => $base['total'], 'class' => 'primary'],
-                    ['title' => 'قيد التنفيذ', 'value' => $base['coordinator'] + $base['pending_pm'] + $base['pending_section'] + $base['pending_dept'] + $base['pending_monitoring'] + $base['monitoring'], 'class' => 'info'],
+                    ['title' => 'قيد التنفيذ', 'value' => $base['secretariat'] + $base['coordinator'] + $base['pending_pm'] + $base['pending_section'] + $base['pending_dept'] + $base['pending_monitoring'] + $base['monitoring'], 'class' => 'info'],
                     ['title' => 'مكتملة', 'value' => $base['complete'], 'class' => 'success'],
                     ['title' => 'مرفوضة', 'value' => $base['rejected'], 'class' => 'danger'],
                 ],

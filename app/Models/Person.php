@@ -13,6 +13,7 @@ class Person extends Model
 
     public const ROLES = [
         'project_manager',
+        'project_secretariat',
         'coordinator',
         'section_manager',
         'department_manager',
@@ -39,6 +40,7 @@ class Person extends Model
     {
         return [
             'project_manager' => 'مدير مشروع',
+            'project_secretariat' => 'سكرتاريا المشاريع',
             'coordinator' => 'منسق',
             'section_manager' => 'مدير قسم',
             'department_manager' => 'مدير دائرة',

@@ -40,15 +40,16 @@
         </div>
     </div>
 
-    <div class="card mb-4">
-        <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
-            <h5 class="mb-0">قائمة التحقق — عمود المراقب</h5>
-            <span>نسبة الجاهزية: <strong class="checklist-overall-pct">{{ $project->monitor_readiness_pct !== null ? $project->monitor_readiness_pct . '%' : '—' }}</strong></span>
-        </div>
-        <div class="card-body">
-            @if (($canEditMonitorColumn ?? true) && ($isAssignedMonitor ?? true))
-                <form action="{{ route('dashboard.projects.fill-monitor', $project) }}" method="post">
-                    @csrf
+    @if (($canEditMonitorColumn ?? true) && ($isAssignedMonitor ?? true))
+        <form action="{{ route('dashboard.projects.fill-monitor', $project) }}" method="post">
+            @csrf
+
+            <div class="card mb-4">
+                <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <h5 class="mb-0">قائمة التحقق — عمود المراقب</h5>
+                    <span>نسبة الجاهزية: <strong class="checklist-overall-pct">{{ $project->monitor_readiness_pct !== null ? $project->monitor_readiness_pct . '%' : '—' }}</strong></span>
+                </div>
+                <div class="card-body">
                     @include('dashboard.projects._checklist_edit', [
                         'groups' => $groups,
                         'values' => $values,
@@ -58,12 +59,35 @@
                     ])
 
                     @include('dashboard.projects._monitor_notes_editor', ['project' => $project])
+                </div>
+            </div>
 
-                    <button type="submit" class="btn btn-outline-primary mt-3">
-                        <i class="fa-solid fa-floppy-disk me-1"></i> حفظ التعديلات
-                    </button>
-                </form>
-            @else
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">بيانات النشاط المتبقية</h5>
+                </div>
+                <div class="card-body">
+                    @include('dashboard.projects._activity_fields_editor', [
+                        'activity' => $primaryActivity ?? null,
+                        'people' => $people ?? collect(),
+                        'activityTypes' => $activityTypes ?? [],
+                    ])
+                </div>
+            </div>
+
+            <div class="mb-4">
+                <button type="submit" class="btn btn-outline-primary">
+                    <i class="fa-solid fa-floppy-disk me-1"></i> حفظ التعديلات
+                </button>
+            </div>
+        </form>
+    @else
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <h5 class="mb-0">قائمة التحقق — عمود المراقب</h5>
+                <span>نسبة الجاهزية: <strong>{{ $project->monitor_readiness_pct !== null ? $project->monitor_readiness_pct . '%' : '—' }}</strong></span>
+            </div>
+            <div class="card-body">
                 @include('dashboard.projects._checklist_display', [
                     'groups' => $groups,
                     'values' => $values,
@@ -72,9 +96,20 @@
                     'readinessBreakdown' => $readinessBreakdown ?? null,
                 ])
                 @include('dashboard.projects._monitor_notes_display', ['project' => $project])
-            @endif
+            </div>
         </div>
-    </div>
+
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">بيانات النشاط المتبقية</h5>
+            </div>
+            <div class="card-body">
+                @include('dashboard.projects._activity_fields_display', [
+                    'activity' => $primaryActivity ?? null,
+                ])
+            </div>
+        </div>
+    @endif
 
     {{-- خطوة الإرسال — تظهر بعد حفظ عمل المراقب أولاً --}}
     @if ($project->workflow_status === 'passage_complete' || $awaitingDirector || ($canShowMonitorSubmitSection ?? false))
@@ -103,6 +138,13 @@
                             — لا يمنع الإرسال.
                         </p>
                     @endif
+                    @if ($primaryActivity ?? null)
+                        <p class="small mb-3">
+                            <strong>حالة التحقق (معلوماتي):</strong>
+                            {{ $primaryActivity->verification_status }}
+                            — لا يمنع الإرسال.
+                        </p>
+                    @endif
                     <form action="{{ route('dashboard.projects.confirm-monitoring', $project) }}" method="post" data-confirm="إرسال عمل المراقب لمدير الرقابة العامة؟ لن تستطيع تعديل البيانات بعد الإرسال إلا بإرجاع المشروع." data-confirm-title="تأكيد الإرسال" data-confirm-variant="primary">
                         @csrf
                         <button type="submit" class="btn btn-success btn-lg">
@@ -114,7 +156,7 @@
         </div>
     @elseif (($canEditMonitorColumn ?? false) && ($isAssignedMonitor ?? true))
         <div class="alert alert-info mb-4">
-            <strong>الخطوة التالية:</strong> احفظ قائمة التحقق والملاحظات من الأعلى أولاً، ثم سيظهر خيار الإرسال لمدير الرقابة العامة في هذه الصفحة.
+            <strong>الخطوة التالية:</strong> احفظ قائمة التحقق والملاحظات وبيانات النشاط من الأعلى أولاً، ثم سيظهر خيار الإرسال لمدير الرقابة العامة في هذه الصفحة.
         </div>
     @endif
 
