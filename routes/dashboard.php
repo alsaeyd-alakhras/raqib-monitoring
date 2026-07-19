@@ -10,9 +10,11 @@ use App\Http\Controllers\Dashboard\ChecklistAdminController;
 use App\Http\Controllers\Dashboard\ConstantController;
 use App\Http\Controllers\Dashboard\CurrencyController;
 use App\Http\Controllers\Dashboard\DepartmentController;
+use App\Http\Controllers\Dashboard\DirectoryController;
 use App\Http\Controllers\Dashboard\FunderController;
 use App\Http\Controllers\Dashboard\HomeController;
 use App\Http\Controllers\Dashboard\MonitoringActivityController;
+use App\Http\Controllers\Dashboard\OrganizationalStructureController;
 use App\Http\Controllers\Dashboard\PersonController;
 use App\Http\Controllers\Dashboard\ProjectController;
 use App\Http\Controllers\Dashboard\SectionController;
@@ -63,6 +65,23 @@ Route::group([
     ]);
 
     // Foundation — organizational hierarchy + people + funders ************************
+    Route::get('org-structure', [OrganizationalStructureController::class, 'index'])->name('org-structure.index');
+    Route::get('org-structure/tree', [OrganizationalStructureController::class, 'tree'])->name('org-structure.tree');
+    Route::get('org-structure/node/{type}/{id}', [OrganizationalStructureController::class, 'node'])->name('org-structure.node');
+    Route::post('org-structure', [OrganizationalStructureController::class, 'store'])->name('org-structure.store');
+    Route::put('org-structure/{type}/{id}', [OrganizationalStructureController::class, 'update'])->name('org-structure.update');
+    Route::delete('org-structure/{type}/{id}', [OrganizationalStructureController::class, 'destroy'])->name('org-structure.destroy');
+
+    Route::get('directory', [DirectoryController::class, 'index'])->name('directory.index');
+    Route::get('directory/data', [DirectoryController::class, 'data'])->name('directory.data');
+    Route::get('directory-filters/{column}', [DirectoryController::class, 'getFilterOptions'])->name('directory.filters');
+    Route::get('directory/role-abilities/{role?}', [DirectoryController::class, 'roleAbilities'])->name('directory.role-abilities');
+    Route::get('directory/create', [DirectoryController::class, 'create'])->name('directory.create');
+    Route::post('directory', [DirectoryController::class, 'store'])->name('directory.store');
+    Route::get('directory/{record}/edit', [DirectoryController::class, 'edit'])->name('directory.edit');
+    Route::put('directory/{record}', [DirectoryController::class, 'update'])->name('directory.update');
+    Route::delete('directory/{record}', [DirectoryController::class, 'destroy'])->name('directory.destroy');
+
     Route::get('departments/by-center/{center}', [DepartmentController::class, 'byCenter'])->name('departments.by-center');
     Route::get('sections/by-department/{department}', [SectionController::class, 'byDepartment'])->name('sections.by-department');
     Route::get('sections/for-project/{department}', [SectionController::class, 'forProject'])->name('sections.for-project');

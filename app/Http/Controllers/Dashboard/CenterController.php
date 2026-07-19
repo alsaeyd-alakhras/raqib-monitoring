@@ -10,20 +10,18 @@ use Illuminate\View\View;
 
 class CenterController extends Controller
 {
-    public function index(): View
+    public function index(): View|RedirectResponse
     {
         $this->authorize('view', Center::class);
 
-        $centers = Center::orderBy('name')->paginate(15);
-
-        return view('dashboard.centers.index', compact('centers'));
+        return redirect()->route('dashboard.org-structure.index');
     }
 
-    public function create(): View
+    public function create(): RedirectResponse
     {
         $this->authorize('create', Center::class);
 
-        return view('dashboard.centers.create');
+        return redirect()->route('dashboard.org-structure.index');
     }
 
     public function store(Request $request): RedirectResponse
@@ -37,15 +35,15 @@ class CenterController extends Controller
         Center::create($validated);
 
         return redirect()
-            ->route('dashboard.centers.index')
+            ->route('dashboard.org-structure.index')
             ->with('success', 'تم إنشاء المركز بنجاح.');
     }
 
-    public function edit(Center $center): View
+    public function edit(Center $center): RedirectResponse
     {
         $this->authorize('update', Center::class);
 
-        return view('dashboard.centers.edit', compact('center'));
+        return redirect()->route('dashboard.org-structure.index');
     }
 
     public function update(Request $request, Center $center): RedirectResponse
@@ -59,7 +57,7 @@ class CenterController extends Controller
         $center->update($validated);
 
         return redirect()
-            ->route('dashboard.centers.index')
+            ->route('dashboard.org-structure.index')
             ->with('success', 'تم تحديث المركز بنجاح.');
     }
 
@@ -70,7 +68,7 @@ class CenterController extends Controller
         $center->delete();
 
         return redirect()
-            ->route('dashboard.centers.index')
+            ->route('dashboard.org-structure.index')
             ->with('success', 'تم حذف المركز بنجاح.');
     }
 }

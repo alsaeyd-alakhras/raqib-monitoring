@@ -12,26 +12,18 @@ use Illuminate\View\View;
 
 class SectionController extends Controller
 {
-    public function index(): View
+    public function index(): View|RedirectResponse
     {
         $this->authorize('view', Section::class);
 
-        $sections = Section::with(['department.center'])
-            ->orderBy('name')
-            ->paginate(15);
-
-        return view('dashboard.sections.index', compact('sections'));
+        return redirect()->route('dashboard.org-structure.index');
     }
 
-    public function create(): View
+    public function create(): RedirectResponse
     {
         $this->authorize('create', Section::class);
 
-        $departments = Department::with('center')
-            ->orderBy('name')
-            ->get();
-
-        return view('dashboard.sections.create', compact('departments'));
+        return redirect()->route('dashboard.org-structure.index');
     }
 
     public function store(Request $request): RedirectResponse
@@ -46,19 +38,15 @@ class SectionController extends Controller
         Section::create($validated);
 
         return redirect()
-            ->route('dashboard.sections.index')
-            ->with('success', 'تم إنشاء الشعبة بنجاح.');
+            ->route('dashboard.org-structure.index')
+            ->with('success', 'تم إنشاء القسم بنجاح.');
     }
 
-    public function edit(Section $section): View
+    public function edit(Section $section): RedirectResponse
     {
         $this->authorize('update', Section::class);
 
-        $departments = Department::with('center')
-            ->orderBy('name')
-            ->get();
-
-        return view('dashboard.sections.edit', compact('section', 'departments'));
+        return redirect()->route('dashboard.org-structure.index');
     }
 
     public function update(Request $request, Section $section): RedirectResponse
@@ -73,8 +61,8 @@ class SectionController extends Controller
         $section->update($validated);
 
         return redirect()
-            ->route('dashboard.sections.index')
-            ->with('success', 'تم تحديث الشعبة بنجاح.');
+            ->route('dashboard.org-structure.index')
+            ->with('success', 'تم تحديث القسم بنجاح.');
     }
 
     public function destroy(Section $section): RedirectResponse
@@ -84,8 +72,8 @@ class SectionController extends Controller
         $section->delete();
 
         return redirect()
-            ->route('dashboard.sections.index')
-            ->with('success', 'تم حذف الشعبة بنجاح.');
+            ->route('dashboard.org-structure.index')
+            ->with('success', 'تم حذف القسم بنجاح.');
     }
 
     public function byDepartment(Request $request): JsonResponse

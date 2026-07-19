@@ -26,8 +26,8 @@ class UserController extends Controller
     public function index()
     {
         $this->authorize('view', User::class);
-        $users = User::paginate(10);
-        return view('dashboard.users.index', compact('users'));
+
+        return redirect()->route('dashboard.directory.index');
     }
 
     /**
@@ -36,8 +36,8 @@ class UserController extends Controller
     public function create(Request $request)
     {
         $this->authorize('create', User::class);
-        $user = new User();
-        return view('dashboard.users.create', compact('user'));
+
+        return redirect()->route('dashboard.directory.create', ['mode' => 'user_only']);
     }
 
     /**
@@ -83,7 +83,7 @@ class UserController extends Controller
             DB::rollBack();
             return redirect()->back()->with('error', $e->getMessage());
         }
-        return redirect()->route('dashboard.users.index')->with('success', 'تم اضافة مستخدم جديد');
+        return redirect()->route('dashboard.directory.index')->with('success', 'تم اضافة مستخدم جديد');
     }
 
     /**
@@ -151,8 +151,12 @@ class UserController extends Controller
     public function edit(Request $request, User $user)
     {
         $this->authorize('update', User::class);
-        $btn_label = "تعديل";
-        return view('dashboard.users.edit', compact('user', 'btn_label'));
+
+        if ($user->person) {
+            return redirect()->route('dashboard.directory.edit', 'person:' . $user->person->id);
+        }
+
+        return redirect()->route('dashboard.directory.edit', 'user:' . $user->id);
     }
 
     /**
@@ -284,7 +288,7 @@ class UserController extends Controller
             DB::rollBack();
             throw $e;
         }
-        return redirect()->route('dashboard.users.index')->with('success', 'تم تعديل المستخدم');
+        return redirect()->route('dashboard.directory.index')->with('success', 'تم تعديل المستخدم');
     }
 
     private function normalizeAbilitiesForUserType(string $userType, array $abilities): array
@@ -330,6 +334,6 @@ class UserController extends Controller
             Storage::disk('public')->delete($user->avatar);
         }
         $user->delete();
-        return redirect()->route('dashboard.users.index')->with('success', 'تم حذف المستخدم');
+        return redirect()->route('dashboard.directory.index')->with('success', 'تم حذف المستخدم');
     }
 }

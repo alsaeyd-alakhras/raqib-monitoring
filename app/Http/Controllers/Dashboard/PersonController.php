@@ -19,21 +19,14 @@ class PersonController extends Controller
     {
         $this->authorize('view', Person::class);
 
-        $people = Person::with(['user', 'department', 'section'])
-            ->visibleToUser(auth()->user())
-            ->orderBy('name')
-            ->paginate(15);
-
-        $sectionManagerNotice = $this->sectionManagerPeopleNotice($people);
-
-        return view('dashboard.people.index', compact('people', 'sectionManagerNotice'));
+        return redirect()->route('dashboard.directory.index');
     }
 
     public function create()
     {
         $this->authorize('create', Person::class);
 
-        return view('dashboard.people.create', $this->formData());
+        return redirect()->route('dashboard.directory.create');
     }
 
     public function store(Request $request)
@@ -45,7 +38,7 @@ class PersonController extends Controller
         Person::create($validated);
 
         return redirect()
-            ->route('dashboard.people.index')
+            ->route('dashboard.directory.index')
             ->with('success', 'تم إضافة الشخص بنجاح.');
     }
 
@@ -60,7 +53,7 @@ class PersonController extends Controller
                 ->with('info', 'لتعديل بياناتك الشخصية استخدم الملف الشخصي من القائمة العلوية.');
         }
 
-        return view('dashboard.people.edit', $this->formData($person) + ['person' => $person]);
+        return redirect()->route('dashboard.directory.edit', 'person:' . $person->id);
     }
 
     public function update(Request $request, Person $person)
@@ -79,7 +72,7 @@ class PersonController extends Controller
         $person->update($validated);
 
         return redirect()
-            ->route('dashboard.people.index')
+            ->route('dashboard.directory.index')
             ->with('success', 'تم تعديل بيانات الشخص بنجاح.');
     }
 
@@ -91,7 +84,7 @@ class PersonController extends Controller
         $person->delete();
 
         return redirect()
-            ->route('dashboard.people.index')
+            ->route('dashboard.directory.index')
             ->with('success', 'تم حذف الشخص بنجاح.');
     }
 

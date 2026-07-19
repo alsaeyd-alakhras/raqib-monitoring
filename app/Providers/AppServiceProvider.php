@@ -5,6 +5,7 @@ namespace App\Providers;
 use App\Models\Constant;
 use App\Models\Currency;
 use App\Models\User;
+use App\Services\RoleAbilitiesService;
 use App\Observers\ConstantObserver;
 use App\Observers\CurrencyObserver;
 use App\Observers\UserObserver;
@@ -22,8 +23,12 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         //
-        $this->app->bind('abilities', function() {
+        $this->app->bind('abilities', function () {
             return include base_path('data/abilities.php');
+        });
+
+        $this->app->singleton(RoleAbilitiesService::class, function () {
+            return new RoleAbilitiesService;
         });
     }
 

@@ -9,6 +9,7 @@
     --raqib-col-icon-w: 46px;
     --raqib-col-verify-w: 44px;
     --raqib-col-code-w: 96px;
+    --raqib-col-name-w: 260px;
     --raqib-header-bg: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 50%, var(--tertiary-color) 100%);
 }
 
@@ -167,6 +168,25 @@ table.raqib-dt .col-code .code-cell {
     cursor: default;
 }
 
+table.raqib-dt .col-name {
+    width: var(--raqib-col-name-w) !important;
+    min-width: var(--raqib-col-name-w) !important;
+    max-width: none !important;
+    padding: 6px 12px !important;
+    text-align: right !important;
+    font-size: 13px !important;
+    white-space: nowrap;
+}
+
+table.raqib-dt thead th.col-name {
+    padding: 10px 8px !important;
+    white-space: nowrap;
+}
+
+table.raqib-dt thead th.col-name .enhanced-filter-dropdown {
+    flex-shrink: 0;
+}
+
 table.raqib-dt .col-icon .action-btn {
     margin: 0 auto;
     padding: 6px 8px !important;
@@ -218,6 +238,14 @@ table.raqib-dt.monitoring-dt .sticky-r2 { right: var(--raqib-col-index-w) !impor
 table.raqib-dt.monitoring-dt .sticky-r3 { right: calc(var(--raqib-col-index-w) + var(--raqib-col-verify-w)) !important; }
 table.raqib-dt.monitoring-dt .sticky-r4 { right: calc(var(--raqib-col-index-w) + var(--raqib-col-verify-w) + var(--raqib-col-icon-w)) !important; }
 table.raqib-dt.monitoring-dt .sticky-r5 { right: calc(var(--raqib-col-index-w) + var(--raqib-col-verify-w) + 2 * var(--raqib-col-icon-w)) !important; }
+
+/* directory: # | edit | name */
+table.raqib-dt.directory-dt .sticky-r1 { right: 0 !important; }
+table.raqib-dt.directory-dt .sticky-r2 { right: var(--raqib-col-index-w) !important; }
+table.raqib-dt.directory-dt .sticky-r3 {
+    right: calc(var(--raqib-col-index-w) + var(--raqib-col-icon-w)) !important;
+    box-shadow: -3px 0 8px rgba(0, 0, 0, 0.06);
+}
 
 /* Body sticky backgrounds */
 table.raqib-dt tbody td[class*="sticky-r"],

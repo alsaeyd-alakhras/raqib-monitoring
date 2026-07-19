@@ -7,6 +7,7 @@ use App\Models\Person;
 use App\Models\RoleUser;
 use App\Models\Section;
 use App\Models\User;
+use App\Services\RoleAbilitiesService;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
 
@@ -356,7 +357,7 @@ class DemoUsersSeeder extends Seeder
             ]
         );
 
-        $this->syncAbilities($user, $data['abilities']);
+        $this->syncAbilities($user, app(RoleAbilitiesService::class)->forRole($data['role'] ?? null));
     }
 
     /**
@@ -384,7 +385,7 @@ class DemoUsersSeeder extends Seeder
                 'job_title' => $data['job_title'],
             ]);
 
-            $this->syncAbilities($user, $data['abilities']);
+            $this->syncAbilities($user, app(RoleAbilitiesService::class)->forRole($data['role'] ?? null));
         }
     }
 

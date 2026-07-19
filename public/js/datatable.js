@@ -527,8 +527,11 @@ $(document).ready(function () {
     });
 
     function deleteRow(id) {
+        const url = typeof buildDeleteUrl === 'function'
+            ? buildDeleteUrl(id)
+            : urlDelete.replace(':id', id);
         $.ajax({
-            url: urlDelete.replace(':id', id),
+            url: url,
             method: 'DELETE',
             headers: {
                 'X-Requested-With': 'XMLHttpRequest',

@@ -5,6 +5,7 @@ namespace App\Services\Import;
 use App\Models\Center;
 use App\Models\Department;
 use App\Models\Section;
+use App\Services\RoleAbilitiesService;
 use Illuminate\Support\Collection;
 
 class EmployeeImportMapper
@@ -476,10 +477,6 @@ class EmployeeImportMapper
      */
     public function abilitiesForRole(?string $role): array
     {
-        if (! $role) {
-            return [];
-        }
-
-        return $this->config['role_abilities'][$role] ?? [];
+        return app(RoleAbilitiesService::class)->forRole($role);
     }
 }

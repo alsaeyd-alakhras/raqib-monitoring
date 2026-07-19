@@ -12,24 +12,18 @@ use Illuminate\View\View;
 
 class DepartmentController extends Controller
 {
-    public function index(): View
+    public function index(): View|RedirectResponse
     {
         $this->authorize('view', Department::class);
 
-        $departments = Department::with('center')
-            ->orderBy('name')
-            ->paginate(15);
-
-        return view('dashboard.departments.index', compact('departments'));
+        return redirect()->route('dashboard.org-structure.index');
     }
 
-    public function create(): View
+    public function create(): RedirectResponse
     {
         $this->authorize('create', Department::class);
 
-        $centers = Center::orderBy('name')->get();
-
-        return view('dashboard.departments.create', compact('centers'));
+        return redirect()->route('dashboard.org-structure.index');
     }
 
     public function store(Request $request): RedirectResponse
@@ -44,17 +38,15 @@ class DepartmentController extends Controller
         Department::create($validated);
 
         return redirect()
-            ->route('dashboard.departments.index')
-            ->with('success', 'تم إنشاء القسم بنجاح.');
+            ->route('dashboard.org-structure.index')
+            ->with('success', 'تم إنشاء الدائرة بنجاح.');
     }
 
-    public function edit(Department $department): View
+    public function edit(Department $department): RedirectResponse
     {
         $this->authorize('update', Department::class);
 
-        $centers = Center::orderBy('name')->get();
-
-        return view('dashboard.departments.edit', compact('department', 'centers'));
+        return redirect()->route('dashboard.org-structure.index');
     }
 
     public function update(Request $request, Department $department): RedirectResponse
@@ -69,8 +61,8 @@ class DepartmentController extends Controller
         $department->update($validated);
 
         return redirect()
-            ->route('dashboard.departments.index')
-            ->with('success', 'تم تحديث القسم بنجاح.');
+            ->route('dashboard.org-structure.index')
+            ->with('success', 'تم تحديث الدائرة بنجاح.');
     }
 
     public function destroy(Department $department): RedirectResponse
@@ -80,8 +72,8 @@ class DepartmentController extends Controller
         $department->delete();
 
         return redirect()
-            ->route('dashboard.departments.index')
-            ->with('success', 'تم حذف القسم بنجاح.');
+            ->route('dashboard.org-structure.index')
+            ->with('success', 'تم حذف الدائرة بنجاح.');
     }
 
     public function byCenter(Request $request): JsonResponse

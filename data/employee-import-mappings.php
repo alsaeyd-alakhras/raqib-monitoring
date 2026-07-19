@@ -118,58 +118,7 @@ return [
 
     'monitoring_department' => 'دائرة الرقابة العامة',
 
-    'role_abilities' => [
-        'project_manager' => [
-            'projects.view',
-            'projects.create',
-            'projects.update',
-        ],
-        'coordinator' => [
-            'projects.view',
-            'projects.fill_coordinator',
-        ],
-        'section_manager' => [
-            'projects.view',
-            'projects.approve_section',
-            'projects.reject',
-            'people.view',
-            'people.create',
-            'people.update',
-        ],
-        'department_manager' => [
-            'projects.view',
-            'projects.approve_department',
-            'projects.reject',
-        ],
-        'monitor' => [
-            'projects.view',
-            'projects.fill_monitor',
-            'monitoringactivities.view',
-            'monitoringactivities.update',
-        ],
-        'monitoring_director' => [
-            'projects.view',
-            'projects.update',
-            'projects.reject',
-            'monitoringactivities.view',
-            'monitoringactivities.create',
-            'monitoringactivities.update',
-            'monitoringactivities.set_monitoring_info',
-            'monitoringactivities.assign_monitor',
-            'monitoringactivities.confirm_completion',
-            'monitoringactivities.edit_ratings',
-            'monitoringactivities.reject',
-        ],
-        'general_management' => [
-            'projects.view',
-            'monitoringactivities.view',
-            'monitoringactivities.edit_ratings',
-            'people.view',
-            'funders.view',
-            'centers.view',
-            'departments.view',
-        ],
-    ],
+    // role_abilities → data/role-abilities.php (مصدر حقيقة واحد عبر RoleAbilitiesService)
 
     'manager_role_priority' => [
         'department_manager' => ['مدير دائرة'],
