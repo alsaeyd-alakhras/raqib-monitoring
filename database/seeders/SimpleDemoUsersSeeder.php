@@ -44,6 +44,12 @@ class SimpleDemoUsersSeeder extends Seeder
             return;
         }
 
+        $socialDeptId = Department::where('name', DemoSocialFamilyUsersSeeder::DEPT_NAME)->value('id');
+        $socialSectionId = Section::query()
+            ->where('department_id', $socialDeptId)
+            ->where('name', DemoSocialFamilyUsersSeeder::SECTION_NAME)
+            ->value('id');
+
         $demoUsers = [
             [
                 'name' => 'أحمد — مدير مشروع (تجريبي)',
@@ -54,6 +60,17 @@ class SimpleDemoUsersSeeder extends Seeder
                 'section_id' => $projectsSectionId,
                 'job_title' => 'مدير مشروع',
                 'abilities' => self::DEMO_PM_ABILITIES,
+            ],
+            [
+                'name' => 'رنا — سكرتاريا مشاريع (تجريبية)',
+                'username' => 'demo_sec',
+                'email' => 'demo.sec@raqib.local',
+                'role' => 'project_secretariat',
+                'department_id' => $projectsDeptId,
+                'section_id' => null,
+                'job_title' => 'سكرتاريا الدائرة',
+                'phone' => '0599111222',
+                'abilities' => ['projects.view', 'projects.fill_secretariat'],
             ],
             [
                 'name' => 'ليلى — منسقة (تجريبية)',
@@ -149,6 +166,75 @@ class SimpleDemoUsersSeeder extends Seeder
             ],
         ];
 
+        if ($socialDeptId && $socialSectionId) {
+            $demoUsers = array_merge($demoUsers, [
+                [
+                    'name' => 'سارة — مديرة مشروع أيتام (تجريبية)',
+                    'username' => 'demo_social_pm',
+                    'email' => 'demo.social.pm@raqib.local',
+                    'role' => 'project_manager',
+                    'department_id' => $socialDeptId,
+                    'section_id' => $socialSectionId,
+                    'job_title' => 'مديرة مشروع',
+                    'phone' => '0599333001',
+                    'abilities' => self::DEMO_PM_ABILITIES,
+                ],
+                [
+                    'name' => 'يوسف — منسق أيتام (تجريبي)',
+                    'username' => 'demo_social_coord',
+                    'email' => 'demo.social.coord@raqib.local',
+                    'role' => 'coordinator',
+                    'department_id' => $socialDeptId,
+                    'section_id' => $socialSectionId,
+                    'job_title' => 'منسق مشروع',
+                    'phone' => '0599333002',
+                    'abilities' => ['projects.view', 'projects.fill_coordinator'],
+                ],
+                [
+                    'name' => 'لينا — سكرتاريا أيتام (تجريبية)',
+                    'username' => 'demo_social_sec',
+                    'email' => 'demo.social.sec@raqib.local',
+                    'role' => 'project_secretariat',
+                    'department_id' => $socialDeptId,
+                    'section_id' => null,
+                    'job_title' => 'سكرتاريا الدائرة',
+                    'phone' => '0599333003',
+                    'abilities' => ['projects.view', 'projects.fill_secretariat'],
+                ],
+                [
+                    'name' => 'مها — مديرة قسم أيتام (تجريبية)',
+                    'username' => 'demo_social_sm',
+                    'email' => 'demo.social.sm@raqib.local',
+                    'role' => 'section_manager',
+                    'department_id' => $socialDeptId,
+                    'section_id' => $socialSectionId,
+                    'job_title' => 'مديرة قسم الأيتام والأسر',
+                    'phone' => '0599333004',
+                    'abilities' => [
+                        'projects.view',
+                        'projects.approve_section',
+                        'projects.reject',
+                        'people.view',
+                        'people.create',
+                        'people.update',
+                    ],
+                ],
+                [
+                    'name' => 'فاطمة — مديرة دائرة (تجريبية)',
+                    'username' => 'demo_social_dm',
+                    'email' => 'demo.social.dm@raqib.local',
+                    'role' => 'department_manager',
+                    'department_id' => $socialDeptId,
+                    'section_id' => null,
+                    'job_title' => 'مديرة دائرة التنمية الاجتماعية',
+                    'phone' => '0599333005',
+                    'abilities' => ['projects.view', 'projects.approve_department', 'projects.reject'],
+                ],
+            ]);
+        } else {
+            $this->command?->warn('تخطّي حسابات الأيتام والأسر — لم يُعثر على دائرة التنمية الاجتماعية أو القسم.');
+        }
+
         foreach ($demoUsers as $data) {
             $this->seedDemoUser($data);
         }
@@ -201,8 +287,13 @@ class SimpleDemoUsersSeeder extends Seeder
                 'department_id' => $data['department_id'],
                 'section_id' => $data['section_id'] ?? null,
                 'job_title' => $data['job_title'],
+                'phone' => $data['phone'] ?? null,
             ]
         );
+
+        if (! empty($data['phone'])) {
+            $user->update(['phone' => $data['phone']]);
+        }
 
         RoleUser::where('user_id', $user->id)->delete();
 

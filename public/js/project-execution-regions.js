@@ -55,6 +55,9 @@
                 const beneficiaries = typeof saved === 'object' && saved !== null && saved.beneficiaries != null
                     ? saved.beneficiaries
                     : '';
+                const executionSite = typeof saved === 'object' && saved !== null && saved.execution_site != null
+                    ? saved.execution_site
+                    : '';
 
                 const col = document.createElement('div');
                 col.className = 'col-md-6 col-lg-4 execution-region-field';
@@ -71,6 +74,16 @@
                     >
                         ${officeOptions(name)}
                     </select>
+                    <label class="form-label mt-2 mb-1" for="execution_regions_${index}_execution_site">موقع التنفيذ (اختياري)</label>
+                    <input
+                        type="text"
+                        name="execution_regions[${index}][execution_site]"
+                        id="execution_regions_${index}_execution_site"
+                        class="form-control execution-region-site-input"
+                        value="${executionSite === '' ? '' : escapeHtml(executionSite)}"
+                        maxlength="500"
+                        placeholder="—"
+                    >
                     <label class="form-label mt-2 mb-1" for="execution_regions_${index}_beneficiaries">عدد المستفيدين (اختياري)</label>
                     <input
                         type="number"
@@ -103,41 +116,16 @@
             return hasAny ? total : 0;
         }
 
-        function duplicateOfficeNames() {
-            const names = [];
-
-            regionsFields.querySelectorAll('.execution-region-office-select').forEach((select) => {
-                const value = select.value.trim();
-
-                if (value !== '') {
-                    names.push(value);
-                }
-            });
-
-            return names.length !== new Set(names).size;
-        }
-
         function validateBeforeSubmit(event) {
-            const count = Math.max(0, parseInt(zonesInput.value || '0', 10) || 0);
             const target = Math.max(0, parseInt(targetInput?.value || '0', 10) || 0);
             const total = beneficiariesTotal();
-
-            if (count > 0 && duplicateOfficeNames()) {
-                event.preventDefault();
-
-                if (window.toastr) {
-                    window.toastr.warning('لا يمكن تكرار نفس المكتب أكثر من مرة.', 'مناطق التنفيذ');
-                }
-
-                return false;
-            }
 
             if (total > 0 && total > target) {
                 event.preventDefault();
 
                 if (window.toastr) {
                     window.toastr.warning(
-                        `مجموع المستفيدين في المناطق (${total.toLocaleString('ar')}) يتجاوز الإجمالي (${target.toLocaleString('ar')}).`,
+                        `مجموع المستفيدين في المناطق (${total.toLocaleString('en-US')}) يتجاوز الإجمالي (${target.toLocaleString('en-US')}).`,
                         'مناطق التنفيذ'
                     );
                 }

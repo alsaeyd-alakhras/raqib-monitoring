@@ -131,7 +131,7 @@ class HomeController extends Controller
                 ],
             ],
             'project_secretariat' => [
-                'label' => 'سكرتاريا المشاريع',
+                'label' => 'سكرتاريا الدائرة',
                 'cards' => [
                     ['title' => 'بانتظار تعبئتي', 'value' => $base['secretariat'], 'class' => 'warning'],
                     ['title' => 'بانتظار المنسق', 'value' => $base['coordinator'], 'class' => 'info'],

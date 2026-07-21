@@ -130,10 +130,12 @@ class UserController extends Controller
 
         $validated = $request->validate([
             'phone' => ['required', 'string', 'max:50'],
+            'alternate_phone' => ['nullable', 'string', 'max:50'],
         ]);
 
         $person->update([
             'phone' => $validated['phone'],
+            'alternate_phone' => $validated['alternate_phone'] ?? null,
         ]);
 
         $user->update([

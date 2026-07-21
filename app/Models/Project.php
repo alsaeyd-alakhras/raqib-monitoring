@@ -133,16 +133,20 @@ class Project extends Model
                 return [
                     'name' => trim($region),
                     'beneficiaries' => null,
+                    'execution_site' => null,
                 ];
             }
 
             $beneficiaries = $region['beneficiaries'] ?? null;
+            $executionSite = $region['execution_site'] ?? null;
+            $executionSite = is_string($executionSite) ? trim($executionSite) : '';
 
             return [
                 'name' => trim((string) ($region['name'] ?? '')),
                 'beneficiaries' => $beneficiaries === null || $beneficiaries === ''
                     ? null
                     : (int) $beneficiaries,
+                'execution_site' => $executionSite !== '' ? $executionSite : null,
             ];
         }, $regions));
     }
@@ -230,53 +234,96 @@ class Project extends Model
         return $this->belongsTo(User::class, 'monitor_submitted_by');
     }
 
+    public function createdByUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'created_by');
+    }
+
     /**
-     * @return array<string, array{at: ?\Illuminate\Support\Carbon, by: ?User}>
+     * @return array<string, array{
+     *     entered_at: ?\Illuminate\Support\Carbon,
+     *     entered_by: ?User,
+     *     completed_at: ?\Illuminate\Support\Carbon,
+     *     completed_by: ?User,
+     *     at: ?\Illuminate\Support\Carbon,
+     *     by: ?User
+     * }>
      */
     public function workflowStepTimestamps(): array
     {
-        return [
+        $passageAt = $this->primaryMonitoringActivity?->passage_completed_at;
+        $passageBy = $this->primaryMonitoringActivity?->passageCompletedByUser;
+
+        $steps = [
+            'draft' => [
+                'entered_at' => $this->created_at,
+                'entered_by' => $this->createdByUser,
+                'completed_at' => $this->secretariat_submitted_at,
+                'completed_by' => $this->secretariatSubmittedByUser,
+            ],
             'pending_secretariat' => [
-                'at' => $this->secretariat_submitted_at,
-                'by' => $this->secretariatSubmittedByUser,
+                'entered_at' => $this->secretariat_submitted_at,
+                'entered_by' => $this->secretariatSubmittedByUser,
+                'completed_at' => $this->secretariat_filled_at,
+                'completed_by' => $this->secretariatFilledByUser,
             ],
             'pending_coordinator' => [
-                'at' => $this->secretariat_filled_at ?? $this->coordinator_submitted_at,
-                'by' => $this->secretariatFilledByUser ?? $this->coordinatorSubmittedByUser,
+                'entered_at' => $this->coordinator_submitted_at ?? $this->secretariat_filled_at,
+                'entered_by' => $this->coordinatorSubmittedByUser ?? $this->secretariatFilledByUser,
+                'completed_at' => $this->coordinator_filled_at,
+                'completed_by' => $this->coordinatorFilledByUser,
             ],
             'coordinator_filling' => [
-                'at' => $this->coordinator_filled_at,
-                'by' => $this->coordinatorFilledByUser,
-            ],
-            'pending_project_manager' => [
-                'at' => $this->submitted_to_project_manager_at,
-                'by' => $this->submittedToProjectManagerByUser,
+                'entered_at' => $this->coordinator_filled_at,
+                'entered_by' => $this->coordinatorFilledByUser,
+                'completed_at' => $this->submitted_to_section_manager_at,
+                'completed_by' => $this->submittedToSectionManagerByUser,
             ],
             'pending_section_manager' => [
-                'at' => $this->submitted_to_section_manager_at,
-                'by' => $this->submittedToSectionManagerByUser,
+                'entered_at' => $this->submitted_to_section_manager_at,
+                'entered_by' => $this->submittedToSectionManagerByUser,
+                'completed_at' => $this->section_manager_approved_at,
+                'completed_by' => $this->sectionManagerApprovedByUser,
             ],
             'pending_dept_manager' => [
-                'at' => $this->section_manager_approved_at,
-                'by' => $this->sectionManagerApprovedByUser,
+                'entered_at' => $this->section_manager_approved_at,
+                'entered_by' => $this->sectionManagerApprovedByUser,
+                'completed_at' => $this->dept_manager_approved_at,
+                'completed_by' => $this->deptManagerApprovedByUser,
             ],
             'pending_monitoring_manager' => [
-                'at' => $this->dept_manager_approved_at,
-                'by' => $this->deptManagerApprovedByUser,
+                'entered_at' => $this->dept_manager_approved_at,
+                'entered_by' => $this->deptManagerApprovedByUser,
+                'completed_at' => $this->monitoring_manager_received_at,
+                'completed_by' => $this->monitoringManagerReceivedByUser,
             ],
             'monitoring_in_progress' => [
-                'at' => $this->monitoring_manager_received_at,
-                'by' => $this->monitoringManagerReceivedByUser,
+                'entered_at' => $this->monitoring_manager_received_at,
+                'entered_by' => $this->monitoringManagerReceivedByUser,
+                'completed_at' => $this->monitor_submitted_at,
+                'completed_by' => $this->monitorSubmittedByUser,
             ],
             'pending_monitoring_confirmation' => [
-                'at' => $this->monitor_submitted_at,
-                'by' => $this->monitorSubmittedByUser,
+                'entered_at' => $this->monitor_submitted_at,
+                'entered_by' => $this->monitorSubmittedByUser,
+                'completed_at' => $passageAt,
+                'completed_by' => $passageBy,
             ],
             'passage_complete' => [
-                'at' => $this->primaryMonitoringActivity?->passage_completed_at,
-                'by' => $this->primaryMonitoringActivity?->passageCompletedByUser,
+                'entered_at' => $passageAt,
+                'entered_by' => $passageBy,
+                'completed_at' => $passageAt,
+                'completed_by' => $passageBy,
             ],
         ];
+
+        foreach ($steps as &$step) {
+            $step['at'] = $step['completed_at'] ?? $step['entered_at'];
+            $step['by'] = $step['completed_by'] ?? $step['entered_by'];
+        }
+        unset($step);
+
+        return $steps;
     }
 
     public static function formatFromSequence(int $sequence): string
@@ -595,6 +642,13 @@ class Project extends Model
                 : $query->whereRaw('1 = 0'),
             'coordinator' => $query->where('coordinator_id', $person->id),
             'monitor' => $query->where('monitor_person_id', $person->id),
+            'project_secretariat' => $person->department_id
+                ? $query->whereHas('projectManager', fn (Builder $q) => $q->where('department_id', $person->department_id))
+                    ->where(function (Builder $q) {
+                        $q->where('workflow_status', 'pending_secretariat')
+                            ->orWhereNotNull('secretariat_submitted_at');
+                    })
+                : $query->whereRaw('1 = 0'),
             default => $query,
         };
     }
@@ -619,8 +673,42 @@ class Project extends Model
                 && (int) $this->projectManager?->department_id === (int) $person->department_id,
             'coordinator' => (int) $this->coordinator_id === (int) $person->id,
             'monitor' => (int) $this->monitor_person_id === (int) $person->id,
+            'project_secretariat' => $this->projectSecretariatCanView($person),
             default => true,
         };
+    }
+
+    /**
+     * هل يظهر هذا المشروع لسكرتاريا دائرة مدير المشروع؟
+     */
+    public function visibleToProjectSecretariat(?Person $person): bool
+    {
+        if (! $person || $person->role !== 'project_secretariat' || ! $person->department_id) {
+            return false;
+        }
+
+        $this->loadMissing('projectManager');
+
+        return (int) $this->projectManager?->department_id === (int) $person->department_id;
+    }
+
+    /**
+     * عرض المشروع لسكرتاريا الدائرة: قائمة الانتظار أو مشروع سبق إرساله للسكرتاريا (قراءة فقط).
+     */
+    public function projectSecretariatCanView(?Person $person): bool
+    {
+        if (! $this->visibleToProjectSecretariat($person)) {
+            return false;
+        }
+
+        return $this->workflow_status === 'pending_secretariat'
+            || filled($this->secretariat_submitted_at);
+    }
+
+    /** هل اكتملت مرحلة سكرتاريا المشاريع (رقم ومرفق التخصيص)؟ */
+    public function hasCompletedSecretariatPhase(): bool
+    {
+        return filled($this->secretariat_filled_at) && filled($this->project_number);
     }
 
     /**
@@ -656,6 +744,10 @@ class Project extends Model
     {
         if ((int) $this->project_manager_id !== (int) $person->id) {
             return false;
+        }
+
+        if ($this->isSelfCoordinator() && in_array($this->workflow_status, ['draft', 'pending_secretariat'], true)) {
+            return true;
         }
 
         if ($user->can('fill_coordinator', self::class)) {
@@ -767,9 +859,8 @@ class Project extends Model
     {
         $all = [
             'return_project_manager' => 'إرجاع لمدير المشروع (مسودة)',
-            'return_project_manager_review' => 'إرجاع لمدير المشروع (مراجعة)',
             'return_coordinator' => 'إرجاع للمنسق (تعبئة)',
-            'return_secretariat' => 'إرجاع لسكرتاريا المشاريع',
+            'return_secretariat' => 'إرجاع لسكرتاريا الدائرة',
             'return_section_manager' => 'إرجاع لمدير القسم (موافقة)',
             'return_department_manager' => 'إرجاع لمدير الدائرة (موافقة)',
             'reject_final' => 'رفض قاطع نهائي (لا إرجاع)',
@@ -780,9 +871,9 @@ class Project extends Model
         }
 
         $allowedKeys = match ($person->role) {
-            'section_manager' => ['return_project_manager', 'return_project_manager_review', 'return_coordinator', 'return_secretariat', 'reject_final'],
-            'department_manager' => ['return_project_manager', 'return_project_manager_review', 'return_coordinator', 'return_secretariat', 'return_section_manager', 'reject_final'],
-            'monitoring_director' => ['return_project_manager', 'return_project_manager_review', 'return_coordinator', 'return_secretariat', 'return_section_manager', 'return_department_manager', 'reject_final'],
+            'section_manager' => ['return_project_manager', 'return_coordinator', 'return_secretariat', 'reject_final'],
+            'department_manager' => ['return_project_manager', 'return_coordinator', 'return_secretariat', 'return_section_manager', 'reject_final'],
+            'monitoring_director' => ['return_project_manager', 'return_coordinator', 'return_secretariat', 'return_section_manager', 'return_department_manager', 'reject_final'],
             default => array_keys($all),
         };
 
@@ -791,6 +882,10 @@ class Project extends Model
 
     public static function returnTargetLabel(?string $key): string
     {
+        if ($key === 'return_project_manager_review') {
+            return 'إرجاع لمدير المشروع (مراجعة)';
+        }
+
         return self::returnTargetOptionsForRejector(null, true)[$key] ?? ($key ?: '—');
     }
 
@@ -997,6 +1092,7 @@ class Project extends Model
         return [
             'project_manager' => 'مدير المشروع',
             'coordinator' => 'المنسق',
+            'project_secretariat' => 'سكرتاريا الدائرة',
             'section_manager' => 'مدير القسم',
             'department_manager' => 'مدير الدائرة',
             'monitor' => 'المراقب',
@@ -1023,10 +1119,10 @@ class Project extends Model
         }
 
         $allowedKeys = match ($person->role) {
-            'section_manager' => ['project_manager', 'coordinator', 'other'],
-            'department_manager' => ['project_manager', 'coordinator', 'section_manager', 'other'],
-            'monitoring_director' => ['project_manager', 'coordinator', 'section_manager', 'department_manager', 'monitor', 'other'],
-            'monitor' => ['project_manager', 'coordinator', 'section_manager', 'department_manager', 'other'],
+            'section_manager' => ['project_manager', 'coordinator', 'project_secretariat', 'other'],
+            'department_manager' => ['project_manager', 'coordinator', 'project_secretariat', 'section_manager', 'other'],
+            'monitoring_director' => ['project_manager', 'coordinator', 'project_secretariat', 'section_manager', 'department_manager', 'monitor', 'other'],
+            'monitor' => ['project_manager', 'coordinator', 'project_secretariat', 'section_manager', 'department_manager', 'other'],
             default => array_keys($labels),
         };
 
@@ -1039,7 +1135,7 @@ class Project extends Model
 
         return match ($this->workflow_status) {
             'draft' => 'مدير المشروع: ' . ($this->projectManager?->name ?? '—'),
-            'pending_secretariat' => 'سكرتاريا المشاريع — تعبئة رقم ومرفق التخصيص',
+            'pending_secretariat' => 'سكرتاريا الدائرة — تعبئة رقم ومرفق التخصيص',
             'pending_coordinator', 'coordinator_filling' => 'المنسق: ' . $this->coordinatorDisplayName(),
             'pending_project_manager' => 'مدير المشروع: ' . ($this->projectManager?->name ?? '—') . ' — مراجعة وإرسال',
             'pending_section_manager' => 'مدير القسم: ' . $this->approverSectionManagerLabel(),
@@ -1062,7 +1158,8 @@ class Project extends Model
         return match ($person->role) {
             'project_manager' => (int) $this->project_manager_id === (int) $person->id
                 && in_array($this->workflow_status, ['draft', 'pending_secretariat', 'pending_coordinator', 'coordinator_filling', 'pending_project_manager'], true),
-            'project_secretariat' => $this->workflow_status === 'pending_secretariat',
+            'project_secretariat' => $this->workflow_status === 'pending_secretariat'
+                && $this->visibleToProjectSecretariat($person),
             'coordinator' => (int) $this->coordinator_id === (int) $person->id
                 && (
                     in_array($this->workflow_status, ['pending_coordinator', 'coordinator_filling'], true)
@@ -1084,7 +1181,7 @@ class Project extends Model
     {
         return [
             'draft' => 'مسودة',
-            'pending_secretariat' => 'بانتظار سكرتاريا المشاريع',
+            'pending_secretariat' => 'بانتظار سكرتاريا الدائرة',
             'pending_coordinator' => 'بانتظار المنسق',
             'coordinator_filling' => 'المنسق يعمل',
             'pending_project_manager' => 'بانتظار مدير المشروع',
@@ -1389,7 +1486,7 @@ class Project extends Model
                 $outer->orWhere(function ($sub) use ($label, $total, $idList) {
                     if ($label === 'مكتمل') {
                         $sub->whereRaw(
-                            "(SELECT COUNT(*) FROM project_checklist_values WHERE project_id = projects.id AND checklist_item_id IN ({$idList}) AND ((attachment_path IS NOT NULL AND attachment_path != '') OR (attachment_url IS NOT NULL AND attachment_url != ''))) = ?",
+                            "(SELECT COUNT(*) FROM project_checklist_values WHERE project_id = projects.id AND checklist_item_id IN ({$idList}) AND ((attachments IS NOT NULL AND JSON_LENGTH(attachments) > 0) OR (attachment_path IS NOT NULL AND attachment_path != '') OR (attachment_url IS NOT NULL AND attachment_url != ''))) = ?",
                             [$total]
                         );
 
@@ -1398,7 +1495,7 @@ class Project extends Model
 
                     if (preg_match('/^(\d+)\/' . preg_quote((string) $total, '/') . '$/', (string) $label, $matches)) {
                         $sub->whereRaw(
-                            "(SELECT COUNT(*) FROM project_checklist_values WHERE project_id = projects.id AND checklist_item_id IN ({$idList}) AND ((attachment_path IS NOT NULL AND attachment_path != '') OR (attachment_url IS NOT NULL AND attachment_url != ''))) = ?",
+                            "(SELECT COUNT(*) FROM project_checklist_values WHERE project_id = projects.id AND checklist_item_id IN ({$idList}) AND ((attachments IS NOT NULL AND JSON_LENGTH(attachments) > 0) OR (attachment_path IS NOT NULL AND attachment_path != '') OR (attachment_url IS NOT NULL AND attachment_url != ''))) = ?",
                             [(int) $matches[1]]
                         );
                     }

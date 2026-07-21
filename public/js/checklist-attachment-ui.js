@@ -1,5 +1,5 @@
 /**
- * Icon-based checklist attachment UI: upload modal (file/URL), view, delete with modal confirm.
+ * Icon-based checklist attachment UI: upload modal (file/URL), multi-file, view, delete with modal confirm.
  */
 (function () {
     'use strict';
@@ -43,6 +43,44 @@
         return fileField.querySelector('.checklist-file-input');
     }
 
+    function getAttachmentListEl(fileField) {
+        return fileField.querySelector('.checklist-file-attachment-list');
+    }
+
+    function readSavedAttachments(fileField) {
+        const raw = fileField.getAttribute('data-saved-attachments');
+
+        if (raw) {
+            try {
+                const parsed = JSON.parse(raw);
+
+                if (Array.isArray(parsed)) {
+                    return parsed;
+                }
+            } catch (error) {
+                // fall through to DOM scrape
+            }
+        }
+
+        return scrapeSavedAttachmentsFromDom(fileField);
+    }
+
+    function scrapeSavedAttachmentsFromDom(fileField) {
+        const chips = fileField.querySelectorAll('.checklist-file-chip[data-saved-id]');
+
+        return Array.from(chips).map((chip) => {
+            const link = chip.querySelector('.checklist-file-view-btn');
+            const labelEl = chip.querySelector('.checklist-file-pending-name');
+
+            return {
+                id: chip.dataset.savedId || chip.querySelector('[data-attachment-id]')?.dataset.attachmentId || '',
+                type: (link?.href || '').startsWith('http') && !link?.href.includes('/storage/') ? 'url' : 'file',
+                url: link?.getAttribute('href') || '',
+                label: labelEl?.textContent?.trim() || 'مرفق',
+            };
+        }).filter((item) => item.id && item.url);
+    }
+
     function hasPendingOrSavedAttachment(fileField) {
         const fileInput = getFileInput(fileField);
 
@@ -50,131 +88,102 @@
             return true;
         }
 
-        if (fileField.dataset.hasAttachment === '1') {
+        if (readSavedAttachments(fileField).length) {
             return true;
         }
 
         const urlInput = getUrlInput(fileField);
+        const typeInput = getTypeInput(fileField);
 
-        return Boolean(urlInput?.value?.trim());
+        return typeInput?.value === 'url' && Boolean(urlInput?.value?.trim());
     }
 
-    function renderActions(fileField, state) {
-        const actions = fileField.querySelector('.checklist-file-actions');
+    function renderAttachmentList(fileField) {
+        const listEl = getAttachmentListEl(fileField);
+        const uploadBtn = fileField.querySelector('.checklist-file-upload-btn');
 
-        if (!actions) {
+        if (!listEl) {
             return;
         }
 
-        if (state === 'saved-file' || state === 'saved-url') {
-            const url = fileField.dataset.attachmentUrl || '#';
-            const name = fileField.dataset.attachmentName || 'مرفق';
-            const icon = state === 'saved-url' ? 'ti-external-link' : 'ti-eye';
+        const saved = readSavedAttachments(fileField);
+        const fileInput = getFileInput(fileField);
+        const pendingFiles = fileInput?.files ? Array.from(fileInput.files) : [];
+        const typeInput = getTypeInput(fileField);
+        const urlInput = getUrlInput(fileField);
+        const pendingUrl = typeInput?.value === 'url' ? urlInput?.value?.trim() : '';
 
-            actions.innerHTML = `
-                <a href="${escapeHtml(url)}" target="_blank" rel="noopener"
-                   class="btn btn-sm btn-icon btn-text-primary checklist-file-view-btn"
-                   title="عرض المرفق">
-                    <i class="ti ${icon}"></i>
-                </a>
-                <button type="button"
-                        class="btn btn-sm btn-icon btn-text-danger checklist-file-delete-btn"
-                        title="حذف المرفق"
-                        aria-label="حذف المرفق">
-                    <i class="ti ti-trash"></i>
-                </button>
+        let html = '';
+
+        saved.forEach((item) => {
+            const icon = item.type === 'url' ? 'ti-external-link' : 'ti-eye';
+            const label = item.label || 'مرفق';
+
+            html += `
+                <span class="checklist-file-chip d-inline-flex align-items-center gap-1 border rounded px-1"
+                      data-saved-id="${escapeHtml(item.id)}">
+                    <a href="${escapeHtml(item.url || '#')}" target="_blank" rel="noopener"
+                       class="btn btn-sm btn-icon btn-text-primary checklist-file-view-btn"
+                       title="عرض">
+                        <i class="ti ${icon}"></i>
+                    </a>
+                    <span class="checklist-file-pending-name text-truncate small" style="max-width:7rem" title="${escapeHtml(label)}">${escapeHtml(label)}</span>
+                    <button type="button"
+                            class="btn btn-sm btn-icon btn-text-danger checklist-file-delete-btn"
+                            data-attachment-id="${escapeHtml(item.id)}"
+                            title="حذف"
+                            aria-label="حذف">
+                        <i class="ti ti-trash"></i>
+                    </button>
+                </span>
             `;
+        });
 
-            fileField.dataset.hasAttachment = '1';
-            fileField.dataset.attachmentName = name;
-            return;
-        }
-
-        if (state === 'pending-file') {
-            const fileName = fileField.dataset.pendingFileName || 'ملف محدد';
-
-            actions.innerHTML = `
-                <span class="checklist-file-pending-name text-truncate" title="${escapeHtml(fileName)}">${escapeHtml(fileName)}</span>
-                <button type="button"
-                        class="btn btn-sm btn-icon btn-text-danger checklist-file-clear-btn"
-                        title="إلغاء الاختيار"
-                        aria-label="إلغاء الاختيار">
-                    <i class="ti ti-trash"></i>
-                </button>
+        pendingFiles.forEach((file, index) => {
+            html += `
+                <span class="checklist-file-chip d-inline-flex align-items-center gap-1 border rounded px-1"
+                      data-pending-index="${index}">
+                    <span class="checklist-file-pending-name text-truncate small" style="max-width:7rem" title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</span>
+                    <button type="button"
+                            class="btn btn-sm btn-icon btn-text-danger checklist-file-clear-btn"
+                            data-pending-index="${index}"
+                            title="إلغاء"
+                            aria-label="إلغاء">
+                        <i class="ti ti-trash"></i>
+                    </button>
+                </span>
             `;
+        });
 
-            fileField.dataset.hasAttachment = '0';
-            return;
-        }
+        if (pendingUrl && !saved.length) {
+            const urlLabel = pendingUrl.length > 40 ? pendingUrl.slice(0, 37) + '...' : pendingUrl;
 
-        if (state === 'pending-url') {
-            const urlLabel = fileField.dataset.pendingUrlLabel || 'رابط خارجي';
-
-            actions.innerHTML = `
-                <span class="checklist-file-pending-name text-truncate" title="${escapeHtml(urlLabel)}">${escapeHtml(urlLabel)}</span>
-                <button type="button"
-                        class="btn btn-sm btn-icon btn-text-danger checklist-file-clear-btn"
-                        title="إلغاء الرابط"
-                        aria-label="إلغاء الرابط">
-                    <i class="ti ti-trash"></i>
-                </button>
+            html += `
+                <span class="checklist-file-chip d-inline-flex align-items-center gap-1 border rounded px-1">
+                    <span class="checklist-file-pending-name text-truncate small" style="max-width:7rem" title="${escapeHtml(pendingUrl)}">${escapeHtml(urlLabel)}</span>
+                    <button type="button"
+                            class="btn btn-sm btn-icon btn-text-danger checklist-file-clear-btn"
+                            data-pending-url="1"
+                            title="إلغاء الرابط"
+                            aria-label="إلغاء الرابط">
+                        <i class="ti ti-trash"></i>
+                    </button>
+                </span>
             `;
-
-            fileField.dataset.hasAttachment = '0';
-            return;
         }
 
-        actions.innerHTML = `
-            <button type="button"
-                    class="btn btn-sm btn-icon btn-text-secondary checklist-file-upload-btn"
-                    title="إضافة مرفق"
-                    aria-label="إضافة مرفق">
-                <i class="ti ti-upload"></i>
-            </button>
-        `;
+        listEl.innerHTML = html;
 
-        fileField.dataset.hasAttachment = '0';
-        delete fileField.dataset.pendingFileName;
-        delete fileField.dataset.pendingUrlLabel;
+        const hasAny = saved.length > 0 || pendingFiles.length > 0 || Boolean(pendingUrl);
+        fileField.dataset.hasAttachment = hasAny ? '1' : '0';
+
+        if (uploadBtn) {
+            uploadBtn.classList.toggle('d-none', typeInput?.value === 'url' && Boolean(pendingUrl));
+        }
     }
 
     function syncFileField(fileField) {
-        const fileInput = getFileInput(fileField);
-        const typeInput = getTypeInput(fileField);
-        const urlInput = getUrlInput(fileField);
-
-        if (!fileInput) {
-            return;
-        }
-
-        if (fileInput.files?.length) {
-            fileField.dataset.pendingFileName = fileInput.files[0].name;
-            if (typeInput) {
-                typeInput.value = 'file';
-            }
-            if (urlInput) {
-                urlInput.value = '';
-            }
-            renderActions(fileField, 'pending-file');
-            return;
-        }
-
-        const pendingUrl = urlInput?.value?.trim();
-        const pendingType = typeInput?.value || 'file';
-
-        if (pendingUrl && pendingType === 'url' && fileField.dataset.hasAttachment !== '1') {
-            fileField.dataset.pendingUrlLabel = pendingUrl.length > 40 ? pendingUrl.slice(0, 37) + '...' : pendingUrl;
-            renderActions(fileField, 'pending-url');
-            return;
-        }
-
-        if (fileField.dataset.hasAttachment === '1' && fileField.dataset.attachmentUrl) {
-            const savedState = fileField.dataset.attachmentType === 'url' ? 'saved-url' : 'saved-file';
-            renderActions(fileField, savedState);
-            return;
-        }
-
-        renderActions(fileField, 'empty');
+        renderAttachmentList(fileField);
     }
 
     function openUploadModal(trigger) {
@@ -209,6 +218,28 @@
         modalInstance.show();
     }
 
+    function appendFilesToInput(fileInput, newFile) {
+        const dataTransfer = new DataTransfer();
+        const existing = fileInput.files ? Array.from(fileInput.files) : [];
+
+        existing.forEach((file) => dataTransfer.items.add(file));
+        dataTransfer.items.add(newFile);
+        fileInput.files = dataTransfer.files;
+    }
+
+    function removePendingFileAtIndex(fileInput, index) {
+        const dataTransfer = new DataTransfer();
+        const existing = fileInput.files ? Array.from(fileInput.files) : [];
+
+        existing.forEach((file, i) => {
+            if (i !== index) {
+                dataTransfer.items.add(file);
+            }
+        });
+
+        fileInput.files = dataTransfer.files;
+    }
+
     function confirmUpload() {
         if (!pendingUploadContext) {
             return;
@@ -217,7 +248,6 @@
         const { fileField } = pendingUploadContext;
         const modal = getUploadModal();
         const modalInstance = getModalInstance(modal);
-        const activeTab = modal?.querySelector('#checklist-upload-tab-url.active, #checklist-upload-pane-url.active');
         const isUrlTab = Boolean(modal?.querySelector('#checklist-upload-tab-url.active'));
         const fileInput = getFileInput(fileField);
         const typeInput = getTypeInput(fileField);
@@ -264,19 +294,19 @@
             return;
         }
 
-        const selectedFile = modalFileInput?.files?.[0];
+        const selectedFiles = modalFileInput?.files;
 
-        if (!selectedFile) {
+        if (!selectedFiles?.length) {
             if (window.toastr) {
                 window.toastr.warning('يرجى اختيار ملف للرفع.');
             }
             return;
         }
 
-        if (fileInput && modalFileInput?.files?.length) {
-            const dataTransfer = new DataTransfer();
-            dataTransfer.items.add(selectedFile);
-            fileInput.files = dataTransfer.files;
+        if (fileInput) {
+            for (let i = 0; i < selectedFiles.length; i += 1) {
+                appendFilesToInput(fileInput, selectedFiles[i]);
+            }
         }
 
         if (typeInput) {
@@ -298,15 +328,27 @@
         const nameEl = document.getElementById('checklistAttachmentDeleteFileName');
         const form = document.getElementById('checklistAttachmentDeleteForm');
         const itemInput = document.getElementById('checklistAttachmentDeleteItemId');
+        const attachmentInput = document.getElementById('checklistAttachmentDeleteAttachmentId');
         const modalInstance = getModalInstance(modal);
 
         if (!modal || !fileField || !nameEl || !modalInstance) {
             return;
         }
 
-        const fileName = mode === 'pending'
-            ? (fileField.dataset.pendingFileName || fileField.dataset.pendingUrlLabel || 'المرفق المحدد')
-            : (fileField.dataset.attachmentName || 'مرفق');
+        let fileName = 'مرفق';
+        let attachmentId = trigger.dataset.attachmentId || '';
+
+        if (mode === 'pending') {
+            const pendingIndex = trigger.dataset.pendingIndex;
+            if (pendingIndex !== undefined) {
+                const fileInput = getFileInput(fileField);
+                fileName = fileInput?.files?.[pendingIndex]?.name || 'ملف محدد';
+            } else {
+                fileName = getUrlInput(fileField)?.value?.trim() || 'الرابط';
+            }
+        } else {
+            fileName = trigger.closest('.checklist-file-chip')?.querySelector('.checklist-file-pending-name')?.textContent?.trim() || 'مرفق';
+        }
 
         nameEl.textContent = fileName;
         nameEl.title = fileName;
@@ -319,11 +361,17 @@
             urlInput: getUrlInput(fileField),
             deleteUrl: fileField.dataset.deleteUrl || '',
             itemId: fileField.dataset.itemId || '',
+            attachmentId,
+            pendingIndex: trigger.dataset.pendingIndex,
+            pendingUrl: trigger.dataset.pendingUrl === '1',
         };
 
         if (mode === 'saved' && form && itemInput) {
             form.action = pendingDeleteContext.deleteUrl || '#';
             itemInput.value = pendingDeleteContext.itemId;
+            if (attachmentInput) {
+                attachmentInput.value = attachmentId;
+            }
         }
 
         modalInstance.show();
@@ -334,20 +382,22 @@
             return;
         }
 
-        const { mode, fileField, fileInput, typeInput, urlInput } = pendingDeleteContext;
+        const { mode, fileField, fileInput, typeInput, urlInput, pendingIndex, pendingUrl } = pendingDeleteContext;
         const form = document.getElementById('checklistAttachmentDeleteForm');
         const modalInstance = getModalInstance(getDeleteModal());
 
         if (mode === 'pending') {
-            if (fileInput) {
-                fileInput.value = '';
+            if (pendingUrl) {
+                if (typeInput) {
+                    typeInput.value = 'file';
+                }
+                if (urlInput) {
+                    urlInput.value = '';
+                }
+            } else if (fileInput && pendingIndex !== undefined) {
+                removePendingFileAtIndex(fileInput, Number(pendingIndex));
             }
-            if (typeInput) {
-                typeInput.value = 'file';
-            }
-            if (urlInput) {
-                urlInput.value = '';
-            }
+
             syncFileField(fileField);
             fileField.dispatchEvent(new Event('change', { bubbles: true }));
 

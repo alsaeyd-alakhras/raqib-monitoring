@@ -9,7 +9,12 @@
             return null;
         }
 
-        const parsed = parseFloat(String(value).replace(/,/g, ''));
+        const normalized = String(value)
+            .replace(/,/g, '')
+            .replace(/[\u0660-\u0669]/g, (d) => String(d.charCodeAt(0) - 0x0660))
+            .replace(/[\u06F0-\u06F9]/g, (d) => String(d.charCodeAt(0) - 0x06F0));
+
+        const parsed = parseFloat(normalized);
 
         return Number.isFinite(parsed) ? parsed : null;
     }
@@ -19,7 +24,11 @@
             return '';
         }
 
-        return value.toFixed(decimals);
+        return Number(value).toLocaleString('en-US', {
+            minimumFractionDigits: decimals,
+            maximumFractionDigits: decimals,
+            useGrouping: false,
+        });
     }
 
     function initProjectFinancialFields(config) {

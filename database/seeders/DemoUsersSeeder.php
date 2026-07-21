@@ -91,7 +91,7 @@ class DemoUsersSeeder extends Seeder
                 'email' => 'secretariat.hana@raqib.demo',
                 'role' => 'project_secretariat',
                 'department_id' => $projectsDeptId,
-                'job_title' => 'سكرتاريا المشاريع',
+                'job_title' => 'سكرتاريا الدائرة',
                 'abilities' => ['projects.view', 'projects.fill_secretariat'],
             ],
             [
@@ -100,7 +100,16 @@ class DemoUsersSeeder extends Seeder
                 'email' => 'secretariat.majed@raqib.demo',
                 'role' => 'project_secretariat',
                 'department_id' => $projectsDeptId,
-                'job_title' => 'سكرتاريا المشاريع',
+                'job_title' => 'سكرتاريا الدائرة',
+                'abilities' => ['projects.view', 'projects.fill_secretariat'],
+            ],
+            [
+                'name' => 'لينا أبو حطب',
+                'username' => 'sec_social',
+                'email' => 'secretariat.social@raqib.demo',
+                'role' => 'project_secretariat',
+                'department_id' => $socialDeptId,
+                'job_title' => 'سكرتاريا الدائرة — التنمية الاجتماعية',
                 'abilities' => ['projects.view', 'projects.fill_secretariat'],
             ],
 

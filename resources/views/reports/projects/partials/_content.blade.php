@@ -41,6 +41,10 @@
         ->map(function ($region, $index) {
             $label = ($index + 1) . '. ' . $region['name'];
 
+            if (! empty($region['execution_site'])) {
+                $label .= ' — ' . $region['execution_site'];
+            }
+
             if ($region['beneficiaries'] !== null) {
                 $label .= ' (' . number_format($region['beneficiaries']) . ')';
             }
@@ -50,7 +54,6 @@
         ->implode(' · ');
 
     $implementationRows = [
-        'الموقع / المنطقة' => $project->location ? e($project->location) : '<span class="text-empty">—</span>',
         'المستفيدون المستهدفون' => $project->target_beneficiaries !== null
             ? '<span class="num-ltr">' . e(number_format($project->target_beneficiaries)) . '</span>'
             : '<span class="text-empty">—</span>',
@@ -125,9 +128,6 @@
             <div class="report-hero-meta">
                 {{ $statusLabel }}
                 · تاريخ الطباعة: <span class="num-ltr">{{ now()->format('Y-m-d H:i') }}</span>
-                @if ($project->location)
-                    · {{ $project->location }}
-                @endif
             </div>
         </td>
     </tr>

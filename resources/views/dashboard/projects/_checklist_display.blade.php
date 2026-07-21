@@ -90,7 +90,7 @@
                                                     && $current->attachment_uploaded_at->toDateString() > $plannedEnd->toDateString();
                                             @endphp
                                             <div class="checklist-file-cell-content">
-                                                @include('dashboard.projects._checklist_attachment_link', ['current' => $current])
+                                                @include('dashboard.projects._checklist_attachment_link', ['current' => $current, 'compact' => true])
                                                 @if ($isLate)
                                                     <span class="badge bg-label-warning checklist-file-late-badge">متأخر</span>
                                                 @endif

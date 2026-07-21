@@ -22,6 +22,7 @@ trait ValidatesPersonInput
             'job_title' => ['nullable', 'string', 'max:255'],
             'organization' => ['nullable', 'string', 'max:255'],
             'phone' => ['nullable', 'string', 'max:50'],
+            'alternate_phone' => ['nullable', 'string', 'max:50'],
         ];
     }
 
@@ -38,6 +39,7 @@ trait ValidatesPersonInput
                 'role' => ['required', 'string', Rule::in(['project_manager', 'coordinator'])],
                 'job_title' => ['nullable', 'string', 'max:255'],
                 'phone' => ['nullable', 'string', 'max:50'],
+                'alternate_phone' => ['nullable', 'string', 'max:50'],
             ];
         } elseif ($isSectionManager) {
             $rules['role'] = ['required', 'string', Rule::in(['project_manager', 'coordinator'])];

@@ -33,7 +33,7 @@ class RaqibDemoCommand extends Command
         $this->newLine();
         $this->info('✓ بيئة التجربة جاهزة.');
         $this->line('  super_admin من .env (RAQIB_ADMIN_*)');
-        $this->line('  باقي الحسابات: demo_pm, demo_coord, demo_sm, demo_dm, demo_mon_dir, demo_monitor, demo_gen');
+        $this->line('  باقي الحسابات: demo_pm, demo_sec, demo_coord, demo_sm, demo_dm, demo_mon_dir, demo_monitor, demo_gen');
         $this->line('  كلمة المرور: password');
 
         return self::SUCCESS;

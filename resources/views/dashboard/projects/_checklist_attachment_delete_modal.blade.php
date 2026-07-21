@@ -16,6 +16,7 @@
             <form action="#" method="post" id="checklistAttachmentDeleteForm" class="d-none">
                 @csrf
                 <input type="hidden" name="checklist_item_id" id="checklistAttachmentDeleteItemId" value="">
+                <input type="hidden" name="attachment_id" id="checklistAttachmentDeleteAttachmentId" value="">
             </form>
         </div>
     </div>

@@ -9,9 +9,12 @@
 
 <div class="card border-primary mb-0">
     <div class="card-header bg-label-primary">
-        <h6 class="mb-0">تعبئة رقم ومرفق التخصيص — سكرتاريا المشاريع</h6>
+        <h6 class="mb-0">تعبئة رقم ومرفق التخصيص — سكرتاريا الدائرة</h6>
     </div>
     <div class="card-body">
+        @if ($project->hasCompletedSecretariatPhase())
+            <p class="text-muted small mb-3">تصحيح بيانات التخصيص فقط — الإرسال التالي لمدير القسم مباشرة.</p>
+        @endif
         <form
             action="{{ route('dashboard.projects.fill-secretariat', $project) }}"
             method="post"
@@ -89,7 +92,13 @@
             </div>
 
             <div class="col-12">
-                <button type="submit" class="btn btn-primary">حفظ وإرسال للمنسق</button>
+                <button type="submit" class="btn btn-primary">
+                    @if ($project->isSelfCoordinator())
+                        حفظ وإرسال لمدير القسم
+                    @else
+                        حفظ وإرسال للمنسق
+                    @endif
+                </button>
             </div>
         </form>
     </div>

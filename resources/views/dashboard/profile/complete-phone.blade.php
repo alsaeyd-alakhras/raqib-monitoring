@@ -31,6 +31,14 @@
                                 autofocus
                             />
                         </div>
+                        <div class="mb-4 col-md-6">
+                            <x-form.input
+                                label="رقم جوال بديل (اختياري)"
+                                name="alternate_phone"
+                                :value="old('alternate_phone', auth()->user()->person?->alternate_phone)"
+                                placeholder="05xxxxxxxx"
+                            />
+                        </div>
                     </div>
                     <button type="submit" class="btn btn-primary">حفظ ومتابعة</button>
                 </form>

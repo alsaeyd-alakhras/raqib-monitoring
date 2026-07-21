@@ -156,16 +156,6 @@
                     {{ $project->execution_start_date?->format('Y-m-d') ?? '—' }}
                 </td>
             </tr>
-            <tr>
-                <th scope="row">الموقع الجغرافي</th>
-                <td class="{{ $project->location ? '' : 'text-empty' }}">
-                    @if ($project->location)
-                        {!! nl2br(e($project->location)) !!}
-                    @else
-                        —
-                    @endif
-                </td>
-            </tr>
         </tbody>
     </table>
 </div>
@@ -252,8 +242,11 @@
                         <th scope="row">مناطق التنفيذ</th>
                         <td>
                             @foreach ($executionRegions as $index => $region)
-                                <span class="org-chip">
+                                <span class="org-chip d-inline-block mb-1">
                                     {{ $index + 1 }}. {{ $region['name'] }}
+                                    @if (! empty($region['execution_site']))
+                                        — {{ $region['execution_site'] }}
+                                    @endif
                                     @if ($region['beneficiaries'] !== null)
                                         ({{ number_format($region['beneficiaries']) }})
                                     @endif

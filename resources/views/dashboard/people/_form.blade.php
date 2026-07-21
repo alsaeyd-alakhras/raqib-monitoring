@@ -135,6 +135,13 @@
                     :value="$person->phone ?? ''"
                 />
             </div>
+            <div class="mb-4 col-md-6">
+                <x-form.input
+                    name="alternate_phone"
+                    label="رقم جوال بديل"
+                    :value="$person->alternate_phone ?? ''"
+                />
+            </div>
         </div>
 
         <div class="mt-2">

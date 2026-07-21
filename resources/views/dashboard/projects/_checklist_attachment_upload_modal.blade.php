@@ -21,9 +21,9 @@
                 </ul>
                 <div class="tab-content">
                     <div class="tab-pane fade show active" id="checklist-upload-pane-file" role="tabpanel">
-                        <label for="checklistAttachmentUploadFileInput" class="form-label">اختر ملفاً</label>
-                        <input type="file" class="form-control" id="checklistAttachmentUploadFileInput" accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png">
-                        <div class="form-text">الحد الأقصى 10 ميجابايت — PDF، Word، Excel، صور.</div>
+                        <label for="checklistAttachmentUploadFileInput" class="form-label">اختر ملفاً أو أكثر</label>
+                        <input type="file" class="form-control" id="checklistAttachmentUploadFileInput" accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png" multiple>
+                        <div class="form-text">الحد الأقصى 10 ميجابايت لكل ملف — PDF، Word، Excel، صور. يمكنك اختيار عدة ملفات معاً أو إضافة دفعات متتالية قبل حفظ القائمة.</div>
                     </div>
                     <div class="tab-pane fade" id="checklist-upload-pane-url" role="tabpanel">
                         <label for="checklistAttachmentUploadUrlInput" class="form-label">رابط المستند</label>

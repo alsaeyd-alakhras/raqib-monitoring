@@ -65,7 +65,6 @@
                     :optionsId="$people"
                     :value="$project->procurement_rep_id ?? ''"
                     searchable
-                    required
                 />
             </div>
             <div class="mb-4 col-md-4">
@@ -139,21 +138,6 @@
                             searchable
                         />
                     </div>
-                    <div class="col-md-6 d-flex align-items-end">
-                        <div id="fill-on-behalf-wrap" class="form-check mb-3 {{ ($selectedCoordinatorMode === 'person' && ($lockProjectManager ?? false)) ? '' : 'd-none' }}">
-                            <input
-                                class="form-check-input"
-                                type="checkbox"
-                                name="fill_on_behalf"
-                                id="fill-on-behalf-form"
-                                value="1"
-                                @checked(old('fill_on_behalf') || ($isEditing && ($project->coordinator_filled_by ?? false)))
-                            >
-                            <label class="form-check-label" for="fill-on-behalf-form">
-                                أعبّئ قائمة التحقق نيابةً عن المنسق
-                            </label>
-                        </div>
-                    </div>
                 </div>
 
                 <div id="coordinator-external-wrap" class="row {{ $selectedCoordinatorMode === 'external' ? '' : 'd-none' }}">
@@ -167,16 +151,16 @@
                     </div>
                     <div class="col-md-12">
                         <div class="alert alert-info py-2 mb-0">
-                            المنسق الخارجي بلا حساب — يمكنك تعبئة قائمة التحقق مباشرةً في أسفل النموذج.
+                            المنسق الخارجي بلا حساب — تُعبّأ قائمة التحقق من صفحة عرض المشروع بعد الحفظ.
                         </div>
                     </div>
                 </div>
 
                 <div id="coordinator-self-hint" class="alert alert-info py-2 {{ $selectedCoordinatorMode === 'self' ? '' : 'd-none' }}">
                     @if ($lockProjectManager ?? false)
-                        أنت مدير المشروع والمنسق — ستظهر قائمة التحقق في أسفل النموذج لتعبئتها مع حفظ المشروع.
+                        أنت مدير المشروع والمنسق — بعد حفظ المشروع عبّئ قائمة التحقق من صفحة عرض المشروع.
                     @else
-                        <strong>مدير المشروع هو المنسق</strong> — يعبّئ قائمة التحقق بنفسه عند إنشاء/تعديل المشروع.
+                        <strong>مدير المشروع هو المنسق</strong> — تُعبّأ قائمة التحقق من صفحة عرض المشروع بعد الإنشاء.
                     @endif
                 </div>
                 @endif
@@ -250,16 +234,6 @@
                     name="execution_start_date"
                     label="تاريخ بدء التنفيذ"
                     :value="isset($project) && $project->execution_start_date ? $project->execution_start_date->format('Y-m-d') : ''"
-                    required
-                />
-            </div>
-            <div class="mb-4 col-md-12">
-                <x-form.textarea
-                    name="location"
-                    label="الموقع الجغرافي"
-                    :value="$project->location ?? ''"
-                    :rows="1"
-                    class="project-location-field"
                     required
                 />
             </div>
@@ -371,6 +345,9 @@
                                 name="net_amount"
                                 label="صافي المبلغ (بالعملة الأصلية)"
                                 :value="old('net_amount', $project->net_amount ?? '')"
+                                class="project-financial-ltr"
+                                dir="ltr"
+                                inputmode="decimal"
                             />
                             <div class="form-text">يُحسب تلقائياً: موازنة − إيرادات (قابل للتعديل)</div>
                         </div>
@@ -382,6 +359,9 @@
                                 label="سعر الصرف (للشيكل)"
                                 :value="old('exchange_rate', $project->exchange_rate ?? '')"
                                 min="0"
+                                class="project-financial-ltr"
+                                dir="ltr"
+                                inputmode="decimal"
                             />
                             <div class="form-text">يُعبَّأ من جدول العملات ويمكن تعديله</div>
                         </div>
@@ -393,6 +373,9 @@
                                 label="المبلغ للتنفيذ (بالشيكل)"
                                 :value="old('execution_amount_ils', $project->execution_amount_ils ?? '')"
                                 min="0"
+                                class="project-financial-ltr"
+                                dir="ltr"
+                                inputmode="decimal"
                             />
                             <div class="form-text">يُحسب تلقائياً: صافي × سعر الصرف (قابل للتعديل)</div>
                         </div>
@@ -402,29 +385,6 @@
         </div>
     </div>
 </div>
-
-@if ($canEditCoordinatorChecklistInForm ?? false)
-    @if ($isEditing ?? false)
-        @include('dashboard.projects._checklist_attachment_delete_modal')
-        @include('dashboard.projects._checklist_attachment_upload_modal')
-    @endif
-    <div
-        id="coordinator-checklist-section"
-        class="card mb-4 {{ ($showCoordinatorChecklistInitially ?? false) ? '' : 'd-none' }}"
-    >
-        <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
-            <h5 class="mb-0">ثالثاً — قائمة تحقق المنسق</h5>
-            <div class="d-flex align-items-center gap-2 flex-wrap">
-                <span id="coordinator-checklist-badge" class="badge bg-label-primary">تُحفظ مع المشروع</span>
-                <span>نسبة الجاهزية: <strong class="checklist-overall-pct">—</strong></span>
-            </div>
-        </div>
-        <div class="card-body">
-            <p id="coordinator-checklist-intro" class="text-muted small mb-3"></p>
-            @include('dashboard.projects._coordinator_checklist')
-        </div>
-    </div>
-@endif
 
 <div class="mt-2">
     <button type="submit" class="btn btn-primary me-3">
@@ -439,11 +399,6 @@
 <script src="{{ asset('js/project-execution-regions.js') }}"></script>
 <script src="{{ asset('js/project-financial-fields.js') }}"></script>
 <script src="{{ asset('js/org-cascade.js') }}"></script>
-<script src="{{ asset('js/checklist-status-style.js') }}"></script>
-<script src="{{ asset('js/checklist-attachment-ui.js') }}"></script>
-<script src="{{ asset('js/checklist-readiness.js') }}"></script>
-<script src="{{ asset('js/checklist-person-required.js') }}"></script>
-<script src="{{ asset('js/checklist-closure-docs.js') }}"></script>
 @once
     @push('styles')
         <link rel="stylesheet" href="{{ asset('assets/vendor/libs/select2/select2.css') }}">
@@ -463,10 +418,9 @@
                 background: rgba(67, 89, 113, 0.03);
             }
 
-            .project-location-field {
-                resize: vertical;
-                min-height: calc(1.5em + 1.625rem + 2px);
-                overflow-y: hidden;
+            .project-financial-ltr {
+                direction: ltr;
+                text-align: left;
             }
 
             .execution-region-field .region-index-badge {
@@ -485,153 +439,16 @@
     const personWrap = document.getElementById('coordinator-person-wrap');
     const externalWrap = document.getElementById('coordinator-external-wrap');
     const selfHint = document.getElementById('coordinator-self-hint');
-    const fillOnBehalfWrap = document.getElementById('fill-on-behalf-wrap');
-    const fillOnBehalfCheckbox = document.getElementById('fill-on-behalf-form');
     const coordinatorSelect = document.getElementById('coordinator-id');
     const externalInput = document.getElementById('coordinator-external-name');
     const managerSelect = document.getElementById('project-manager-id');
-    const checklistSection = document.getElementById('coordinator-checklist-section');
-    const checklistIntro = document.getElementById('coordinator-checklist-intro');
-    const lockedManagerId = @json($lockedManagerId);
-    const canFillOnBehalf = @json((bool) ($lockProjectManager ?? false));
-    const coordinatorUserMap = @json($coordinatorUserMap ?? []);
-    let previousCoordinatorKey = null;
-
-    function selectedCoordinatorHasUser() {
-        const coordinatorId = coordinatorSelect?.value || '';
-
-        return Boolean(coordinatorUserMap[coordinatorId]);
-    }
-
-    function canShowFillOnBehalfOption() {
-        const mode = document.querySelector('.coordinator-mode-radio:checked')?.value || 'person';
-
-        return mode === 'person' && canFillOnBehalf && coordinatorSelect?.value && !selectedCoordinatorHasUser();
-    }
-
-    function getCoordinatorKey() {
-        const mode = document.querySelector('.coordinator-mode-radio:checked')?.value || 'person';
-        if (mode === 'person') {
-            return `${mode}:${coordinatorSelect?.value || ''}:${fillOnBehalfCheckbox?.checked ? '1' : '0'}`;
-        }
-        if (mode === 'external') {
-            return `${mode}:${externalInput?.value?.trim() || ''}`;
-        }
-        return `${mode}:${getManagerId()}`;
-    }
-
-    function clearCoordinatorChecklistInputs() {
-        document.querySelectorAll('.coordinator-checklist-input').forEach((input) => {
-            if (input.tagName === 'SELECT') {
-                input.value = input.dataset.defaultValue || 'not_ready';
-            } else {
-                input.value = '';
-            }
-            input.disabled = true;
-        });
-
-        if (checklistSection && window.refreshChecklistReadiness) {
-            window.refreshChecklistReadiness(checklistSection);
-        }
-        if (checklistSection && window.initChecklistStatusStyle) {
-            window.initChecklistStatusStyle(checklistSection);
-        }
-    }
-
-    function setChecklistInputsEnabled(enabled) {
-        document.querySelectorAll('.coordinator-checklist-input').forEach((input) => {
-            input.disabled = !enabled;
-        });
-    }
-
-    function shouldShowCoordinatorChecklist() {
-        const mode = document.querySelector('.coordinator-mode-radio:checked')?.value || 'person';
-        if (mode === 'self' || mode === 'external') {
-            return true;
-        }
-        if (mode === 'person') {
-            return Boolean(canShowFillOnBehalfOption() && fillOnBehalfCheckbox?.checked);
-        }
-        return false;
-    }
-
-    function updateChecklistIntro() {
-        if (!checklistIntro) {
-            return;
-        }
-
-        const mode = document.querySelector('.coordinator-mode-radio:checked')?.value || 'person';
-
-        if (mode === 'self') {
-            checklistIntro.textContent = 'بصفتك مدير المشروع والمنسق، عبّئ القائمة هنا ثم احفظ مرة واحدة.';
-            return;
-        }
-
-        if (mode === 'external') {
-            const name = externalInput?.value?.trim() || 'المنسق الخارجي';
-            checklistIntro.textContent = `تعبئة نيابةً عن ${name} — سيُسجَّل أنك عبّأت القائمة.`;
-            return;
-        }
-
-        const selected = coordinatorSelect?.selectedOptions?.[0]?.textContent?.trim() || 'المنسق';
-        checklistIntro.textContent = `تعبئة نيابةً عن ${selected} — سيُسجَّل أنك عبّأت القائمة.`;
-    }
-
-    function syncCoordinatorChecklistSection() {
-        if (!checklistSection) {
-            return;
-        }
-
-        const show = shouldShowCoordinatorChecklist();
-        checklistSection.classList.toggle('d-none', !show);
-        setChecklistInputsEnabled(show);
-        updateChecklistIntro();
-
-        if (show) {
-            if (window.initChecklistReadiness) {
-                window.initChecklistReadiness(checklistSection);
-            }
-            if (window.initChecklistStatusStyle) {
-                window.initChecklistStatusStyle(checklistSection);
-            }
-            if (window.initChecklistPersonRequired) {
-                window.initChecklistPersonRequired(checklistSection);
-            }
-            if (window.initChecklistAttachmentUi) {
-                window.initChecklistAttachmentUi(checklistSection);
-            }
-            if (window.initChecklistClosureDocs) {
-                window.initChecklistClosureDocs(checklistSection);
-            }
-            if (window.refreshChecklistReadiness) {
-                window.refreshChecklistReadiness(checklistSection);
-            }
-        }
-
-        const currentKey = getCoordinatorKey();
-        if (previousCoordinatorKey !== null && previousCoordinatorKey !== currentKey) {
-            clearCoordinatorChecklistInputs();
-            if (show) {
-                setChecklistInputsEnabled(true);
-            }
-        }
-        previousCoordinatorKey = currentKey;
-    }
-
-    function getManagerId() {
-        if (lockedManagerId) {
-            return String(lockedManagerId);
-        }
-        return managerSelect ? managerSelect.value : '';
-    }
 
     function syncCoordinatorMode() {
         const mode = document.querySelector('.coordinator-mode-radio:checked')?.value || 'person';
 
-        personWrap.classList.toggle('d-none', mode !== 'person');
-        externalWrap.classList.toggle('d-none', mode !== 'external');
-        selfHint.classList.toggle('d-none', mode !== 'self');
-        fillOnBehalfWrap?.classList.toggle('d-none', !canShowFillOnBehalfOption());
+        personWrap?.classList.toggle('d-none', mode !== 'person');
+        externalWrap?.classList.toggle('d-none', mode !== 'external');
+        selfHint?.classList.toggle('d-none', mode !== 'self');
 
         if (coordinatorSelect) {
             coordinatorSelect.disabled = mode !== 'person';
@@ -647,26 +464,16 @@
             }
         }
 
-        if (fillOnBehalfCheckbox && !canShowFillOnBehalfOption()) {
-            fillOnBehalfCheckbox.checked = false;
-        }
-
         if (mode === 'person' && window.initSearchableSelects && personWrap) {
             window.initSearchableSelects(personWrap);
         }
-
-        syncCoordinatorChecklistSection();
     }
 
     modeRadios.forEach((radio) => radio.addEventListener('change', syncCoordinatorMode));
-    fillOnBehalfCheckbox?.addEventListener('change', syncCoordinatorChecklistSection);
-    coordinatorSelect?.addEventListener('change', syncCoordinatorChecklistSection);
-    externalInput?.addEventListener('input', syncCoordinatorChecklistSection);
     if (managerSelect) {
         managerSelect.addEventListener('change', syncCoordinatorMode);
     }
 
-    previousCoordinatorKey = getCoordinatorKey();
     syncCoordinatorMode();
 })();
 
@@ -682,20 +489,6 @@ document.addEventListener('DOMContentLoaded', function () {
             selectedSectionId: @json($selectedSectionId ?? ''),
         });
     }
-
-    const locationField = document.querySelector('.project-location-field');
-
-    function autoGrowLocationField() {
-        if (!locationField) {
-            return;
-        }
-
-        locationField.style.height = 'auto';
-        locationField.style.height = `${locationField.scrollHeight}px`;
-    }
-
-    locationField?.addEventListener('input', autoGrowLocationField);
-    autoGrowLocationField();
 
     if (typeof window.initProjectExecutionRegions === 'function') {
         window.initProjectExecutionRegions({

@@ -4,7 +4,6 @@
         'pending_secretariat',
         'pending_coordinator',
         'coordinator_filling',
-        'pending_project_manager',
         'pending_section_manager',
         'pending_dept_manager',
         'pending_monitoring_manager',
@@ -15,9 +14,10 @@
     $statusLabels = \App\Models\Project::workflowStatusLabels();
     $currentStatus = $project->workflow_status;
     $isRejected = $currentStatus === 'rejected';
+    $displayStatus = $currentStatus === 'pending_project_manager' ? 'pending_section_manager' : $currentStatus;
     $currentIndex = $isRejected
         ? -1
-        : array_search($currentStatus, $workflowSteps, true);
+        : array_search($displayStatus, $workflowSteps, true);
     $stepTimestamps = $project->workflowStepTimestamps();
 @endphp
 
@@ -39,7 +39,7 @@
 
         .project-workflow-step {
             flex: 1 1 0;
-            min-width: 7rem;
+            min-width: 7.5rem;
             position: relative;
             text-align: center;
             padding: 0 0.35rem;
@@ -139,15 +139,22 @@
                     default => 'is-upcoming',
                 };
                 $timestamp = $stepTimestamps[$stepKey] ?? null;
-                $stepAt = $timestamp['at'] ?? null;
-                $stepBy = $timestamp['by'] ?? null;
+                $displayAt = null;
+                $displayBy = null;
+                $isTerminalComplete = $stepKey === 'passage_complete'
+                    && $project->workflow_status === 'passage_complete';
+
+                if ($timestamp && ($stepClass === 'is-done' || $isTerminalComplete)) {
+                    $displayAt = $timestamp['completed_at'] ?? null;
+                    $displayBy = $timestamp['completed_by'] ?? null;
+                }
             @endphp
             <div class="project-workflow-step {{ $stepClass }}">
                 <span class="project-workflow-step-circle">{{ $index + 1 }}</span>
                 <span class="project-workflow-step-label">{{ $statusLabels[$stepKey] ?? $stepKey }}</span>
-                @if ($stepClass === 'is-done' && $stepAt)
-                    <span class="project-workflow-step-date" title="{{ $stepBy?->name ?? '' }}">
-                        {{ $stepAt->format('Y-m-d H:i') }}
+                @if ($displayAt)
+                    <span class="project-workflow-step-date" title="{{ $displayBy?->name ?? '' }}">
+                        {{ $displayAt->format('Y-m-d H:i') }}
                     </span>
                 @endif
             </div>

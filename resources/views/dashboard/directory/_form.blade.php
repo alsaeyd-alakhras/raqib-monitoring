@@ -103,6 +103,7 @@
                     </div>
                     <div class="mb-4 col-md-4">
                         <x-form.input name="phone" label="الهاتف" :value="old('phone', $person->phone ?? $user->phone ?? '')" />
+                        <x-form.input name="alternate_phone" label="رقم جوال بديل" :value="old('alternate_phone', $person->alternate_phone ?? '')" />
                     </div>
                 </div>
             </div>

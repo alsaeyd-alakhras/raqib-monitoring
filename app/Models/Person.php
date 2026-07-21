@@ -34,13 +34,14 @@ class Person extends Model
         'job_title',
         'organization',
         'phone',
+        'alternate_phone',
     ];
 
     public static function roleLabels(): array
     {
         return [
             'project_manager' => 'مدير مشروع',
-            'project_secretariat' => 'سكرتاريا المشاريع',
+            'project_secretariat' => 'سكرتاريا الدائرة',
             'coordinator' => 'منسق',
             'section_manager' => 'مدير قسم',
             'department_manager' => 'مدير دائرة',

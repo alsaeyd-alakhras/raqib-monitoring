@@ -71,7 +71,7 @@
                                             {{ $current?->person_name ?: '—' }}
                                             @if ($item->has_file_field && $current?->hasAttachment())
                                                 <div class="mt-1">
-                                                    @include('dashboard.projects._checklist_attachment_link', ['current' => $current])
+                                                    @include('dashboard.projects._checklist_attachment_link', ['current' => $current, 'compact' => true])
                                                 </div>
                                             @endif
                                         @else

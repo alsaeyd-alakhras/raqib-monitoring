@@ -110,7 +110,14 @@
 
             @if ($project->workflow_status === 'pending_secretariat')
                 <div class="alert alert-info py-2 mb-3">
-                    المشروع بانتظار سكرتاريا المشاريع لتعبئة رقم التخصيص ومرفق التخصيص قبل إرساله للمنسق.
+                    @if ($project->hasCompletedSecretariatPhase())
+                        تصحيح رقم ومرفق التخصيص — سكرتاريا الدائرة. بعد الحفظ يُرسل المشروع مباشرة لمدير القسم.
+                    @elseif ($project->isSelfCoordinator())
+                        المشروع بانتظار سكرتاريا الدائرة لتعبئة رقم التخصيص ومرفق التخصيص.
+                        يجب على مدير المشروع/المنسق إكمال قائمة التحقق قبل أن تُرسل السكرتاريا لمدير القسم.
+                    @else
+                        المشروع بانتظار سكرتاريا الدائرة لتعبئة رقم التخصيص ومرفق التخصيص قبل إرساله للمنسق.
+                    @endif
                 </div>
             @endif
 
@@ -127,25 +134,38 @@
                     @elseif ($project->coordinator_external_name)
                         <span class="badge bg-label-secondary">منسق خارجي</span>
                     @endif
-                    — بعد اكتمال التعبئة يراجع مدير المشروع ويرسل لمدير القسم.
+                    — بعد اكتمال التعبئة يُرسل المشروع مباشرة لمدير القسم.
                 </div>
             @endif
 
-            @if ($project->workflow_status === 'draft' && $canUpdate)
+            @if ($project->workflow_status === 'draft' && ($canSubmitToSecretariat ?? false))
                 <form action="{{ route('dashboard.projects.submit-to-secretariat', $project) }}" method="post" class="d-inline">
                     @csrf
-                    <button type="submit" class="btn btn-primary">إرسال لسكرتاريا المشاريع</button>
+                    <button type="submit" class="btn btn-primary">إرسال لسكرتاريا الدائرة</button>
                 </form>
+            @elseif ($project->workflow_status === 'draft' && ($canSubmitToCoordinatorFromDraft ?? false))
+                <form action="{{ route('dashboard.projects.submit-to-coordinator', $project) }}" method="post" class="d-inline">
+                    @csrf
+                    <button type="submit" class="btn btn-primary">إرسال للمنسق</button>
+                </form>
+            @elseif ($project->workflow_status === 'draft' && $canUpdate && $project->isSelfCoordinator() && ! $project->hasCompletedSecretariatPhase())
+                <div class="alert alert-secondary py-2 mb-0">
+                    أكمل تعبئة قائمة المنسق واحفظها، ثم يظهر زر الإرسال لسكرتاريا الدائرة.
+                </div>
+            @elseif ($project->workflow_status === 'draft' && $canUpdate && $project->isSelfCoordinator() && $project->hasCompletedSecretariatPhase() && ! ($canSubmitToSectionManager ?? false))
+                <div class="alert alert-secondary py-2 mb-0">
+                    تم تعبئة التخصيص سابقاً — راجع قائمة المنسق واحفظها، ثم أرسل لمدير القسم.
+                </div>
             @endif
 
-            @if ($project->workflow_status === 'pending_secretariat' && auth()->user()?->can('fill_secretariat', 'App\Models\Project'))
+            @if ($project->workflow_status === 'pending_secretariat' && auth()->user()?->can('fill_secretariat', 'App\Models\Project') && ($canShowSecretariatForm ?? true))
                 @include('dashboard.projects._secretariat_form')
             @endif
 
             @if ($canSubmitToProjectManager ?? false)
                 <form action="{{ route('dashboard.projects.submit-to-project-manager', $project) }}" method="post" class="d-inline">
                     @csrf
-                    <button type="submit" class="btn btn-primary">إرسال لمدير المشروع</button>
+                    <button type="submit" class="btn btn-primary">إرسال لمدير القسم</button>
                 </form>
             @endif
 
@@ -156,7 +176,7 @@
                 </form>
             @elseif (in_array($project->workflow_status, ['pending_coordinator', 'coordinator_filling']) && ($canManageCoordinatorColumn ?? false))
                 <div class="alert alert-secondary py-2 mb-0">
-                    قبل الإرسال لمدير المشروع يجب حفظ تعبئة المنسق أولاً (من المنسق نفسه أو نيابةً عنه إن وُجدت).
+                    قبل الإرسال لمدير القسم يجب حفظ تعبئة المنسق أولاً (من المنسق نفسه أو نيابةً عنه إن وُجدت).
                 </div>
             @endif
 
