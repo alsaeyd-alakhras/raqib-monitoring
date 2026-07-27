@@ -4,10 +4,12 @@ namespace App\Providers;
 
 use App\Models\Constant;
 use App\Models\Currency;
+use App\Models\Person;
 use App\Models\User;
 use App\Services\RoleAbilitiesService;
 use App\Observers\ConstantObserver;
 use App\Observers\CurrencyObserver;
+use App\Observers\PersonObserver;
 use App\Observers\UserObserver;
 use Illuminate\Pagination\Paginator;
 use Illuminate\Support\Facades\Gate;
@@ -92,6 +94,7 @@ class AppServiceProvider extends ServiceProvider
 
         // Observe For Models
         User::observe(UserObserver::class);
+        Person::observe(PersonObserver::class);
         Constant::observe(ConstantObserver::class);
         Currency::observe(CurrencyObserver::class);
     }

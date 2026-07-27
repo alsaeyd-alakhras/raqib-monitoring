@@ -54,6 +54,8 @@
                                     'valueField' => 'coordinator_value',
                                     'showFileColumn' => true,
                                     'project' => $project,
+                                    'deleteAttachmentUrl' => $deleteAttachmentUrl ?? null,
+                                    'showLateBadge' => true,
                                 ])
                             @else
                             @php

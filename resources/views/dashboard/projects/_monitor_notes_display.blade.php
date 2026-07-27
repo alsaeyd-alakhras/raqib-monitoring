@@ -1,7 +1,8 @@
 @php
-    $positiveNotes = $positiveNotes ?? ($project->monitor_notes ?? []);
-    $negativeNotes = $negativeNotes ?? ($project->monitor_negative_notes ?? []);
-    $recommendations = $recommendations ?? ($project->monitor_recommendations ?? []);
+    $notesSubject = $execution ?? $project ?? null;
+    $positiveNotes = $positiveNotes ?? ($notesSubject->monitor_notes ?? []);
+    $negativeNotes = $negativeNotes ?? ($notesSubject->monitor_negative_notes ?? []);
+    $recommendations = $recommendations ?? ($notesSubject->monitor_recommendations ?? []);
     $hasFieldNotes = count($positiveNotes) || count($negativeNotes);
 @endphp
 

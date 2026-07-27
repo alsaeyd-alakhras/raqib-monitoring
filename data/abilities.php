@@ -82,6 +82,16 @@ return [
         'fill_monitor' => 'تعبئة عمود المراقب',
         'reject' => 'رفض المشروع',
     ],
+    'projectexecutions' => [
+        'name' => 'مسارات التنفيذ',
+        'view' => 'عرض',
+        'update' => 'تعديل',
+        'approve_section' => 'موافقة مدير القسم',
+        'approve_department' => 'موافقة مدير الدائرة',
+        'fill_coordinator' => 'تعبئة عمود المنسق',
+        'fill_monitor' => 'تعبئة عمود المراقب',
+        'reject' => 'رفض المسار',
+    ],
     'checklist_admin' => [
         'name' => 'إدارة قائمة التحقق',
         'manage' => 'إدارة المجموعات والبنود',

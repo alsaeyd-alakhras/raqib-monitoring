@@ -10,6 +10,9 @@
         'admin' => 'أدمن النظام',
         'super_admin' => 'مدير النظام',
     ];
+    $showCoordinatorColumn = ! in_array($role, ['coordinator'], true);
+    $showMonitorColumn = in_array($role, ['monitor', 'monitoring_director', 'general_management', 'admin', 'super_admin'], true)
+        || auth()->user()?->super_admin;
 @endphp
 <x-front-layout>
     @if (session('success'))
@@ -32,8 +35,11 @@
                     <i class="fa-solid fa-plus me-1"></i> مشروع جديد
                 </a>
             @endcan
+            @can('view', 'App\Models\ProjectExecution')
+                <a href="{{ route('dashboard.project-executions.index') }}" class="btn btn-outline-primary">مسارات التنفيذ</a>
+            @endcan
             @can('view', 'App\Models\Project')
-                <a href="{{ route('dashboard.projects.index') }}" class="btn btn-outline-primary">المشاريع</a>
+                <a href="{{ route('dashboard.projects.index') }}" class="btn btn-outline-secondary">المشاريع</a>
             @endcan
             @can('view', 'App\Models\MonitoringActivity')
                 <a href="{{ route('dashboard.monitoring-activities.index') }}" class="btn btn-outline-secondary">النشاطات الرقابية</a>
@@ -56,6 +62,126 @@
         </div>
     @endif
 
+    @if (($isMonitoringDirector ?? false) && ($monitoringDirectorHome ?? null))
+        @include('dashboard._monitoring_director_home')
+    @endif
+
+    @can('view', 'App\Models\ProjectExecution')
+        @if (($usesExecutionDashboard ?? false) && ! ($isMonitoringDirector ?? false))
+            <div class="card mb-4">
+                <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <h5 class="mb-0">يتطلب إجراءك — المسارات</h5>
+                    <a href="{{ route('dashboard.project-executions.index') }}" class="btn btn-sm btn-label-secondary">كل المسارات</a>
+                </div>
+                <div class="card-body p-0">
+                    @if (($actionExecutions ?? collect())->isEmpty())
+                        <div class="p-4 text-center text-muted">لا توجد مسارات تتطلب إجراءك حالياً.</div>
+                    @else
+                        <div class="table-responsive">
+                            <table class="table table-hover mb-0 align-middle">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>المشروع</th>
+                                        <th>المنطقة</th>
+                                        @if ($showCoordinatorColumn)
+                                            <th>المنسق</th>
+                                        @endif
+                                        <th>الجاهزية</th>
+                                        <th>الحالة</th>
+                                        <th></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach ($actionExecutions as $execution)
+                                        <tr>
+                                            <td>
+                                                <strong>{{ $execution->project?->project_number ?: '—' }}</strong>
+                                                <br><span class="text-muted small">{{ $execution->project?->project_name }}</span>
+                                            </td>
+                                            <td>
+                                                {{ $execution->region_name }}
+                                                @if ($execution->region_execution_site)
+                                                    <br><small class="text-muted">{{ $execution->region_execution_site }}</small>
+                                                @endif
+                                            </td>
+                                            @if ($showCoordinatorColumn)
+                                                <td class="small">{{ $execution->coordinatorDisplayName() }}</td>
+                                            @endif
+                                            <td>
+                                                {{ $execution->coordinator_readiness_pct !== null ? number_format($execution->coordinator_readiness_pct, 1) . '%' : '—' }}
+                                            </td>
+                                            <td>
+                                                <span class="badge bg-label-{{ match($execution->workflow_status) {
+                                                    'passage_complete' => 'success',
+                                                    'rejected' => 'danger',
+                                                    'pending_coordinator', 'coordinator_filling' => 'warning',
+                                                    default => 'info',
+                                                } }}">
+                                                    {{ $executionStatusLabels[$execution->workflow_status] ?? $execution->workflow_status }}
+                                                </span>
+                                            </td>
+                                            <td class="text-end">
+                                                <a href="{{ route('dashboard.projects.executions.show', [$execution->project, $execution]) }}" class="btn btn-sm btn-primary">متابعة</a>
+                                            </td>
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        </div>
+                    @endif
+                </div>
+            </div>
+
+            @if (($visibleExecutions ?? collect())->isNotEmpty())
+                <div class="card mb-4">
+                    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                        <h5 class="mb-0">كل مساراتي</h5>
+                        <a href="{{ route('dashboard.project-executions.index') }}" class="btn btn-sm btn-label-secondary">عرض الكل</a>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-hover mb-0 align-middle">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>المشروع</th>
+                                        <th>المنطقة</th>
+                                        @if ($showCoordinatorColumn)
+                                            <th>المنسق</th>
+                                        @endif
+                                        <th>الجاهزية</th>
+                                        <th>الحالة</th>
+                                        <th></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach ($visibleExecutions->take(10) as $execution)
+                                        <tr>
+                                            <td>
+                                                <strong>{{ $execution->project?->project_number ?: '—' }}</strong>
+                                                <br><span class="text-muted small">{{ $execution->project?->project_name }}</span>
+                                            </td>
+                                            <td>{{ $execution->region_name }}</td>
+                                            @if ($showCoordinatorColumn)
+                                                <td class="small">{{ $execution->coordinatorDisplayName() }}</td>
+                                            @endif
+                                            <td>{{ $execution->coordinator_readiness_pct !== null ? number_format($execution->coordinator_readiness_pct, 1) . '%' : '—' }}</td>
+                                            <td>
+                                                <span class="badge bg-label-info">{{ $executionStatusLabels[$execution->workflow_status] ?? $execution->workflow_status }}</span>
+                                            </td>
+                                            <td class="text-end">
+                                                <a href="{{ route('dashboard.projects.executions.show', [$execution->project, $execution]) }}" class="btn btn-sm btn-outline-primary">عرض</a>
+                                            </td>
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            @endif
+        @endif
+    @endcan
+
     @if ($monitoringStats)
         <div class="card mb-4">
             <div class="card-header"><h5 class="mb-0">النشاطات الرقابية</h5></div>
@@ -70,48 +196,50 @@
     @endif
 
     @can('view', 'App\Models\Project')
-        <div class="card mb-4">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <h5 class="mb-0">يتطلب إجراءك</h5>
-                <a href="{{ route('dashboard.projects.index') }}" class="btn btn-sm btn-label-secondary">كل المشاريع</a>
-            </div>
-            <div class="card-body p-0">
-                @if ($actionProjects->isEmpty())
-                    <div class="p-4 text-center text-muted">لا توجد مشاريع تتطلب إجراءك حالياً.</div>
-                @else
-                    <div class="table-responsive">
-                        <table class="table table-hover mb-0">
-                            <thead class="table-light">
-                                <tr>
-                                    <th>المشروع</th>
-                                    <th>الحالة</th>
-                                    <th>الإجراء الحالي</th>
-                                    <th></th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @foreach ($actionProjects as $project)
-                                    @php
-                                        $actionUrl = match ($person?->role) {
-                                            'monitor' => route('dashboard.projects.monitor-work', $project),
-                                            default => route('dashboard.projects.show', $project),
-                                        };
-                                    @endphp
+        @if (! ($isMonitoringDirector ?? false) && (! ($usesExecutionDashboard ?? false) || ($actionProjects ?? collect())->isNotEmpty()))
+            <div class="card mb-4">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">يتطلب إجراءك — المشاريع</h5>
+                    <a href="{{ route('dashboard.projects.index') }}" class="btn btn-sm btn-label-secondary">كل المشاريع</a>
+                </div>
+                <div class="card-body p-0">
+                    @if (($actionProjects ?? collect())->isEmpty())
+                        <div class="p-4 text-center text-muted">لا توجد مشاريع تتطلب إجراءك حالياً.</div>
+                    @else
+                        <div class="table-responsive">
+                            <table class="table table-hover mb-0">
+                                <thead class="table-light">
                                     <tr>
-                                        <td>{{ $project->project_name }}</td>
-                                        <td>{{ $statusLabels[$project->workflow_status] ?? $project->workflow_status }}</td>
-                                        <td class="small">{{ $project->currentActionLabel() }}</td>
-                                        <td class="text-end">
-                                            <a href="{{ $actionUrl }}" class="btn btn-sm btn-primary">متابعة</a>
-                                        </td>
+                                        <th>المشروع</th>
+                                        <th>الحالة</th>
+                                        <th>الإجراء الحالي</th>
+                                        <th></th>
                                     </tr>
-                                @endforeach
-                            </tbody>
-                        </table>
-                    </div>
-                @endif
+                                </thead>
+                                <tbody>
+                                    @foreach ($actionProjects as $project)
+                                        @php
+                                            $actionUrl = match ($person?->role) {
+                                                'monitor' => route('dashboard.projects.monitor-work', $project),
+                                                default => route('dashboard.projects.show', $project),
+                                            };
+                                        @endphp
+                                        <tr>
+                                            <td>{{ $project->project_name }}</td>
+                                            <td>{{ $statusLabels[$project->workflow_status] ?? $project->workflow_status }}</td>
+                                            <td class="small">{{ $project->currentActionLabel() }}</td>
+                                            <td class="text-end">
+                                                <a href="{{ $actionUrl }}" class="btn btn-sm btn-primary">متابعة</a>
+                                            </td>
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        </div>
+                    @endif
+                </div>
             </div>
-        </div>
+        @endif
     @endcan
 
     @if (in_array($role, ['admin', 'super_admin'], true))

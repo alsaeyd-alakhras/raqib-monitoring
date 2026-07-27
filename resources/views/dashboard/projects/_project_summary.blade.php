@@ -234,8 +234,8 @@
                         </td>
                     </tr>
                     @php
-                        $executionRegions = $project->executionRegionsForDisplay();
-                        $regionsTotal = $project->executionRegionsBeneficiariesTotal();
+                        $executionRegions = $executionRegionsForDisplay ?? $project->executionRegionsForDisplay();
+                        $regionsTotal = $executionRegionsBeneficiariesTotal ?? $project->executionRegionsBeneficiariesTotal();
                     @endphp
                     @if ($executionRegions !== [])
                     <tr>
@@ -278,7 +278,7 @@
                         </td>
                     </tr>
                     <tr>
-                        <th scope="row">مبلغ الإيرادات</th>
+                        <th scope="row">مصاريف إدارية (بالعملة الأصلية)</th>
                         <td class="{{ $project->revenue_amount !== null ? '' : 'text-empty' }}">
                             {{ $project->revenue_amount !== null ? number_format((float) $project->revenue_amount, 2) : '—' }}
                         </td>

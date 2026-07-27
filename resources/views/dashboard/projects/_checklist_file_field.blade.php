@@ -1,11 +1,16 @@
 @php
     $prefix = $prefix ?? 'checklist';
     $inputClass = $inputClass ?? '';
+    $linkOnly = (bool) ($linkOnly ?? false);
     $current = $current ?? null;
     $attachmentRows = $current?->attachmentsList() ?? [];
     $hasAttachment = $attachmentRows !== [];
     $isExternalUrl = $hasAttachment && count($attachmentRows) === 1 && ($attachmentRows[0]['type'] ?? '') === 'url';
-    $attachmentType = old("{$prefix}.{$item->id}.attachment_type", $current?->attachment_type ?? 'file');
+    $defaultAttachmentType = $linkOnly ? 'url' : 'file';
+    $attachmentType = old("{$prefix}.{$item->id}.attachment_type", $current?->attachment_type ?? $defaultAttachmentType);
+    if ($linkOnly && $attachmentType === 'file' && ! $hasAttachment) {
+        $attachmentType = 'url';
+    }
     $attachmentUrlValue = old("{$prefix}.{$item->id}.attachment_url", $current?->attachment_url ?? '');
     $fieldName = "{$prefix}[{$item->id}][attachments][]";
     $typeFieldName = "{$prefix}[{$item->id}][attachment_type]";
@@ -18,9 +23,10 @@
         && ($project->planned_end_date ?? null)
         && $current?->attachment_uploaded_at
         && $current->attachment_uploaded_at->toDateString() > $project->planned_end_date->toDateString();
-    $deleteUrl = ($project->exists ?? false)
-        ? route('dashboard.projects.delete-checklist-attachment', $project)
-        : '';
+    $deleteUrl = $deleteAttachmentUrl
+        ?? (($project->exists ?? false)
+            ? route('dashboard.projects.delete-checklist-attachment', $project)
+            : '');
     $savedForJs = collect($attachmentRows)->map(function (array $row) use ($current) {
         $url = ($row['type'] ?? '') === 'url'
             ? ($row['url'] ?? null)
@@ -40,20 +46,28 @@
 <div
     class="checklist-file-field"
     data-closure-file-field
+    @if ($linkOnly) data-link-only="1" @endif
     data-has-attachment="{{ $hasAttachment ? '1' : '0' }}"
     data-attachment-type="{{ $hasAttachment ? ($isExternalUrl ? 'url' : 'file') : '' }}"
     data-item-id="{{ $item->id }}"
     data-delete-url="{{ $deleteUrl }}"
+    @if ($scopeProjectLevel ?? false)
+        data-project-execution-scope="project"
+    @elseif (isset($projectExecutionId) && $projectExecutionId !== '')
+        data-project-execution-scope="{{ $projectExecutionId }}"
+    @endif
     data-saved-attachments='@json($savedForJs, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE)'
 >
-    <input
-        type="file"
-        name="{{ $fieldName }}"
-        id="{{ $inputId }}"
-        class="d-none checklist-file-input {{ $inputClass }}"
-        accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png"
-        multiple
-    >
+    @unless ($linkOnly)
+        <input
+            type="file"
+            name="{{ $fieldName }}"
+            id="{{ $inputId }}"
+            class="d-none checklist-file-input {{ $inputClass }}"
+            accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png"
+            multiple
+        >
+    @endunless
     <input
         type="hidden"
         name="{{ $typeFieldName }}"
@@ -78,10 +92,11 @@
         <button
             type="button"
             class="btn btn-sm btn-icon btn-text-secondary checklist-file-upload-btn"
-            title="إضافة مرفق"
-            aria-label="إضافة مرفق"
+            @if ($linkOnly) data-link-only="1" @endif
+            title="{{ $linkOnly ? 'إضافة رابط' : 'إضافة مرفق' }}"
+            aria-label="{{ $linkOnly ? 'إضافة رابط' : 'إضافة مرفق' }}"
         >
-            <i class="ti ti-upload"></i>
+            <i class="ti {{ $linkOnly ? 'ti-link' : 'ti-upload' }}"></i>
         </button>
     </div>
     @if ($showLateBadge)

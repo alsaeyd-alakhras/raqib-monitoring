@@ -122,6 +122,17 @@ trait ValidatesPersonInput
                     );
                 }
             }
+
+            if ($role === 'monitoring_director') {
+                $existingDirector = Person::monitoringDirector($except?->id);
+
+                if ($existingDirector) {
+                    $validator->errors()->add(
+                        'role',
+                        'يوجد مدير رقابة عامة بالفعل: ' . $existingDirector->name . '.'
+                    );
+                }
+            }
         });
 
         if ($validator->fails()) {

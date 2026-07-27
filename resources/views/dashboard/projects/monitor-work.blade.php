@@ -12,6 +12,21 @@
     ];
 @endphp
 <x-front-layout>
+    @if (session('success'))
+        <div class="alert alert-success">{{ session('success') }}</div>
+    @endif
+
+    @if ($errors->any())
+        <div class="alert alert-danger">
+            <strong>يرجى تصحيح الأخطاء التالية:</strong>
+            <ul class="mb-0 mt-2">
+                @foreach ($errors->all() as $error)
+                    <li>{{ $error }}</li>
+                @endforeach
+            </ul>
+        </div>
+    @endif
+
     @if ($errors->has('monitor'))
         <div class="alert alert-danger">{{ $errors->first('monitor') }}</div>
     @endif
@@ -45,6 +60,19 @@
             @csrf
 
             <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">بيانات النشاط المتبقية</h5>
+                </div>
+                <div class="card-body">
+                    @include('dashboard.projects._activity_fields_editor', [
+                        'activity' => $primaryActivity ?? null,
+                        'people' => $people ?? collect(),
+                        'activityTypes' => $activityTypes ?? [],
+                    ])
+                </div>
+            </div>
+
+            <div class="card mb-4">
                 <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
                     <h5 class="mb-0">قائمة التحقق — عمود المراقب</h5>
                     <span>نسبة الجاهزية: <strong class="checklist-overall-pct">{{ $project->monitor_readiness_pct !== null ? $project->monitor_readiness_pct . '%' : '—' }}</strong></span>
@@ -59,19 +87,6 @@
                     ])
 
                     @include('dashboard.projects._monitor_notes_editor', ['project' => $project])
-                </div>
-            </div>
-
-            <div class="card mb-4">
-                <div class="card-header">
-                    <h5 class="mb-0">بيانات النشاط المتبقية</h5>
-                </div>
-                <div class="card-body">
-                    @include('dashboard.projects._activity_fields_editor', [
-                        'activity' => $primaryActivity ?? null,
-                        'people' => $people ?? collect(),
-                        'activityTypes' => $activityTypes ?? [],
-                    ])
                 </div>
             </div>
 
@@ -156,7 +171,7 @@
         </div>
     @elseif (($canEditMonitorColumn ?? false) && ($isAssignedMonitor ?? true))
         <div class="alert alert-info mb-4">
-            <strong>الخطوة التالية:</strong> احفظ قائمة التحقق والملاحظات وبيانات النشاط من الأعلى أولاً، ثم سيظهر خيار الإرسال لمدير الرقابة العامة في هذه الصفحة.
+            <strong>الخطوة التالية:</strong> احفظ التعديلات من الأعلى أولاً، ثم سيظهر خيار الإرسال لمدير الرقابة العامة في هذه الصفحة.
         </div>
     @endif
 

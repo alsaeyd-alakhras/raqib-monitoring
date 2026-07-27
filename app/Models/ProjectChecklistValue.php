@@ -13,6 +13,7 @@ class ProjectChecklistValue extends Model
 
     protected $fillable = [
         'project_id',
+        'project_execution_id',
         'checklist_item_id',
         'coordinator_value',
         'monitor_value',
@@ -38,6 +39,11 @@ class ProjectChecklistValue extends Model
     public function project(): BelongsTo
     {
         return $this->belongsTo(Project::class);
+    }
+
+    public function projectExecution(): BelongsTo
+    {
+        return $this->belongsTo(ProjectExecution::class);
     }
 
     /** @return list<array{id: string, type: string, path: ?string, url: ?string, original_name: ?string, uploaded_at: ?string}> */

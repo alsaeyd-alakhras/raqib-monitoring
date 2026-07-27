@@ -53,7 +53,8 @@
                                 'inputClass' => $inputClass,
                                 'valueField' => $valueField,
                                 'showFileColumn' => $showFileColumn,
-                                'project' => $project,
+                                'project' => $project ?? null,
+                                'deleteAttachmentUrl' => $deleteAttachmentUrl ?? null,
                             ])
                         @endforeach
                     </tbody>

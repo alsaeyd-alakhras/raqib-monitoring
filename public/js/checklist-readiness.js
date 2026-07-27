@@ -110,7 +110,10 @@
         container.dataset.readinessBound = '1';
 
         container.addEventListener('change', (event) => {
-            if (event.target.matches('select[name*="[value]"], .checklist-file-input')) {
+            if (
+                event.target.matches('select[name*="[value]"], .checklist-file-input, .checklist-attachment-url-input')
+                || event.target.closest('[data-closure-file-field]')
+            ) {
                 updateContainer(container);
             }
         });

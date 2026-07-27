@@ -82,6 +82,20 @@ class Person extends Model
             ->exists();
     }
 
+    public static function monitoringDirector(?int $exceptPersonId = null): ?Person
+    {
+        return self::query()
+            ->where('role', 'monitoring_director')
+            ->when($exceptPersonId, fn ($query) => $query->where('id', '!=', $exceptPersonId))
+            ->first();
+    }
+
+    /** @return list<string> */
+    public static function rolesLimitedToOneGlobally(): array
+    {
+        return ['monitoring_director'];
+    }
+
     public function getRoleLabelAttribute(): string
     {
         if ($this->role === null || $this->role === '') {

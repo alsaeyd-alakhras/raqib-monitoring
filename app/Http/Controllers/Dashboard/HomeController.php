@@ -5,10 +5,19 @@ namespace App\Http\Controllers\Dashboard;
 use App\Http\Controllers\Controller;
 use App\Models\MonitoringActivity;
 use App\Models\Project;
+use App\Models\ProjectExecution;
+use Illuminate\Support\Collection;
 use Illuminate\View\View;
 
 class HomeController extends Controller
 {
+    /** @var array<int, string> */
+    private const MONITORING_PIPELINE_STATUSES = [
+        'pending_monitoring_manager',
+        'monitoring_in_progress',
+        'pending_monitoring_confirmation',
+    ];
+
     public function index(): View
     {
         $user = auth()->user();
@@ -18,10 +27,43 @@ class HomeController extends Controller
         $projectsQuery = Project::query()->visibleToUser($user);
         $visibleProjects = (clone $projectsQuery)->get();
 
-        $stats = $this->buildStats($visibleProjects, $role);
-        $actionProjects = $visibleProjects
-            ->filter(fn (Project $project) => $project->needsActionFromPerson($person))
-            ->take(10);
+        $executionDashboardRoles = ['coordinator', 'monitor', 'section_manager', 'department_manager', 'monitoring_director'];
+        $usesExecutionDashboard = in_array($role, $executionDashboardRoles, true)
+            || ($user?->canOverseeExecutions() ?? false);
+
+        $visibleExecutions = collect();
+        $executionStats = null;
+        $actionExecutions = collect();
+
+        if ($usesExecutionDashboard && $user?->can('view', ProjectExecution::class)) {
+            $visibleExecutions = ProjectExecution::query()
+                ->where('is_active', true)
+                ->visibleToUser($user)
+                ->with(['project', 'coordinator', 'monitorPerson'])
+                ->orderByDesc('updated_at')
+                ->get();
+
+            $executionStats = $this->buildExecutionStats($visibleExecutions, $role);
+            $actionExecutions = $visibleExecutions
+                ->filter(fn (ProjectExecution $execution) => $execution->needsActionFromPerson($person))
+                ->take(15)
+                ->values();
+        }
+
+        $stats = $usesExecutionDashboard && $executionStats
+            ? $executionStats
+            : $this->buildStats($visibleProjects, $role);
+
+        $actionProjects = match (true) {
+            ! $usesExecutionDashboard => $visibleProjects
+                ->filter(fn (Project $project) => $project->needsActionFromPerson($person))
+                ->take(10),
+            $user?->isMonitoringDirector() => $visibleProjects
+                ->filter(fn (Project $project) => ! $project->usesExecutionTracks()
+                    && $project->needsActionFromPerson($person))
+                ->take(10),
+            default => collect(),
+        };
 
         $monitoringStats = null;
         if ($user?->can('view', MonitoringActivity::class)) {
@@ -36,19 +78,162 @@ class HomeController extends Controller
             ];
         }
 
+        $isMonitoringDirector = $user?->isMonitoringDirector() ?? false;
+
+        $monitoringDirectorHome = $isMonitoringDirector
+            ? $this->buildMonitoringDirectorHomeData($user, $visibleProjects, $visibleExecutions)
+            : null;
+
         return view('dashboard.index', [
             'role' => $role,
             'person' => $person,
+            'isMonitoringDirector' => $isMonitoringDirector,
             'stats' => $stats,
             'actionProjects' => $actionProjects,
+            'actionExecutions' => $actionExecutions,
+            'visibleExecutions' => $visibleExecutions,
+            'usesExecutionDashboard' => $usesExecutionDashboard,
             'monitoringStats' => $monitoringStats,
+            'monitoringDirectorHome' => $monitoringDirectorHome,
             'statusLabels' => Project::workflowStatusLabels(),
+            'executionStatusLabels' => ProjectExecution::workflowStatusLabels(),
         ]);
+    }
+
+    /**
+     * @param  Collection<int, Project>  $visibleProjects
+     * @param  Collection<int, ProjectExecution>  $visibleExecutions
+     * @return array{
+     *     pipelineExecutions: Collection<int, ProjectExecution>,
+     *     activeSingleProjects: Collection<int, Project>,
+     *     executionTrackProjects: Collection<int, Project>
+     * }
+     */
+    private function buildMonitoringDirectorHomeData(
+        ?\App\Models\User $user,
+        Collection $visibleProjects,
+        Collection $visibleExecutions,
+    ): array {
+        $pipelineExecutions = $visibleExecutions
+            ->sort(function (ProjectExecution $a, ProjectExecution $b) {
+                $aPriority = in_array($a->workflow_status, self::MONITORING_PIPELINE_STATUSES, true) ? 0 : 1;
+                $bPriority = in_array($b->workflow_status, self::MONITORING_PIPELINE_STATUSES, true) ? 0 : 1;
+
+                if ($aPriority !== $bPriority) {
+                    return $aPriority <=> $bPriority;
+                }
+
+                return ($b->updated_at?->getTimestamp() ?? 0) <=> ($a->updated_at?->getTimestamp() ?? 0);
+            })
+            ->values();
+
+        $activeSingleProjects = $visibleProjects
+            ->filter(fn (Project $project) => ! $project->usesExecutionTracks()
+                && in_array($project->workflow_status, self::MONITORING_PIPELINE_STATUSES, true))
+            ->sortByDesc('updated_at')
+            ->take(15)
+            ->values();
+
+        $executionTrackProjects = Project::query()
+            ->visibleToUser($user)
+            ->where('uses_execution_tracks', true)
+            ->whereHas('executions', fn ($query) => $query->where('is_active', true))
+            ->withCount([
+                'executions as active_executions_count' => fn ($query) => $query->where('is_active', true),
+                'executions as pipeline_executions_count' => fn ($query) => $query
+                    ->where('is_active', true)
+                    ->whereIn('workflow_status', self::MONITORING_PIPELINE_STATUSES),
+            ])
+            ->with('projectManager')
+            ->orderByDesc('updated_at')
+            ->take(12)
+            ->get();
+
+        return [
+            'pipelineExecutions' => $pipelineExecutions,
+            'activeSingleProjects' => $activeSingleProjects,
+            'executionTrackProjects' => $executionTrackProjects,
+        ];
     }
 
     public function refreshDashboardCache()
     {
         return back()->with('success', 'تم تحديث البيانات.');
+    }
+
+    /** @param Collection<int, ProjectExecution> $executions */
+    private function buildExecutionStats(Collection $executions, ?string $role): array
+    {
+        $base = [
+            'total' => $executions->count(),
+            'pending_fill' => $executions->whereIn('workflow_status', ['pending_coordinator', 'coordinator_filling'])->count(),
+            'pending_section' => $executions->where('workflow_status', 'pending_section_manager')->count(),
+            'pending_dept' => $executions->where('workflow_status', 'pending_dept_manager')->count(),
+            'pending_monitoring' => $executions->where('workflow_status', 'pending_monitoring_manager')->count(),
+            'monitoring' => $executions->where('workflow_status', 'monitoring_in_progress')->count(),
+            'pending_confirmation' => $executions->where('workflow_status', 'pending_monitoring_confirmation')->count(),
+            'complete' => $executions->where('workflow_status', 'passage_complete')->count(),
+            'rejected' => $executions->where('workflow_status', 'rejected')->count(),
+        ];
+
+        return match ($role) {
+            'coordinator' => [
+                'label' => 'مساراتي كمنسق',
+                'cards' => [
+                    ['title' => 'مُسندة لي', 'value' => $base['total'], 'class' => 'primary'],
+                    ['title' => 'بانتظار تعبئتي', 'value' => $base['pending_fill'], 'class' => 'warning'],
+                    ['title' => 'بانتظار مدير القسم', 'value' => $base['pending_section'], 'class' => 'info'],
+                    ['title' => 'بانتظار مدير الدائرة', 'value' => $base['pending_dept'], 'class' => 'info'],
+                    ['title' => 'قيد الرقابة', 'value' => $base['pending_monitoring'] + $base['monitoring'] + $base['pending_confirmation'], 'class' => 'info'],
+                    ['title' => 'مكتملة', 'value' => $base['complete'], 'class' => 'success'],
+                ],
+            ],
+            'monitor' => [
+                'label' => 'مساراتي كمراقب',
+                'cards' => [
+                    ['title' => 'مُسندة لي', 'value' => $base['total'], 'class' => 'primary'],
+                    ['title' => 'قيد التعبئة', 'value' => $base['monitoring'], 'class' => 'warning'],
+                    ['title' => 'بانتظار مدير الرقابة', 'value' => $base['pending_confirmation'], 'class' => 'info'],
+                    ['title' => 'مكتملة', 'value' => $base['complete'], 'class' => 'success'],
+                ],
+            ],
+            'section_manager' => [
+                'label' => 'مسارات قسمي',
+                'cards' => [
+                    ['title' => 'إجمالي المسارات', 'value' => $base['total'], 'class' => 'primary'],
+                    ['title' => 'بانتظار موافقتي', 'value' => $base['pending_section'], 'class' => 'warning'],
+                    ['title' => 'عند مدير الدائرة', 'value' => $base['pending_dept'], 'class' => 'info'],
+                    ['title' => 'مكتملة', 'value' => $base['complete'], 'class' => 'success'],
+                ],
+            ],
+            'department_manager' => [
+                'label' => 'مسارات دائرتي',
+                'cards' => [
+                    ['title' => 'إجمالي المسارات', 'value' => $base['total'], 'class' => 'primary'],
+                    ['title' => 'بانتظار موافقتي', 'value' => $base['pending_dept'], 'class' => 'warning'],
+                    ['title' => 'عند الرقابة', 'value' => $base['pending_monitoring'] + $base['monitoring'] + $base['pending_confirmation'], 'class' => 'info'],
+                    ['title' => 'مكتملة', 'value' => $base['complete'], 'class' => 'success'],
+                ],
+            ],
+            'monitoring_director' => [
+                'label' => 'دورة الرقابة — المسارات',
+                'cards' => [
+                    ['title' => 'بانتظار تعيين مراقب', 'value' => $base['pending_monitoring'], 'class' => 'warning'],
+                    ['title' => 'قيد المراقبة', 'value' => $base['monitoring'], 'class' => 'info'],
+                    ['title' => 'بانتظار تأكيد المرور', 'value' => $base['pending_confirmation'], 'class' => 'primary'],
+                    ['title' => 'مكتملة', 'value' => $base['complete'], 'class' => 'success'],
+                ],
+            ],
+            default => [
+                'label' => 'مسارات التنفيذ',
+                'cards' => [
+                    ['title' => 'إجمالي المسارات', 'value' => $base['total'], 'class' => 'primary'],
+                    ['title' => 'قيد التنفيذ', 'value' => $base['total'] - $base['complete'] - $base['rejected'], 'class' => 'info'],
+                    ['title' => 'مكتملة', 'value' => $base['complete'], 'class' => 'success'],
+                    ['title' => 'مرفوضة', 'value' => $base['rejected'], 'class' => 'danger'],
+                ],
+            ],
+        };
     }
 
     /** @param \Illuminate\Support\Collection<int, Project> $projects */

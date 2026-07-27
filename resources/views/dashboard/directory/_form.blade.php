@@ -70,6 +70,7 @@
                             :options="$roleLabels"
                             :value="old('role', $person->role ?? '')"
                         />
+                        <div id="monitoring-director-hint" class="form-text text-warning d-none"></div>
                     </div>
 
                     @unless ($sectionManagerMode)
@@ -183,6 +184,8 @@
                 roleAbilitiesUrl: @json($roleAbilitiesUrl),
                 rolesRequiringDepartment: @json($rolesRequiringDepartment),
                 rolesRequiringSection: @json($rolesRequiringSection),
+                rolesLimitedToOneGlobally: @json($rolesLimitedToOneGlobally ?? []),
+                occupiedMonitoringDirector: @json($occupiedMonitoringDirector ?? null),
                 selectedAbilities: @json($selectedAbilities ?? []),
                 departmentsByCenterUrl: @json($departmentsByCenterUrl),
                 sectionsByDepartmentUrl: @json($sectionsByDepartmentUrl),

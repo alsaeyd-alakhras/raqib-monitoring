@@ -31,6 +31,50 @@
         return window.bootstrap.Modal.getOrCreateInstance(modal);
     }
 
+    function isLinkOnlyField(fileField) {
+        return fileField?.dataset.linkOnly === '1';
+    }
+
+    function setUploadModalLinkOnlyMode(modal, linkOnly) {
+        const fileTab = modal?.querySelector('#checklist-upload-tab-file');
+        const filePane = modal?.querySelector('#checklist-upload-pane-file');
+        const urlTab = modal?.querySelector('#checklist-upload-tab-url');
+        const urlPane = modal?.querySelector('#checklist-upload-pane-url');
+        const fileTabItem = fileTab?.closest('.nav-item');
+        const modalTitle = modal?.querySelector('#checklistAttachmentUploadModalLabel');
+
+        if (!modal) {
+            return;
+        }
+
+        if (linkOnly) {
+            modal.dataset.linkOnly = '1';
+            fileTabItem?.classList.add('d-none');
+            fileTab?.classList.remove('active');
+            filePane?.classList.remove('show', 'active');
+            urlTab?.classList.add('active');
+            urlPane?.classList.add('show', 'active');
+            if (modalTitle) {
+                modalTitle.textContent = 'إضافة رابط';
+            }
+            return;
+        }
+
+        delete modal.dataset.linkOnly;
+        fileTabItem?.classList.remove('d-none');
+        fileTab?.classList.add('active');
+        filePane?.classList.add('show', 'active');
+        urlTab?.classList.remove('active');
+        urlPane?.classList.remove('show', 'active');
+        if (modalTitle) {
+            modalTitle.textContent = 'إضافة مرفق';
+        }
+    }
+
+    function resetUploadModalTabs(modal) {
+        setUploadModalLinkOnlyMode(modal, false);
+    }
+
     function getTypeInput(fileField) {
         return fileField.querySelector('.checklist-attachment-type-input');
     }
@@ -215,6 +259,8 @@
 
         pendingUploadContext = { fileField };
 
+        setUploadModalLinkOnlyMode(modal, isLinkOnlyField(fileField));
+
         modalInstance.show();
     }
 
@@ -248,7 +294,8 @@
         const { fileField } = pendingUploadContext;
         const modal = getUploadModal();
         const modalInstance = getModalInstance(modal);
-        const isUrlTab = Boolean(modal?.querySelector('#checklist-upload-tab-url.active'));
+        const linkOnly = modal?.dataset.linkOnly === '1';
+        const isUrlTab = linkOnly || Boolean(modal?.querySelector('#checklist-upload-tab-url.active'));
         const fileInput = getFileInput(fileField);
         const typeInput = getTypeInput(fileField);
         const urlInput = getUrlInput(fileField);
@@ -372,6 +419,10 @@
             if (attachmentInput) {
                 attachmentInput.value = attachmentId;
             }
+            const scopeInput = document.getElementById('checklistAttachmentDeleteProjectScope');
+            if (scopeInput) {
+                scopeInput.value = fileField.dataset.projectExecutionScope || '';
+            }
         }
 
         modalInstance.show();
@@ -446,6 +497,7 @@
 
         modal.addEventListener('hidden.bs.modal', function () {
             pendingUploadContext = null;
+            resetUploadModalTabs(modal);
         });
     }
 

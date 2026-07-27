@@ -231,7 +231,7 @@
         </div>
     </div>
 
-    @if ($project->workflow_status === 'pending_monitoring_manager' && (($canSetMonitoringInfo ?? false) || ($canAssignMonitor ?? false)))
+    @if ($canManageMonitoringSetup ?? false)
         @include('dashboard.projects._monitoring_setup_panel')
     @endif
 

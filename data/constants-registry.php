@@ -15,7 +15,7 @@ return [
     ],
     'association_offices' => [
         'label' => 'مكاتب الجمعية',
-        'used_in' => ['projects.execution_regions (name, beneficiaries, execution_site)'],
+        'used_in' => ['projects.execution_regions (name, beneficiaries, execution_site, coordinator_mode, coordinator_id, coordinator_external_name)'],
         'value_shape' => 'list<string>',
     ],
     'monitoring_methods' => [

@@ -8,6 +8,7 @@ use App\Models\Project;
 use App\Models\RoleUser;
 use App\Models\Section;
 use App\Models\User;
+use App\Services\RoleAbilitiesService;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
 
@@ -26,6 +27,7 @@ class SimpleDemoUsersSeeder extends Seeder
         'projects.view',
         'projects.create',
         'projects.update',
+        'projectexecutions.view',
     ];
 
     public function run(): void
@@ -267,6 +269,18 @@ class SimpleDemoUsersSeeder extends Seeder
 
     private function seedDemoUser(array $data): void
     {
+        if (($data['role'] ?? null) === 'monitoring_director') {
+            $existingDirector = Person::monitoringDirector();
+
+            if ($existingDirector && $existingDirector->user?->username !== $data['username']) {
+                $this->command?->warn(
+                    'تخطّي «'.$data['username'].'» — دور مدير الرقابة العامة محجوز لـ «'.$existingDirector->name.'».'
+                );
+
+                return;
+            }
+        }
+
         $user = User::updateOrCreate(
             ['username' => $data['username']],
             [
@@ -297,7 +311,9 @@ class SimpleDemoUsersSeeder extends Seeder
 
         RoleUser::where('user_id', $user->id)->delete();
 
-        foreach (array_unique($data['abilities']) as $ability) {
+        $abilities = app(RoleAbilitiesService::class)->forRole($data['role'] ?? null);
+
+        foreach ($abilities as $ability) {
             RoleUser::create([
                 'role_name' => $ability,
                 'user_id' => $user->id,

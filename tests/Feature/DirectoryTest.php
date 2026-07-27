@@ -137,6 +137,76 @@ class DirectoryTest extends TestCase
         $this->assertNull($person->user_id);
     }
 
+    public function test_person_role_change_resets_abilities_to_role_base(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        $center = Center::create(['name' => 'مركز']);
+        $department = Department::create(['center_id' => $center->id, 'name' => 'دائرة']);
+        $section = Section::create(['department_id' => $department->id, 'name' => 'قسم']);
+
+        $user = User::create([
+            'name' => 'منسق سابق',
+            'username' => 'coord_then_pm',
+            'email' => 'coordthenpm@test.local',
+            'password' => 'password',
+            'user_type' => 'employee',
+            'is_active' => true,
+            'super_admin' => false,
+        ]);
+
+        $person = Person::create([
+            'user_id' => $user->id,
+            'name' => 'منسق سابق',
+            'role' => 'coordinator',
+            'department_id' => $department->id,
+            'section_id' => $section->id,
+        ]);
+
+        RoleUser::create([
+            'role_name' => 'monitoringactivities.assign_monitor',
+            'user_id' => $user->id,
+            'ability' => 'allow',
+        ]);
+
+        $person->update(['role' => 'project_manager']);
+
+        $assigned = RoleUser::where('user_id', $user->id)->pluck('role_name')->sort()->values()->all();
+        $expected = app(RoleAbilitiesService::class)->forRole('project_manager');
+        sort($expected);
+
+        $this->assertEqualsCanonicalizing(
+            array_merge($expected, ['aiddistributions.view', 'aiddistributions.create', 'aiddistributions.update']),
+            $assigned
+        );
+        $this->assertNotContains('monitoringactivities.assign_monitor', $assigned);
+    }
+
+    public function test_only_one_monitoring_director_is_allowed(): void
+    {
+        $admin = $this->makeSuperAdmin();
+
+        $center = Center::create(['name' => 'مركز تجريبي']);
+        $department = Department::create(['center_id' => $center->id, 'name' => 'دائرة الرقابة']);
+        $section = Section::create(['department_id' => $department->id, 'name' => 'قسم الرقابة']);
+
+        Person::create([
+            'name' => 'مدير الرقابة الحالي',
+            'role' => 'monitoring_director',
+            'department_id' => $department->id,
+        ]);
+
+        $this->actingAs($admin)
+            ->post(route('dashboard.directory.store'), [
+                'record_mode' => 'person_only',
+                'name' => 'مدير رقابة ثانٍ',
+                'role' => 'monitoring_director',
+                'department_id' => $department->id,
+            ])
+            ->assertSessionHasErrors('role');
+
+        $this->assertSame(1, Person::where('role', 'monitoring_director')->count());
+    }
+
     private function makeSuperAdmin(): User
     {
         return User::create([

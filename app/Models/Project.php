@@ -50,6 +50,7 @@ class Project extends Model
         'monitor_negative_notes',
         'monitor_recommendations',
         'workflow_status',
+        'uses_execution_tracks',
         'primary_monitoring_activity_id',
         'coordinator_submitted_at',
         'coordinator_submitted_by',
@@ -96,6 +97,7 @@ class Project extends Model
         'monitor_notes' => 'array',
         'monitor_negative_notes' => 'array',
         'monitor_recommendations' => 'array',
+        'uses_execution_tracks' => 'boolean',
         'coordinator_submitted_at' => 'datetime',
         'secretariat_submitted_at' => 'datetime',
         'secretariat_filled_at' => 'datetime',
@@ -119,7 +121,7 @@ class Project extends Model
         return $this->belongsTo(Currency::class);
     }
 
-    /** @return list<array{name: string, beneficiaries: int|null}> */
+    /** @return list<array{name: string, beneficiaries: int|null, execution_site: string|null, coordinator_mode: string|null, coordinator_id: int|null, coordinator_external_name: string|null}> */
     public function executionRegionsForDisplay(): array
     {
         $regions = $this->execution_regions;
@@ -134,12 +136,16 @@ class Project extends Model
                     'name' => trim($region),
                     'beneficiaries' => null,
                     'execution_site' => null,
+                    'coordinator_mode' => null,
+                    'coordinator_id' => null,
+                    'coordinator_external_name' => null,
                 ];
             }
 
             $beneficiaries = $region['beneficiaries'] ?? null;
             $executionSite = $region['execution_site'] ?? null;
             $executionSite = is_string($executionSite) ? trim($executionSite) : '';
+            $coordinatorId = $region['coordinator_id'] ?? null;
 
             return [
                 'name' => trim((string) ($region['name'] ?? '')),
@@ -147,8 +153,44 @@ class Project extends Model
                     ? null
                     : (int) $beneficiaries,
                 'execution_site' => $executionSite !== '' ? $executionSite : null,
+                'coordinator_mode' => filled($region['coordinator_mode'] ?? null)
+                    ? (string) $region['coordinator_mode']
+                    : null,
+                'coordinator_id' => $coordinatorId === null || $coordinatorId === ''
+                    ? null
+                    : (int) $coordinatorId,
+                'coordinator_external_name' => filled($region['coordinator_external_name'] ?? null)
+                    ? trim((string) $region['coordinator_external_name'])
+                    : null,
             ];
         }, $regions));
+    }
+
+    public function usesPerRegionCoordinators(): bool
+    {
+        if ((int) $this->execution_zones <= 0) {
+            return false;
+        }
+
+        foreach ($this->executionRegionsForDisplay() as $region) {
+            if (filled($region['coordinator_mode'] ?? null)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public function regionHasCoordinatorAssignment(array $region): bool
+    {
+        $mode = $region['coordinator_mode'] ?? null;
+
+        return match ($mode) {
+            'self' => true,
+            'person' => ! empty($region['coordinator_id']),
+            'external' => filled($region['coordinator_external_name'] ?? null),
+            default => $this->coordinator_id !== null || filled($this->coordinator_external_name),
+        };
     }
 
     public function executionRegionsBeneficiariesTotal(): ?int
@@ -566,6 +608,18 @@ class Project extends Model
 
     public function hasCoordinatorAssignment(): bool
     {
+        $regions = $this->executionRegionsForDisplay();
+
+        if ((int) $this->execution_zones > 0 && $regions !== []) {
+            foreach ($regions as $region) {
+                if (! $this->regionHasCoordinatorAssignment($region)) {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
         return $this->coordinator_id !== null || filled($this->coordinator_external_name);
     }
 
@@ -622,7 +676,7 @@ class Project extends Model
 
     public function scopeVisibleToUser(Builder $query, ?User $user): Builder
     {
-        if (! $user || $user->super_admin) {
+        if (! $user || $user->super_admin || $user->canOverseeExecutions()) {
             return $query;
         }
 
@@ -635,13 +689,27 @@ class Project extends Model
         return match ($person->role) {
             'project_manager' => $query->where('project_manager_id', $person->id),
             'section_manager' => $person->section_id
-                ? $query->whereHas('projectManager', fn (Builder $q) => $q->where('section_id', $person->section_id))
+                ? $query->where(function (Builder $q) use ($person, $user) {
+                    $q->where('uses_execution_tracks', false)
+                        ->whereHas('projectManager', fn (Builder $inner) => $inner->where('section_id', $person->section_id))
+                        ->orWhereHas('executions', fn (Builder $inner) => $inner->visibleToUser($user));
+                })
                 : $query->whereRaw('1 = 0'),
             'department_manager' => $person->department_id
-                ? $query->whereHas('projectManager', fn (Builder $q) => $q->where('department_id', $person->department_id))
+                ? $query->where(function (Builder $q) use ($person, $user) {
+                    $q->where('uses_execution_tracks', false)
+                        ->whereHas('projectManager', fn (Builder $inner) => $inner->where('department_id', $person->department_id))
+                        ->orWhereHas('executions', fn (Builder $inner) => $inner->visibleToUser($user));
+                })
                 : $query->whereRaw('1 = 0'),
-            'coordinator' => $query->where('coordinator_id', $person->id),
-            'monitor' => $query->where('monitor_person_id', $person->id),
+            'coordinator' => $query->where(function (Builder $q) use ($person) {
+                $q->where('uses_execution_tracks', false)->where('coordinator_id', $person->id)
+                    ->orWhereHas('executions', fn (Builder $inner) => $inner->where('coordinator_id', $person->id));
+            }),
+            'monitor' => $query->where(function (Builder $q) use ($person) {
+                $q->where('uses_execution_tracks', false)->where('monitor_person_id', $person->id)
+                    ->orWhereHas('executions', fn (Builder $inner) => $inner->where('monitor_person_id', $person->id));
+            }),
             'project_secretariat' => $person->department_id
                 ? $query->whereHas('projectManager', fn (Builder $q) => $q->where('department_id', $person->department_id))
                     ->where(function (Builder $q) {
@@ -649,13 +717,14 @@ class Project extends Model
                             ->orWhereNotNull('secretariat_submitted_at');
                     })
                 : $query->whereRaw('1 = 0'),
+            'monitoring_director', 'general_management', 'admin' => $query,
             default => $query,
         };
     }
 
     public function isVisibleToUser(?User $user): bool
     {
-        if (! $user || $user->super_admin) {
+        if (! $user || $user->super_admin || $user->canOverseeExecutions()) {
             return true;
         }
 
@@ -667,12 +736,24 @@ class Project extends Model
 
         return match ($person->role) {
             'project_manager' => (int) $this->project_manager_id === (int) $person->id,
-            'section_manager' => $person->section_id
-                && (int) $this->projectManager?->section_id === (int) $person->section_id,
-            'department_manager' => $person->department_id
-                && (int) $this->projectManager?->department_id === (int) $person->department_id,
-            'coordinator' => (int) $this->coordinator_id === (int) $person->id,
-            'monitor' => (int) $this->monitor_person_id === (int) $person->id,
+            'section_manager' => $person->section_id && (
+                (! $this->usesExecutionTracks()
+                    && (int) $this->projectManager?->section_id === (int) $person->section_id)
+                || ($this->usesExecutionTracks()
+                    && $this->executions()->visibleToUser($user)->exists())
+            ),
+            'department_manager' => $person->department_id && (
+                (! $this->usesExecutionTracks()
+                    && (int) $this->projectManager?->department_id === (int) $person->department_id)
+                || ($this->usesExecutionTracks()
+                    && $this->executions()->visibleToUser($user)->exists())
+            ),
+            'coordinator' => (! $this->usesExecutionTracks() && (int) $this->coordinator_id === (int) $person->id)
+                || ($this->usesExecutionTracks()
+                    && $this->executions()->where('coordinator_id', $person->id)->exists()),
+            'monitor' => (! $this->usesExecutionTracks() && (int) $this->monitor_person_id === (int) $person->id)
+                || ($this->usesExecutionTracks()
+                    && $this->executions()->where('monitor_person_id', $person->id)->exists()),
             'project_secretariat' => $this->projectSecretariatCanView($person),
             default => true,
         };
@@ -774,22 +855,25 @@ class Project extends Model
             return false;
         }
 
+        $person = $user->person;
+
+        if ($person?->role === 'monitor') {
+            return false;
+        }
+
+        if ($person?->role === 'project_manager') {
+            return $this->projectManagerCanViewCoordinatorData($user, $person);
+        }
+
         if ($user->super_admin) {
             return true;
         }
-
-        $person = $user->person;
 
         if (! $person) {
             return false;
         }
 
-        if ($person->role === 'monitor') {
-            return false;
-        }
-
         return match ($person->role) {
-            'project_manager' => $this->projectManagerCanViewCoordinatorData($user, $person),
             'coordinator' => (int) $this->coordinator_id === (int) $person->id,
             'section_manager' => $this->approvableBySectionManager($person),
             'department_manager' => $this->approvableByDepartmentManager($person),
@@ -827,11 +911,16 @@ class Project extends Model
             return false;
         }
 
+        $person = $user->person;
+
+        // مدير المشروع يرى عمود المنسق فقط — لا عمود المراقب (حتى مع super_admin).
+        if ($person?->role === 'project_manager') {
+            return false;
+        }
+
         if ($user->super_admin) {
             return true;
         }
-
-        $person = $user->person;
 
         if (! $person) {
             return false;
@@ -1191,6 +1280,7 @@ class Project extends Model
             'monitoring_in_progress' => 'قيد المراقبة',
             'pending_monitoring_confirmation' => 'بانتظار تأكيد مدير الرقابة',
             'passage_complete' => 'تم المرور',
+            'executions_in_progress' => 'مسارات التنفيذ نشطة',
             'rejected' => 'مرفوض',
         ];
     }
@@ -1315,6 +1405,46 @@ class Project extends Model
     public function checklistValues(): HasMany
     {
         return $this->hasMany(ProjectChecklistValue::class);
+    }
+
+    public function executions(): HasMany
+    {
+        return $this->hasMany(ProjectExecution::class)->orderBy('sort_order');
+    }
+
+    public function activeExecutions(): HasMany
+    {
+        return $this->hasMany(ProjectExecution::class)->where('is_active', true)->orderBy('sort_order');
+    }
+
+    public function usesExecutionTracks(): bool
+    {
+        return (bool) $this->uses_execution_tracks;
+    }
+
+    /**
+     * يُنشئ/يُحدّث مسارات التنفيذ من execution_regions عند غيابها (إصلاح بيانات قديمة).
+     */
+    public function ensureExecutionTracksSynced(?int $actorUserId = null): bool
+    {
+        if (! $this->usesExecutionTracks()) {
+            return false;
+        }
+
+        $regionCount = count($this->executionRegionsForDisplay());
+        if ($regionCount === 0) {
+            return false;
+        }
+
+        $activeCount = $this->executions()->where('is_active', true)->count();
+        if ($activeCount >= $regionCount) {
+            return false;
+        }
+
+        app(\App\Services\Projects\ProjectExecutionSpawner::class)->syncFromRegions($this, $actorUserId);
+        app(\App\Services\Projects\ProjectAggregateStatusService::class)->refresh($this->fresh());
+
+        return true;
     }
 
     public function secondaryMonitoringActivities(): Builder

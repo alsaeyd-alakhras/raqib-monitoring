@@ -1,5 +1,4 @@
 @php
-    $selectedCoordinatorMode = old('coordinator_mode', $coordinatorMode ?? 'person');
     $isEditing = isset($project) && $project->exists;
     $lockTeamFields = (bool) ($lockTeamFieldsForMonitoringDirector ?? false);
     $lockedManagerId = $lockProjectManager ? $currentPerson->id : ($isEditing ? $project->project_manager_id : old('project_manager_id'));
@@ -86,83 +85,6 @@
                         searchable
                         required
                     />
-                @endif
-            </div>
-
-            {{-- المنسق --}}
-            <div class="mb-4 col-md-12">
-                @if ($lockTeamFields && $isEditing)
-                    <label class="form-label d-block">المنسق</label>
-                    <div class="alert alert-secondary py-2 mb-0">
-                        @if ($project->isSelfCoordinator())
-                            <strong>{{ $project->projectManager?->name }}</strong> — مدير المشروع / منسق
-                        @elseif (filled($project->coordinator_external_name))
-                            <strong>{{ $project->coordinator_external_name }}</strong> — منسق خارجي
-                        @else
-                            <strong>{{ $project->coordinator?->name ?? '—' }}</strong> — منسق من النظام
-                        @endif
-                        <span class="d-block small text-muted mt-1">لا يمكن تعديل الفريق أو المنسق من حساب مدير الرقابة.</span>
-                    </div>
-                    <input type="hidden" name="coordinator_mode" value="{{ $project->coordinatorMode() === 'none' ? 'person' : $project->coordinatorMode() }}">
-                    @if ($project->coordinator_id)
-                        <input type="hidden" name="coordinator_id" value="{{ $project->coordinator_id }}">
-                    @endif
-                    @if ($project->coordinator_external_name)
-                        <input type="hidden" name="coordinator_external_name" value="{{ $project->coordinator_external_name }}">
-                    @endif
-                @else
-                <label class="form-label d-block">المنسق</label>
-                <div class="d-flex flex-wrap gap-3 mb-3">
-                    <div class="form-check">
-                        <input class="form-check-input coordinator-mode-radio" type="radio" name="coordinator_mode" id="coordinator-mode-self" value="self" @checked($selectedCoordinatorMode === 'self')>
-                        <label class="form-check-label" for="coordinator-mode-self">مدير المشروع هو المنسق</label>
-                    </div>
-                    <div class="form-check">
-                        <input class="form-check-input coordinator-mode-radio" type="radio" name="coordinator_mode" id="coordinator-mode-person" value="person" @checked($selectedCoordinatorMode === 'person')>
-                        <label class="form-check-label" for="coordinator-mode-person">منسق من النظام</label>
-                    </div>
-                    <div class="form-check">
-                        <input class="form-check-input coordinator-mode-radio" type="radio" name="coordinator_mode" id="coordinator-mode-external" value="external" @checked($selectedCoordinatorMode === 'external')>
-                        <label class="form-check-label" for="coordinator-mode-external">منسق خارجي (بدون حساب)</label>
-                    </div>
-                </div>
-
-                <div id="coordinator-person-wrap" class="row {{ $selectedCoordinatorMode === 'person' ? '' : 'd-none' }}">
-                    <div class="col-md-6">
-                        <x-form.select
-                            name="coordinator_id"
-                            id="coordinator-id"
-                            label="اختر المنسق"
-                            :optionsId="$coordinators"
-                            :value="$project->coordinator_id ?? ''"
-                            searchable
-                        />
-                    </div>
-                </div>
-
-                <div id="coordinator-external-wrap" class="row {{ $selectedCoordinatorMode === 'external' ? '' : 'd-none' }}">
-                    <div class="col-md-6">
-                        <x-form.input
-                            name="coordinator_external_name"
-                            id="coordinator-external-name"
-                            label="اسم المنسق الخارجي"
-                            :value="$project->coordinator_external_name ?? ''"
-                        />
-                    </div>
-                    <div class="col-md-12">
-                        <div class="alert alert-info py-2 mb-0">
-                            المنسق الخارجي بلا حساب — تُعبّأ قائمة التحقق من صفحة عرض المشروع بعد الحفظ.
-                        </div>
-                    </div>
-                </div>
-
-                <div id="coordinator-self-hint" class="alert alert-info py-2 {{ $selectedCoordinatorMode === 'self' ? '' : 'd-none' }}">
-                    @if ($lockProjectManager ?? false)
-                        أنت مدير المشروع والمنسق — بعد حفظ المشروع عبّئ قائمة التحقق من صفحة عرض المشروع.
-                    @else
-                        <strong>مدير المشروع هو المنسق</strong> — تُعبّأ قائمة التحقق من صفحة عرض المشروع بعد الإنشاء.
-                    @endif
-                </div>
                 @endif
             </div>
 
@@ -333,7 +255,7 @@
                                 type="number"
                                 step="0.01"
                                 name="revenue_amount"
-                                label="مبلغ الإيرادات (بالعملة الأصلية)"
+                                label="مصاريف إدارية (بالعملة الأصلية)"
                                 :value="old('revenue_amount', $project->revenue_amount ?? '')"
                                 min="0"
                             />
@@ -349,7 +271,7 @@
                                 dir="ltr"
                                 inputmode="decimal"
                             />
-                            <div class="form-text">يُحسب تلقائياً: موازنة − إيرادات (قابل للتعديل)</div>
+                            <div class="form-text">يُحسب تلقائياً: موازنة − مصاريف إدارية (قابل للتعديل)</div>
                         </div>
                         <div class="mb-4 col-md-3">
                             <x-form.input
@@ -385,6 +307,17 @@
         </div>
     </div>
 </div>
+
+@if ($canEditProjectDocs ?? false)
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5 class="mb-0">مستندات المشروع</h5>
+        </div>
+        <div class="card-body">
+            @include('dashboard.projects._project_closure_docs_form')
+        </div>
+    </div>
+@endif
 
 <div class="mt-2">
     <button type="submit" class="btn btn-primary me-3">
@@ -426,6 +359,12 @@
             .execution-region-field .region-index-badge {
                 min-width: 2rem;
             }
+
+            .execution-region-coordinator-panel {
+                border-top: 1px dashed rgba(67, 89, 113, 0.18);
+                margin-top: 0.75rem;
+                padding-top: 0.75rem;
+            }
         </style>
     @endpush
     @push('scripts')
@@ -434,49 +373,6 @@
     @endpush
 @endonce
 <script>
-(function () {
-    const modeRadios = document.querySelectorAll('.coordinator-mode-radio');
-    const personWrap = document.getElementById('coordinator-person-wrap');
-    const externalWrap = document.getElementById('coordinator-external-wrap');
-    const selfHint = document.getElementById('coordinator-self-hint');
-    const coordinatorSelect = document.getElementById('coordinator-id');
-    const externalInput = document.getElementById('coordinator-external-name');
-    const managerSelect = document.getElementById('project-manager-id');
-
-    function syncCoordinatorMode() {
-        const mode = document.querySelector('.coordinator-mode-radio:checked')?.value || 'person';
-
-        personWrap?.classList.toggle('d-none', mode !== 'person');
-        externalWrap?.classList.toggle('d-none', mode !== 'external');
-        selfHint?.classList.toggle('d-none', mode !== 'self');
-
-        if (coordinatorSelect) {
-            coordinatorSelect.disabled = mode !== 'person';
-            if (mode !== 'person') {
-                coordinatorSelect.value = '';
-            }
-        }
-
-        if (externalInput) {
-            externalInput.disabled = mode !== 'external';
-            if (mode !== 'external') {
-                externalInput.value = '';
-            }
-        }
-
-        if (mode === 'person' && window.initSearchableSelects && personWrap) {
-            window.initSearchableSelects(personWrap);
-        }
-    }
-
-    modeRadios.forEach((radio) => radio.addEventListener('change', syncCoordinatorMode));
-    if (managerSelect) {
-        managerSelect.addEventListener('change', syncCoordinatorMode);
-    }
-
-    syncCoordinatorMode();
-})();
-
 document.addEventListener('DOMContentLoaded', function () {
     if (typeof window.initOrgCascade === 'function') {
         window.initOrgCascade({
@@ -494,6 +390,10 @@ document.addEventListener('DOMContentLoaded', function () {
         window.initProjectExecutionRegions({
             offices: @json($associationOffices ?? []),
             savedRegions: @json(old('execution_regions', isset($project) ? ($project->execution_regions ?? []) : [])),
+            coordinators: @json(($coordinators ?? collect())->map(fn ($person) => ['id' => $person->id, 'name' => $person->name])->values()),
+            projectManagerId: @json($lockedManagerId ?? null),
+            lockTeamFields: @json($lockTeamFields ?? false),
+            defaultCoordinatorMode: @json($lockProjectManager ?? false ? 'self' : 'person'),
         });
     }
 

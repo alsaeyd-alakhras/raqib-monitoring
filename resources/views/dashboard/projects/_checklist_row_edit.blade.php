@@ -2,6 +2,10 @@
     $prefix = $prefix ?? 'checklist';
     $valueField = $valueField ?? 'coordinator_value';
     $showFileColumn = $showFileColumn ?? ($prefix === 'checklist' && $valueField === 'coordinator_value');
+    $linkOnly = $linkOnly ?? (
+        $valueField === 'coordinator_value'
+        && in_array($prefix, ['checklist', 'closure_docs'], true)
+    );
     $inputClass = $inputClass ?? '';
     $current = $values->get($item->id);
     $selectedValue = old("{$prefix}.{$item->id}.value", $current?->{$valueField} ?? 'not_ready');
@@ -47,6 +51,9 @@
                     'current' => $current,
                     'project' => $project,
                     'inputClass' => $inputClass,
+                    'deleteAttachmentUrl' => $deleteAttachmentUrl ?? null,
+                    'showLateBadge' => $showLateBadge ?? false,
+                    'linkOnly' => $linkOnly,
                 ])
             @else
                 <span class="text-muted">—</span>

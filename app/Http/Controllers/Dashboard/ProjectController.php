@@ -13,7 +13,10 @@ use App\Models\MonitoringActivity;
 use App\Models\Person;
 use App\Models\Project;
 use App\Models\ProjectChecklistValue;
+use App\Models\ProjectExecution;
 use App\Models\Section;
+use App\Services\Projects\ProjectAggregateStatusService;
+use App\Services\Projects\ProjectExecutionSpawner;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -26,11 +29,12 @@ use Yajra\DataTables\Facades\DataTables;
 
 class ProjectController extends Controller
 {
+    use Concerns\ManagesProjectExecutions;
     private const STATUSES = [
         'draft', 'pending_secretariat', 'pending_coordinator', 'coordinator_filling',
         'pending_project_manager', 'pending_section_manager', 'pending_dept_manager', 'pending_monitoring_manager',
         'monitoring_in_progress', 'pending_monitoring_confirmation',
-        'passage_complete', 'rejected',
+        'executions_in_progress', 'passage_complete', 'rejected',
     ];
 
     /** @var list<string> */
@@ -42,7 +46,7 @@ class ProjectController extends Controller
     {
         $this->authorize('view', Project::class);
 
-        $query = Project::with(['center', 'department', 'projectManager', 'coordinator', 'monitorPerson', 'funder', 'primaryMonitoringActivity']);
+        $query = Project::with(['center', 'department', 'projectManager', 'coordinator', 'monitorPerson', 'funder', 'primaryMonitoringActivity', 'executions']);
         $closureItemIds = Project::closureDocumentItemIds();
         if ($closureItemIds !== []) {
             $query->with(['checklistValues' => fn ($q) => $q->whereIn('checklist_item_id', $closureItemIds)]);
@@ -67,6 +71,9 @@ class ProjectController extends Controller
             $rows = $query->get()->map(function (Project $project) use ($workflowLabels, $currentPerson) {
                 $needsMyAction = $currentPerson && $project->needsActionFromPerson($currentPerson);
                 $closureDocs = $project->closureAttachmentSummary();
+                $executionSummary = $project->usesExecutionTracks()
+                    ? app(ProjectAggregateStatusService::class)->summary($project)
+                    : null;
 
                 return [
                     'id' => $project->id,
@@ -78,14 +85,15 @@ class ProjectController extends Controller
                     'project_type' => $project->project_type ?? '-',
                     'org_label' => trim(($project->center?->name ?? '-') . ' / ' . ($project->department?->name ?? '-')),
                     'project_manager_name' => $project->projectManager?->name ?? '-',
-                    'coordinator_name' => $project->coordinatorDisplayName(),
-                    'coordinator_readiness_pct' => $project->coordinator_readiness_pct !== null
+                    'coordinator_name' => $project->usesExecutionTracks() ? '—' : $project->coordinatorDisplayName(),
+                    'coordinator_readiness_pct' => $project->usesExecutionTracks() ? '—' : ($project->coordinator_readiness_pct !== null
                         ? number_format((float) $project->coordinator_readiness_pct, 1) . '%'
-                        : '-',
-                    'monitor_name' => $project->monitorPerson?->name ?? '-',
-                    'monitor_readiness_pct' => $project->monitor_readiness_pct !== null
+                        : '-'),
+                    'monitor_name' => $project->usesExecutionTracks() ? '—' : ($project->monitorPerson?->name ?? '-'),
+                    'monitor_readiness_pct' => $project->usesExecutionTracks() ? '—' : ($project->monitor_readiness_pct !== null
                         ? number_format((float) $project->monitor_readiness_pct, 1) . '%'
-                        : '-',
+                        : '-'),
+                    'executions_summary' => $executionSummary['label'] ?? '—',
                     'funder_name' => $project->funder?->name ?? '-',
                     'workflow_status_label' => $workflowLabels[$project->workflow_status] ?? $project->workflow_status,
                     'current_action_label' => $project->currentActionLabel(),
@@ -216,6 +224,8 @@ class ProjectController extends Controller
 
         $project = Project::create($validated);
 
+        $this->saveProjectDocsFromForm($request, $project);
+
         return redirect()
             ->route('dashboard.projects.show', $project)
             ->with('success', 'تم إنشاء المشروع بنجاح.');
@@ -233,6 +243,39 @@ class ProjectController extends Controller
         $project->load(['center', 'department', 'section', 'funder', 'currency', 'procurementRep', 'projectManager.department', 'monitorPerson', 'primaryMonitoringActivity.passageCompletedByUser', 'createdByUser', 'secretariatSubmittedByUser', 'secretariatFilledByUser', 'rejectedByUser', 'coordinatorFilledByUser', 'coordinatorSubmittedByUser', 'submittedToProjectManagerByUser', 'submittedToSectionManagerByUser', 'sectionManagerApprovedByUser', 'deptManagerApprovedByUser', 'monitoringManagerReceivedByUser', 'monitorSubmittedByUser', 'rejections.rejectedByUser', 'rejections.returnTargetPerson']);
         $project->syncMonitoringWorkflowState();
         $project->refresh();
+
+        if ($project->usesExecutionTracks()) {
+            $project->ensureExecutionTracksSynced((int) auth()->id());
+            $user = auth()->user();
+            $project->load([
+                'executions' => function ($query) use ($user) {
+                    $query->where('is_active', true)
+                        ->visibleToUser($user)
+                        ->with(['coordinator', 'monitorPerson', 'primaryMonitoringActivity']);
+                },
+            ]);
+            $executionSummary = app(ProjectAggregateStatusService::class)
+                ->summaryFromCollection($project->executions);
+            $statusLabels = Project::workflowStatusLabels();
+            $executionRegionsForDisplay = $this->executionRegionsForViewer($project, $user);
+            $executionRegionsBeneficiariesTotal = $this->executionRegionsBeneficiariesTotalForViewer(
+                $project,
+                $user,
+                $executionRegionsForDisplay
+            );
+
+            return view('dashboard.projects.show-master', compact('project', 'executionSummary', 'statusLabels') + [
+                'canManageRegions' => $this->canManageProjectRegions($project),
+                'canViewMonitorData' => $this->canViewMonitorData($project),
+                'canViewCoordinatorData' => $this->canViewCoordinatorData($project),
+                'showCoordinatorInSummary' => false,
+                'projectManagerDepartmentName' => $project->projectManagerDepartmentName(),
+                'approverDepartmentManager' => $project->approverDepartmentManager(),
+                'approverDepartmentManagerLabel' => $project->approverDepartmentManagerLabel(),
+                'executionRegionsForDisplay' => $executionRegionsForDisplay,
+                'executionRegionsBeneficiariesTotal' => $executionRegionsBeneficiariesTotal,
+            ]);
+        }
 
         if (! $this->canViewCoordinatorData($project)) {
             $project->unsetRelation('coordinator');
@@ -302,11 +345,18 @@ class ProjectController extends Controller
 
         $project->update($validated);
 
+        $this->saveProjectDocsFromForm($request, $project);
+
         $this->clearCoordinatorChecklistIfChanged(
             $project,
             $previousCoordinatorId,
             $previousExternalName
         );
+
+        if ($project->usesExecutionTracks() && $project->executions()->exists()) {
+            app(ProjectExecutionSpawner::class)->syncFromRegions($project, (int) auth()->id());
+            app(ProjectAggregateStatusService::class)->refresh($project->fresh());
+        }
 
         $project->refresh();
 
@@ -345,23 +395,7 @@ class ProjectController extends Controller
         }
 
         if (! $project->hasCoordinatorAssignment()) {
-            return back()->withErrors(['coordinator_mode' => 'يجب تحديد المنسق (من النظام، خارجي، أو أنت كمنسق) قبل الإرسال.']);
-        }
-
-        if ($project->isSelfCoordinator()) {
-            $project->loadMissing('checklistValues');
-
-            if ($project->coordinator_filled_at === null) {
-                return back()->withErrors([
-                    'coordinator' => 'يجب حفظ تعبئة قائمة المنسق قبل الإرسال لسكرتاريا الدائرة.',
-                ]);
-            }
-
-            if (! $this->coordinatorChecklistReadyForSubmission($project)) {
-                return back()->withErrors([
-                    'coordinator' => 'يجب إكمال جميع بنود قائمة المنسق قبل الإرسال لسكرتاريا الدائرة.',
-                ]);
-            }
+            return back()->withErrors(['execution_regions' => 'يجب تحديد منسق لكل منطقة تنفيذ قبل الإرسال.']);
         }
 
         $project->update([
@@ -399,36 +433,20 @@ class ProjectController extends Controller
         $payload = $this->mergeAllocationImageUpload($request, $payload, $project, $projectNumber);
 
         $isSecretariatCorrection = $project->hasCompletedSecretariatPhase();
-        $sendToSectionManager = $project->isSelfCoordinator() || $isSecretariatCorrection;
 
-        if ($sendToSectionManager) {
-            if ($project->isSelfCoordinator() && ! $isSecretariatCorrection) {
-                $project->loadMissing('checklistValues');
-
-                if (! $this->coordinatorChecklistReadyForSubmission($project)) {
-                    return back()->withErrors([
-                        'coordinator' => 'لا يمكن الإرسال لمدير القسم قبل اكتمال تعبئة قائمة المنسق (مدير المشروع).',
-                    ]);
-                }
-            }
-
-            $payload['workflow_status'] = 'pending_section_manager';
-            $payload['submitted_to_section_manager_at'] = now();
-            $payload['submitted_to_section_manager_by'] = auth()->id();
-        } else {
-            $payload['workflow_status'] = 'pending_coordinator';
-            $payload['coordinator_submitted_at'] = now();
-            $payload['coordinator_submitted_by'] = auth()->id();
-        }
+        $payload['uses_execution_tracks'] = true;
+        $payload['workflow_status'] = 'executions_in_progress';
 
         $project->update($payload);
+
+        app(ProjectExecutionSpawner::class)->syncFromRegions($project, (int) auth()->id());
+        app(ProjectAggregateStatusService::class)->refresh($project);
+
         $this->clearProjectReturnNotice($project);
 
-        $message = match (true) {
-            $isSecretariatCorrection => 'تم تصحيح بيانات التخصيص وإرسال المشروع لمدير القسم.',
-            $sendToSectionManager => 'تم حفظ بيانات التخصيص وإرسال المشروع لمدير القسم.',
-            default => 'تم حفظ بيانات التخصيص وإرسال المشروع للمنسق.',
-        };
+        $message = $isSecretariatCorrection
+            ? 'تم تصحيح بيانات التخصيص وبدء مسارات التنفيذ.'
+            : 'تم حفظ بيانات التخصيص وبدء مسارات التنفيذ للمناطق.';
 
         return back()->with('success', $message);
     }
@@ -451,7 +469,7 @@ class ProjectController extends Controller
         }
 
         if (! $project->hasCoordinatorAssignment()) {
-            return back()->withErrors(['coordinator_mode' => 'يجب تحديد المنسق (من النظام، خارجي، أو أنت كمنسق) قبل الإرسال.']);
+            return back()->withErrors(['execution_regions' => 'يجب تحديد منسق لكل منطقة تنفيذ قبل الإرسال.']);
         }
 
         $project->update([
@@ -467,6 +485,7 @@ class ProjectController extends Controller
 
     public function fillCoordinator(Request $request, Project $project): RedirectResponse
     {
+        $this->guardLegacyProjectWorkflow($project);
         $this->authorizeCoordinatorFillAbility($project);
         $this->authorizeCoordinatorFill($project);
         $this->guardCoordinatorFillStatus($project);
@@ -504,14 +523,23 @@ class ProjectController extends Controller
 
     public function deleteChecklistAttachment(Request $request, Project $project): RedirectResponse
     {
-        $this->authorize('fill_coordinator', Project::class);
-        $this->authorizeCoordinatorFill($project);
-        $this->guardChecklistAttachmentDelete($project);
-
         $validated = $request->validate([
             'checklist_item_id' => ['required', 'integer'],
             'attachment_id' => ['nullable', 'string', 'max:64'],
+            'project_execution_scope' => ['nullable', 'string', 'max:64'],
         ]);
+
+        $isProjectScope = ($validated['project_execution_scope'] ?? '') === 'project';
+
+        if ($isProjectScope) {
+            if (! $this->canEditProjectDocs($project)) {
+                abort(403);
+            }
+        } else {
+            $this->authorize('fill_coordinator', Project::class);
+            $this->authorizeCoordinatorFill($project);
+            $this->guardChecklistAttachmentDelete($project);
+        }
 
         $itemId = (int) $validated['checklist_item_id'];
         $attachmentId = isset($validated['attachment_id']) && $validated['attachment_id'] !== ''
@@ -523,10 +551,20 @@ class ProjectController extends Controller
             abort(422, 'البند المحدد لا يدعم المرفقات.');
         }
 
-        $value = ProjectChecklistValue::query()
+        $valueQuery = ProjectChecklistValue::query()
             ->where('project_id', $project->id)
-            ->where('checklist_item_id', $itemId)
-            ->first();
+            ->where('checklist_item_id', $itemId);
+
+        if ($isProjectScope) {
+            $valueQuery->whereNull('project_execution_id');
+        } elseif (($validated['project_execution_scope'] ?? '') !== '' && is_numeric($validated['project_execution_scope'])) {
+            $valueQuery->where('project_execution_id', (int) $validated['project_execution_scope']);
+        } else {
+            $value = (clone $valueQuery)->whereNull('project_execution_id')->first()
+                ?? $valueQuery->first();
+        }
+
+        $value ??= $valueQuery->first();
 
         if (! $value?->hasAttachment()) {
             return back()->with('success', 'لا يوجد مرفق لحذفه.');
@@ -551,13 +589,15 @@ class ProjectController extends Controller
 
         $value->syncAttachments($remaining);
 
-        if ($remaining === []) {
+        if ($remaining === [] && ! $isProjectScope) {
             $value->coordinator_value = 'not_ready';
         }
 
         $value->save();
 
-        $project->recalculateReadiness();
+        if (! $isProjectScope) {
+            $project->recalculateReadiness();
+        }
 
         return back()->with('success', 'تم حذف المرفق.');
     }
@@ -683,6 +723,7 @@ class ProjectController extends Controller
     public function assignMonitor(Request $request, Project $project): RedirectResponse
     {
         $this->authorize('assign_monitor', MonitoringActivity::class);
+        abort_unless(auth()->user()?->super_admin || auth()->user()?->isMonitoringDirector(), 403);
         $this->guardStatus($project, ['pending_monitoring_manager']);
 
         if (! $project->center_id || ! $project->department_id) {
@@ -691,17 +732,7 @@ class ProjectController extends Controller
             ]);
         }
 
-        $validated = $request->validate([
-            'monitor_person_id' => [
-                'required',
-                Rule::exists('people', 'id')->where('role', 'monitor'),
-            ],
-            'monitoring_date' => ['nullable', 'date'],
-        ]);
-
-        if (empty($validated['monitoring_date']) && $project->execution_start_date) {
-            $validated['monitoring_date'] = $project->execution_start_date->format('Y-m-d');
-        }
+        $validated = $this->validateAssignMonitorPayload($request);
 
         $project->update($validated + [
             'monitoring_manager_received_at' => $project->monitoring_manager_received_at ?? now(),
@@ -735,6 +766,23 @@ class ProjectController extends Controller
         ]);
 
         return back()->with('success', 'تم تعيين المراقب وبدء المراقبة.');
+    }
+
+    /** @return array<string, mixed> */
+    protected function validateAssignMonitorPayload(Request $request): array
+    {
+        $methods = $this->constantOptions('monitoring_methods');
+        $stages = $this->constantOptions('monitoring_stages');
+
+        return $request->validate([
+            'monitoring_method' => ['required', 'string', Rule::in($methods)],
+            'monitoring_stage' => ['required', 'string', Rule::in($stages)],
+            'monitor_person_id' => [
+                'required',
+                Rule::exists('people', 'id')->where('role', 'monitor'),
+            ],
+            'monitoring_date' => ['required', 'date'],
+        ]);
     }
 
     /* ===================== شاشة المراقب المعزولة ===================== */
@@ -799,13 +847,17 @@ class ProjectController extends Controller
         $this->authorizeMonitorFill($project);
         $this->guardStatus($project, ['monitoring_in_progress']);
 
-        $this->saveChecklistValues($request, $project, 'monitor_value');
-
         $validated = $request->validate([
             'monitor_notes_text' => ['nullable', 'string'],
             'monitor_negative_notes_text' => ['nullable', 'string'],
             'monitor_recommendations_text' => ['nullable', 'string'],
         ] + $this->monitorActivityFieldRules());
+
+        $this->savePrimaryActivityFields($project, $validated);
+
+        if ($request->has('checklist') && is_array($request->input('checklist'))) {
+            $this->saveChecklistValues($request, $project, 'monitor_value');
+        }
 
         $project->update([
             'monitor_notes' => $this->linesToArray($validated['monitor_notes_text'] ?? ''),
@@ -821,6 +873,12 @@ class ProjectController extends Controller
         return redirect()
             ->route('dashboard.projects.monitor-work', $project)
             ->with('success', 'تم حفظ عمل المراقب — يمكنك الآن الإرسال لمدير الرقابة العامة من الأسفل.');
+    }
+
+    /** @deprecated استخدم fillMonitor */
+    public function saveMonitorActivity(Request $request, Project $project): RedirectResponse
+    {
+        return $this->fillMonitor($request, $project);
     }
 
     public function confirmMonitoring(Project $project): RedirectResponse
@@ -887,6 +945,7 @@ class ProjectController extends Controller
     public function confirmPassage(Project $project): RedirectResponse
     {
         $this->authorize('confirm_completion', MonitoringActivity::class);
+        abort_unless(auth()->user()?->super_admin || auth()->user()?->isMonitoringDirector(), 403);
         $this->ensureProjectVisible($project);
         $project->syncMonitoringWorkflowState();
         $project->refresh();
@@ -988,6 +1047,13 @@ class ProjectController extends Controller
 
     /* ===================== Helpers ===================== */
 
+    private function guardLegacyProjectWorkflow(Project $project): void
+    {
+        if ($project->usesExecutionTracks()) {
+            abort(422, 'هذا المشروع يستخدم مسارات تنفيذ — نفّذ الإجراء على مسار المنطقة من لوحة المشروع.');
+        }
+    }
+
     private function guardStatus(Project $project, array $allowed): void
     {
         if (! in_array($project->workflow_status, $allowed, true)) {
@@ -1028,11 +1094,7 @@ class ProjectController extends Controller
             $rules["checklist.{$itemId}.value"] = ['required', 'in:' . $allowedValues];
             $rules["checklist.{$itemId}.person_name"] = ['nullable', 'string', 'max:255'];
             if ($column === 'coordinator_value' && in_array($itemId, $fileFieldItemIds, true)) {
-                $rules["checklist.{$itemId}.attachment"] = ['nullable', 'file', 'max:10240', 'mimes:pdf,doc,docx,xls,xlsx,jpg,jpeg,png'];
-                $rules["checklist.{$itemId}.attachments"] = ['nullable', 'array'];
-                $rules["checklist.{$itemId}.attachments.*"] = ['file', 'max:10240', 'mimes:pdf,doc,docx,xls,xlsx,jpg,jpeg,png'];
-                $rules["checklist.{$itemId}.attachment_type"] = ['nullable', 'in:file,url'];
-                $rules["checklist.{$itemId}.attachment_url"] = ['nullable', 'string', 'max:2048'];
+                $rules = array_merge($rules, $this->coordinatorLinkOnlyAttachmentRules('checklist', $itemId));
             }
         }
 
@@ -1046,6 +1108,10 @@ class ProjectController extends Controller
             ->keyBy('checklist_item_id');
 
         $validator->after(function ($validator) use ($request, $personFieldItemIds, $fileFieldItemIds, $existingValues, $column) {
+            if ($column === 'coordinator_value') {
+                $this->rejectCoordinatorFileUploads($validator, $request, 'checklist', $fileFieldItemIds);
+            }
+
             foreach ($personFieldItemIds as $itemId) {
                 $value = $request->input("checklist.{$itemId}.value");
                 $personName = trim((string) $request->input("checklist.{$itemId}.person_name", ''));
@@ -1070,7 +1136,7 @@ class ProjectController extends Controller
                     continue;
                 }
 
-                $hasNewFile = $this->hasNewChecklistAttachmentFiles($request, 'checklist', $itemId);
+                $hasNewFile = false;
                 $hasAttachment = $this->closureAttachmentProvided(
                     $request,
                     'checklist',
@@ -1125,11 +1191,7 @@ class ProjectController extends Controller
         foreach ($closureItemIds as $itemId) {
             $rules["closure_docs.{$itemId}.value"] = ['required', 'in:ready,not_ready'];
             $rules["closure_docs.{$itemId}.person_name"] = ['nullable', 'string', 'max:255'];
-            $rules["closure_docs.{$itemId}.attachment"] = ['nullable', 'file', 'max:10240', 'mimes:pdf,doc,docx,xls,xlsx,jpg,jpeg,png'];
-            $rules["closure_docs.{$itemId}.attachments"] = ['nullable', 'array'];
-            $rules["closure_docs.{$itemId}.attachments.*"] = ['file', 'max:10240', 'mimes:pdf,doc,docx,xls,xlsx,jpg,jpeg,png'];
-            $rules["closure_docs.{$itemId}.attachment_type"] = ['nullable', 'in:file,url'];
-            $rules["closure_docs.{$itemId}.attachment_url"] = ['nullable', 'string', 'max:2048'];
+            $rules = array_merge($rules, $this->coordinatorLinkOnlyAttachmentRules('closure_docs', $itemId));
         }
 
         $existingValues = $project->checklistValues()
@@ -1142,6 +1204,8 @@ class ProjectController extends Controller
         ]);
 
         $validator->after(function ($validator) use ($request, $closureItemIds, $existingValues) {
+            $this->rejectCoordinatorFileUploads($validator, $request, 'closure_docs', $closureItemIds);
+
             foreach ($closureItemIds as $itemId) {
                 $value = $request->input("closure_docs.{$itemId}.value");
                 $personName = trim((string) $request->input("closure_docs.{$itemId}.person_name", ''));
@@ -1157,7 +1221,7 @@ class ProjectController extends Controller
                     continue;
                 }
 
-                $hasNewFile = $this->hasNewChecklistAttachmentFiles($request, 'closure_docs', $itemId);
+                $hasNewFile = false;
                 $hasAttachment = $this->closureAttachmentProvided(
                     $request,
                     'closure_docs',
@@ -1193,6 +1257,37 @@ class ProjectController extends Controller
             $this->mergeClosureAttachmentPayload($request, $project, $itemId, $attributes, $payload, 'closure_docs');
 
             ProjectChecklistValue::updateOrCreate($attributes, $payload);
+        }
+    }
+
+    /** @return array<string, list<string>> */
+    private function coordinatorLinkOnlyAttachmentRules(string $prefix, int $itemId): array
+    {
+        return [
+            "{$prefix}.{$itemId}.attachment_type" => ['nullable', 'in:url'],
+            "{$prefix}.{$itemId}.attachment_url" => ['nullable', 'string', 'max:2048'],
+        ];
+    }
+
+    /**
+     * @param  list<int>  $itemIds
+     */
+    private function rejectCoordinatorFileUploads($validator, Request $request, string $prefix, array $itemIds): void
+    {
+        foreach ($itemIds as $itemId) {
+            if ($this->hasNewChecklistAttachmentFiles($request, $prefix, $itemId)) {
+                $validator->errors()->add(
+                    "{$prefix}.{$itemId}.attachment",
+                    'المنسق يمكنه إرفاق روابط خارجية فقط.'
+                );
+            }
+
+            if ($request->input("{$prefix}.{$itemId}.attachment_type") === 'file') {
+                $validator->errors()->add(
+                    "{$prefix}.{$itemId}.attachment_type",
+                    'المنسق يمكنه إرفاق روابط خارجية فقط.'
+                );
+            }
         }
     }
 
@@ -1482,7 +1577,104 @@ class ProjectController extends Controller
             'departmentsByCenterUrl' => route('dashboard.departments.by-center', ['center' => '__ID__']),
             'sectionsByDepartmentUrl' => route('dashboard.sections.by-department', ['department' => '__ID__']),
             'allSectionsUrl' => route('dashboard.sections.for-project', ['department' => '__ID__']),
+            'closureDocItems' => \App\Models\ChecklistItem::query()
+                ->where('is_active', true)
+                ->where('has_file_field', true)
+                ->whereHas('group', fn ($q) => $q->where('is_active', true))
+                ->orderBy('group_id')
+                ->orderBy('order')
+                ->get(),
+            'projectDocValues' => ($project && $project->exists)
+                ? ProjectChecklistValue::query()
+                    ->where('project_id', $project->id)
+                    ->whereNull('project_execution_id')
+                    ->whereIn('checklist_item_id', Project::closureDocumentItemIds())
+                    ->get()
+                    ->keyBy('checklist_item_id')
+                : collect(),
+            'canEditProjectDocs' => $this->canEditProjectDocs($project),
         ];
+    }
+
+    private function canEditProjectDocs(?Project $project = null): bool
+    {
+        $user = auth()->user();
+
+        if (! $user) {
+            return false;
+        }
+
+        if ($user->super_admin) {
+            return true;
+        }
+
+        if ($user->person?->role !== 'project_manager') {
+            return false;
+        }
+
+        if ($project && $project->exists) {
+            return (int) $user->person->id === (int) $project->project_manager_id
+                && $user->can('update', Project::class);
+        }
+
+        return $user->can('create', Project::class);
+    }
+
+    private function saveProjectDocsFromForm(Request $request, Project $project): void
+    {
+        if (! $this->canEditProjectDocs($project) || ! $request->has('project_docs')) {
+            return;
+        }
+
+        $itemIds = Project::closureDocumentItemIds();
+
+        if ($itemIds === []) {
+            return;
+        }
+
+        $rules = ['project_docs' => ['nullable', 'array']];
+
+        foreach ($itemIds as $itemId) {
+            $rules["project_docs.{$itemId}.attachment"] = ['nullable', 'file', 'max:10240', 'mimes:pdf,doc,docx,xls,xlsx,jpg,jpeg,png'];
+            $rules["project_docs.{$itemId}.attachments"] = ['nullable', 'array'];
+            $rules["project_docs.{$itemId}.attachments.*"] = ['file', 'max:10240', 'mimes:pdf,doc,docx,xls,xlsx,jpg,jpeg,png'];
+            $rules["project_docs.{$itemId}.attachment_type"] = ['nullable', 'in:file,url'];
+            $rules["project_docs.{$itemId}.attachment_url"] = ['nullable', 'string', 'max:2048'];
+        }
+
+        Validator::make($request->all(), $rules)->validate();
+
+        $existingValues = ProjectChecklistValue::query()
+            ->where('project_id', $project->id)
+            ->whereNull('project_execution_id')
+            ->whereIn('checklist_item_id', $itemIds)
+            ->get()
+            ->keyBy('checklist_item_id');
+
+        foreach ($itemIds as $itemId) {
+            $hasNewFile = $this->hasNewChecklistAttachmentFiles($request, 'project_docs', $itemId);
+            $type = $request->input("project_docs.{$itemId}.attachment_type", 'file');
+            $url = trim((string) $request->input("project_docs.{$itemId}.attachment_url", ''));
+
+            if (! $hasNewFile && ($type !== 'url' || $url === '')) {
+                continue;
+            }
+
+            $attributes = [
+                'project_id' => $project->id,
+                'project_execution_id' => null,
+                'checklist_item_id' => $itemId,
+            ];
+            $payload = [];
+
+            $this->mergeClosureAttachmentPayload($request, $project, $itemId, $attributes, $payload, 'project_docs');
+
+            if ($payload !== []) {
+                ProjectChecklistValue::updateOrCreate($attributes, $payload);
+            } elseif ($existingValues->has($itemId)) {
+                continue;
+            }
+        }
     }
 
     private function canFillCoordinatorInForm(): bool
@@ -1575,6 +1767,7 @@ class ProjectController extends Controller
             'isAssignedMonitor' => $project->isAssignedMonitor(auth()->user()),
             'canSetMonitoringInfo' => auth()->user()?->can('set_monitoring_info', MonitoringActivity::class),
             'canAssignMonitor' => auth()->user()?->can('assign_monitor', MonitoringActivity::class),
+            'canManageMonitoringSetup' => $this->canManageMonitoringSetupForProject($project),
             'monitoringMethods' => $this->constantOptions('monitoring_methods'),
             'monitoringStages' => $this->constantOptions('monitoring_stages'),
             'showCoordinatorFillOnDraft' => $this->canFillCoordinatorOnDraft($project),
@@ -1604,7 +1797,7 @@ class ProjectController extends Controller
             'approverDepartmentManagerLabel' => $project->approverDepartmentManagerLabel(),
             'projectManagerDepartmentName' => $project->projectManagerDepartmentName(),
             'canRejectThisProject' => $this->canRejectProject($project),
-            'canConfirmPassageThisProject' => auth()->user()?->can('confirm_completion', MonitoringActivity::class)
+            'canConfirmPassageThisProject' => auth()->user()?->hasPersonRole('monitoring_director')
                 && $project->awaitingMonitoringDirectorConfirmation(),
             'gapOwnerOptions' => Project::gapOwnerOptionsForRejector(
                 auth()->user()?->person,
@@ -1732,26 +1925,14 @@ class ProjectController extends Controller
     /** @param  array<string, mixed>  $validated */
     private function savePrimaryActivityFields(Project $project, array $validated): void
     {
+        $project->unsetRelation('primaryMonitoringActivity');
         $activity = $project->primaryMonitoringActivity;
 
         if (! $activity) {
             return;
         }
 
-        $activityFields = collect($validated)->only([
-            'responsible_person_id',
-            'activity_date',
-            'activity_time',
-            'activity_type',
-            'subject',
-            'notes',
-            'field_problem',
-            'action_taken',
-            'quality_value',
-            'closure_value',
-            'deduction_value',
-        ])->map(fn ($value) => $value === '' ? null : $value)->all();
-
+        $activityFields = $this->normalizeMonitorActivityPayload($validated);
         $activityFields['updated_by'] = auth()->id();
 
         $activity->update($activityFields);
@@ -1856,6 +2037,10 @@ class ProjectController extends Controller
             if (! $personId || (int) $personId !== (int) $project->project_manager_id) {
                 return false;
             }
+        }
+
+        if ($project->usesPerRegionCoordinators()) {
+            return $project->hasCoordinatorAssignment();
         }
 
         if (! $project->isSelfCoordinator()) {
@@ -2185,8 +2370,8 @@ class ProjectController extends Controller
         return $validated;
     }
 
-    /** @return list<array{name: string, beneficiaries: int|null, execution_site: string|null}> */
-    private function normalizeExecutionRegions(int $zones, mixed $rawRegions): array
+    /** @return list<array{name: string, beneficiaries: int|null, execution_site: string|null, coordinator_mode: string, coordinator_id: int|null, coordinator_external_name: string|null}> */
+    private function normalizeExecutionRegions(int $zones, mixed $rawRegions, ?int $projectManagerId = null): array
     {
         if ($zones <= 0) {
             return [];
@@ -2194,12 +2379,15 @@ class ProjectController extends Controller
 
         $regions = is_array($rawRegions) ? array_values($rawRegions) : [];
 
-        return array_slice(array_map(function ($region) {
+        return array_slice(array_map(function ($region) use ($projectManagerId) {
             if (is_string($region)) {
                 return [
                     'name' => trim($region),
                     'beneficiaries' => null,
                     'execution_site' => null,
+                    'coordinator_mode' => 'person',
+                    'coordinator_id' => null,
+                    'coordinator_external_name' => null,
                 ];
             }
 
@@ -2208,13 +2396,40 @@ class ProjectController extends Controller
             $executionSite = $region['execution_site'] ?? null;
             $executionSite = is_string($executionSite) ? trim($executionSite) : '';
 
-            return [
+            $mode = filled($region['coordinator_mode'] ?? null)
+                ? (string) $region['coordinator_mode']
+                : 'person';
+
+            $normalized = [
                 'name' => trim((string) ($region['name'] ?? '')),
                 'beneficiaries' => $beneficiaries === null || $beneficiaries === ''
                     ? null
                     : (int) $beneficiaries,
                 'execution_site' => $executionSite !== '' ? $executionSite : null,
+                'coordinator_mode' => $mode,
+                'coordinator_id' => null,
+                'coordinator_external_name' => null,
             ];
+
+            return match ($mode) {
+                'self' => array_merge($normalized, [
+                    'coordinator_id' => $projectManagerId,
+                    'coordinator_external_name' => null,
+                ]),
+                'person' => array_merge($normalized, [
+                    'coordinator_id' => isset($region['coordinator_id']) && $region['coordinator_id'] !== ''
+                        ? (int) $region['coordinator_id']
+                        : null,
+                    'coordinator_external_name' => null,
+                ]),
+                'external' => array_merge($normalized, [
+                    'coordinator_id' => null,
+                    'coordinator_external_name' => filled($region['coordinator_external_name'] ?? null)
+                        ? trim((string) $region['coordinator_external_name'])
+                        : null,
+                ]),
+                default => $normalized,
+            };
         }, $regions), 0, $zones);
     }
 
@@ -2261,9 +2476,6 @@ class ProjectController extends Controller
             'funder_id' => ['required', 'exists:funders,id'],
             'procurement_rep_id' => ['nullable', 'exists:people,id'],
             'project_manager_id' => ['required', 'exists:people,id'],
-            'coordinator_mode' => ['required', 'in:self,person,external'],
-            'coordinator_id' => ['nullable', 'exists:people,id'],
-            'coordinator_external_name' => ['nullable', 'string', 'max:255'],
             'center_id' => ['required', 'exists:centers,id'],
             'department_id' => ['required', 'exists:departments,id'],
             'section_id' => ['required', 'exists:sections,id'],
@@ -2277,6 +2489,9 @@ class ProjectController extends Controller
             'execution_regions.*.name' => ['nullable', 'string', 'max:255'],
             'execution_regions.*.beneficiaries' => ['nullable', 'integer', 'min:0'],
             'execution_regions.*.execution_site' => ['nullable', 'string', 'max:500'],
+            'execution_regions.*.coordinator_mode' => ['nullable', 'in:self,person,external'],
+            'execution_regions.*.coordinator_id' => ['nullable', 'exists:people,id'],
+            'execution_regions.*.coordinator_external_name' => ['nullable', 'string', 'max:255'],
             'estimated_duration' => ['required', 'string', 'max:255'],
             'currency_id' => ['required', 'exists:currencies,id'],
             'project_budget' => ['required', 'numeric', 'min:0'],
@@ -2351,9 +2566,9 @@ class ProjectController extends Controller
         if ($isMonitoringDirector && $project) {
             unset(
                 $rules['project_manager_id'],
-                $rules['coordinator_mode'],
-                $rules['coordinator_id'],
-                $rules['coordinator_external_name']
+                $rules['execution_regions.*.coordinator_mode'],
+                $rules['execution_regions.*.coordinator_id'],
+                $rules['execution_regions.*.coordinator_external_name']
             );
         }
 
@@ -2366,31 +2581,21 @@ class ProjectController extends Controller
                 return;
             }
 
-            $mode = $request->input('coordinator_mode');
             $managerId = $currentPerson?->role === 'project_manager'
                 ? $currentPerson->id
                 : $request->input('project_manager_id');
 
-            if ($mode === 'self') {
-                if (! $managerId) {
-                    $validator->errors()->add('coordinator_mode', 'يجب تحديد مدير المشروع قبل اختيار «أنا المنسق».');
-                }
-            } elseif ($mode === 'person') {
-                if (! $request->filled('coordinator_id')) {
-                    $validator->errors()->add('coordinator_id', 'اختر منسقاً من القائمة.');
-                } else {
-                    $isCoordinator = Person::where('id', $request->input('coordinator_id'))
-                        ->where('role', 'coordinator')
-                        ->exists();
-                    if (! $isCoordinator) {
-                        $validator->errors()->add('coordinator_id', 'الشخص المختار ليس منسقاً.');
-                    }
-                }
-            } elseif ($mode === 'external') {
-                if (! filled(trim((string) $request->input('coordinator_external_name')))) {
-                    $validator->errors()->add('coordinator_external_name', 'أدخل اسم المنسق الخارجي.');
-                }
-            }
+            $zones = (int) $request->input('execution_zones', 0);
+            $associationOffices = $this->constantOptions('association_offices');
+            $regions = $this->normalizeExecutionRegions(
+                $zones,
+                $request->input('execution_regions', []),
+                $managerId ? (int) $managerId : null
+            );
+            $regionNames = array_map(fn ($region) => $region['name'], $regions);
+            $targetBeneficiaries = (int) $request->input('target_beneficiaries', 0);
+            $beneficiariesTotal = 0;
+            $hasBeneficiaries = false;
 
             if ($request->filled('project_number_seq') && $project === null) {
                 $fullNumber = Project::formatFromSequence((int) $request->input('project_number_seq'));
@@ -2419,24 +2624,37 @@ class ProjectController extends Controller
                 }
             }
 
-            $zones = (int) $request->input('execution_zones', 0);
-            $associationOffices = $this->constantOptions('association_offices');
-            $regions = $this->normalizeExecutionRegions(
-                $zones,
-                $request->input('execution_regions', [])
-            );
-            $regionNames = array_map(fn ($region) => $region['name'], $regions);
-            $targetBeneficiaries = (int) $request->input('target_beneficiaries', 0);
-            $beneficiariesTotal = 0;
-            $hasBeneficiaries = false;
-
-            foreach ($regions as $region) {
+            foreach ($regions as $index => $region) {
                 if ($region['beneficiaries'] === null) {
                     continue;
                 }
 
                 $hasBeneficiaries = true;
                 $beneficiariesTotal += $region['beneficiaries'];
+            }
+
+            if ($zones > 0) {
+                foreach ($regions as $index => $region) {
+                    $mode = $region['coordinator_mode'] ?? 'person';
+                    $fieldPrefix = "execution_regions.{$index}";
+
+                    if ($mode === 'self' && ! $managerId) {
+                        $validator->errors()->add($fieldPrefix, 'يجب تحديد مدير المشروع قبل اختيار «مدير المشروع هو المنسق».');
+                    } elseif ($mode === 'person') {
+                        if (empty($region['coordinator_id'])) {
+                            $validator->errors()->add($fieldPrefix, 'اختر منسقاً من القائمة لمنطقة ' . ($index + 1) . '.');
+                        } else {
+                            $isCoordinator = Person::where('id', $region['coordinator_id'])
+                                ->where('role', 'coordinator')
+                                ->exists();
+                            if (! $isCoordinator) {
+                                $validator->errors()->add($fieldPrefix, 'الشخص المختار ليس منسقاً في منطقة ' . ($index + 1) . '.');
+                            }
+                        }
+                    } elseif ($mode === 'external' && ! filled($region['coordinator_external_name'] ?? null)) {
+                        $validator->errors()->add($fieldPrefix, 'أدخل اسم المنسق الخارجي لمنطقة ' . ($index + 1) . '.');
+                    }
+                }
             }
 
             if ($zones > 0) {
@@ -2460,25 +2678,45 @@ class ProjectController extends Controller
         });
 
         $validated = $validator->validate();
-        $validated['execution_regions'] = $this->normalizeExecutionRegions(
-            (int) ($validated['execution_zones'] ?? 0),
-            $request->input('execution_regions', [])
-        );
         $validated = $this->applyFinancialDefaults($validated);
         unset($validated['allocation_image']);
 
         if ($isMonitoringDirector && $project) {
             $validated['project_manager_id'] = $project->project_manager_id;
+            $validated['execution_regions'] = $project->execution_regions ?? [];
             $validated['coordinator_id'] = $project->coordinator_id;
             $validated['coordinator_external_name'] = $project->coordinator_external_name;
 
             return $validated;
         }
 
-        $validated['project_manager_id'] = $this->resolveProjectManagerId($request, $validated);
-        $validated = $this->normalizeCoordinatorInput($validated);
+        $managerId = $this->resolveProjectManagerId($request, $validated);
+        $validated['execution_regions'] = $this->normalizeExecutionRegions(
+            (int) ($validated['execution_zones'] ?? 0),
+            $request->input('execution_regions', []),
+            $managerId
+        );
+        $validated['project_manager_id'] = $managerId;
+        $validated = $this->syncProjectCoordinatorFromRegions($validated);
 
         return $validated;
+    }
+
+    /** @param  array<string, mixed>  $validated */
+    private function syncProjectCoordinatorFromRegions(array $validated): array
+    {
+        $regions = $validated['execution_regions'] ?? [];
+
+        if ($regions === []) {
+            return $validated;
+        }
+
+        $first = $regions[0];
+
+        return array_merge($validated, [
+            'coordinator_id' => $first['coordinator_id'] ?? null,
+            'coordinator_external_name' => $first['coordinator_external_name'] ?? null,
+        ]);
     }
 
     private function resolveProjectManagerId(Request $request, array $validated): int
@@ -2494,7 +2732,7 @@ class ProjectController extends Controller
             return (int) $person->id;
         }
 
-        return (int) $validated['project_manager_id'];
+        return (int) ($validated['project_manager_id'] ?? $request->input('project_manager_id'));
     }
 
     private function normalizeCoordinatorInput(array $validated): array
@@ -2724,6 +2962,17 @@ class ProjectController extends Controller
         );
     }
 
+    private function canManageMonitoringSetupForProject(Project $project): bool
+    {
+        $user = auth()->user();
+
+        if (! $user?->hasPersonRole('monitoring_director')) {
+            return false;
+        }
+
+        return $project->workflow_status === 'pending_monitoring_manager';
+    }
+
     private function canRejectProject(Project $project): bool
     {
         $user = auth()->user();
@@ -2756,7 +3005,7 @@ class ProjectController extends Controller
                 'monitoring_in_progress',
                 'pending_monitoring_confirmation',
             ], true),
-            default => ! in_array($project->workflow_status, ['monitoring_in_progress', 'pending_monitoring_confirmation'], true),
+            default => false,
         };
     }
 
@@ -2783,6 +3032,10 @@ class ProjectController extends Controller
 
     private function canFillCoordinatorOnDraft(Project $project): bool
     {
+        if ($project->usesPerRegionCoordinators()) {
+            return false;
+        }
+
         if ($project->isSelfCoordinator()) {
             if (! in_array($project->workflow_status, ['draft', 'pending_secretariat'], true)) {
                 return false;

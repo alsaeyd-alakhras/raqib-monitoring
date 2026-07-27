@@ -17,6 +17,7 @@
                 @csrf
                 <input type="hidden" name="checklist_item_id" id="checklistAttachmentDeleteItemId" value="">
                 <input type="hidden" name="attachment_id" id="checklistAttachmentDeleteAttachmentId" value="">
+                <input type="hidden" name="project_execution_scope" id="checklistAttachmentDeleteProjectScope" value="">
             </form>
         </div>
     </div>

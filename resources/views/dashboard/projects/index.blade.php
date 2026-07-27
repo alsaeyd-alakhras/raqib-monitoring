@@ -94,6 +94,7 @@
             $scrollFields['monitor_readiness_pct'] = 'جاهزية المراقب';
         }
         $scrollFields['funder_name'] = 'الممول';
+        $scrollFields['executions_summary'] = 'المسارات';
         $scrollFields['workflow_status_label'] = 'الحالة';
         $scrollFields['current_action_label'] = 'الإجراء الحالي';
         if ($canCoordinator) {
@@ -223,7 +224,7 @@
                 '#', 'view', 'edit', 'project_number', 'project_name', 'project_type', 'org_label', 'project_manager_name',
                 ...(canCoordinator ? ['coordinator_name', 'coordinator_readiness_pct'] : []),
                 ...(canMonitor ? ['monitor_name', 'monitor_readiness_pct'] : []),
-                'funder_name', 'workflow_status_label', 'current_action_label',
+                'funder_name', 'executions_summary', 'workflow_status_label', 'current_action_label',
                 ...(canCoordinator ? ['closure_docs_label'] : []),
                 'actions'
             ];
@@ -279,6 +280,7 @@
 
             columnsTable.push(
                 { data: 'funder_name', name: 'funder_name', orderable: false },
+                { data: 'executions_summary', name: 'executions_summary', orderable: false, className: 'text-center' },
                 { data: 'workflow_status_label', name: 'workflow_status_label', orderable: false },
                 { data: 'current_action_label', name: 'current_action_label', orderable: false }
             );

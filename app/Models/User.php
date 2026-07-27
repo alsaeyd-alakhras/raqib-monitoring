@@ -4,6 +4,7 @@ namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 
+use App\Services\RoleAbilitiesService;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -77,5 +78,46 @@ class User extends Authenticatable
             return asset('storage/' . $this->avatar);
         }
         return asset('imgs/user.jpg');
+    }
+
+    public function personRole(): ?string
+    {
+        return $this->person?->role;
+    }
+
+    public function hasPersonRole(string ...$roles): bool
+    {
+        return in_array($this->personRole(), $roles, true);
+    }
+
+    public function hasAbility(string $ability): bool
+    {
+        if ($this->roles->contains('role_name', $ability)) {
+            return true;
+        }
+
+        $role = $this->personRole();
+
+        if (! $role) {
+            return false;
+        }
+
+        return in_array($ability, app(RoleAbilitiesService::class)->forRole($role), true);
+    }
+
+    /** مدير الرقابة — Person.role فقط (لا abilities). */
+    public function isMonitoringDirector(): bool
+    {
+        return $this->hasPersonRole('monitoring_director');
+    }
+
+    /** رؤية كل مسارات التنفيذ للمتابعة — بالدور فقط. */
+    public function canOverseeExecutions(): bool
+    {
+        if ($this->super_admin) {
+            return true;
+        }
+
+        return $this->hasPersonRole('monitoring_director', 'general_management', 'admin');
     }
 }

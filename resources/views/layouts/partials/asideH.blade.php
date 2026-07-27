@@ -27,10 +27,18 @@
                     </li>
                     @endcan
                     @can('view', 'App\Models\Project')
-                    <li class="menu-item {{ request()->is('projects*') ? 'active' : '' }}">
+                    <li class="menu-item {{ request()->is('projects*') && ! request()->is('project-executions*') ? 'active' : '' }}">
                         <a href="{{ route('dashboard.projects.index') }}" class="menu-link">
                             <i class="fa-solid fa-diagram-project me-2"></i>
                             <div data-i18n="projects">المشاريع</div>
+                        </a>
+                    </li>
+                    @endcan
+                    @can('view', 'App\Models\ProjectExecution')
+                    <li class="menu-item {{ request()->is('project-executions*') ? 'active' : '' }}">
+                        <a href="{{ route('dashboard.project-executions.index') }}" class="menu-link">
+                            <i class="fa-solid fa-route me-2"></i>
+                            <div data-i18n="project_executions">مسارات التنفيذ</div>
                         </a>
                     </li>
                     @endcan

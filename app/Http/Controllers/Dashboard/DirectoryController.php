@@ -243,6 +243,8 @@ class DirectoryController extends Controller
             'roleLabels' => $roleLabels,
             'rolesRequiringDepartment' => Person::rolesRequiringDepartment(),
             'rolesRequiringSection' => Person::rolesRequiringSection(),
+            'rolesLimitedToOneGlobally' => Person::rolesLimitedToOneGlobally(),
+            'occupiedMonitoringDirector' => Person::monitoringDirector($person?->id)?->only(['id', 'name']),
             'centers' => Center::orderBy('name')->get(),
             'departments' => $departmentOptions,
             'roleAbilitiesMap' => $this->roleAbilities->all(),
@@ -557,9 +559,11 @@ class DirectoryController extends Controller
 
         if ($request->boolean('reset_role_abilities')) {
             $abilities = $this->roleAbilities->forRole($newRole);
-        } elseif ($request->boolean('apply_role_abilities') || ($oldRole !== $newRole && ! $request->has('abilities'))) {
+        } elseif ($request->boolean('apply_role_abilities')) {
             $current = $user->roles()->pluck('role_name')->toArray();
             $abilities = $this->roleAbilities->mergeOnRoleChange($oldRole, $newRole, $current);
+        } elseif ($oldRole !== $newRole && ! $request->has('abilities')) {
+            $abilities = $this->roleAbilities->resetToRole($newRole);
         } else {
             $abilities = is_array($submitted) ? $submitted : [];
             if ($abilities === [] && $newRole) {

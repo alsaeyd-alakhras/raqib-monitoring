@@ -254,12 +254,18 @@ draft
 
 ```bash
 php artisan migrate --seed          # super_admin + constants + org + checklist
-php artisan db:seed --class=DemoUsersSeeder   # 18 مستخدم وهمي، password: password
+php artisan raqib:seed-demo-data    # مستخدمون + مشاريع DEMO-01…10 — additive، لا يمسح P-*
+php artisan db:seed --class=DemoUsersSeeder   # مستخدمون فقط
+php artisan db:seed --class=DemoProjectsSeeder # مشاريع DEMO فقط
 php artisan test --filter=ProjectsSmokeTest     # workflow كامل
 npm run test:e2e                                # Playwright (tests/e2e/)
 ```
 
+**لا تشغّل `migrate:fresh` على قاعدة التطوير** إلا بطلب صريح — يمسح كل المشاريع الحقيقية.
+
 **DemoUsersSeeder**: يُنشئ مستخدمين بأدوار وصلاحيات واقعية — **لا يمس** `super_admin`.
+
+**DemoProjectsSeeder**: مشاريع `DEMO-01`…`DEMO-10` في مراحل workflow مختلفة لاختبار كل دور يدوياً (`mon_dir`, `coord_layla`, …).
 
 **ProjectsSmokeTest**: يغطي إنشاء مشروع → منسق → مدير دائرة → تعيين مراقب → تعبئة → تأكيد مرور + إدارة checklist.
 

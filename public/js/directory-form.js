@@ -25,12 +25,41 @@
         return cfg.roleAbilitiesMap[role] || [];
     }
 
+    function syncSingleRoleOptions() {
+        const roleSelect = document.getElementById('directory-role');
+        const hint = document.getElementById('monitoring-director-hint');
+        if (!roleSelect) {
+            return;
+        }
+
+        const occupiedDirector = cfg.occupiedMonitoringDirector || null;
+        const currentRole = roleSelect.value;
+        const monitoringOption = roleSelect.querySelector('option[value="monitoring_director"]');
+
+        if (monitoringOption) {
+            const blocked = occupiedDirector && currentRole !== 'monitoring_director';
+            monitoringOption.disabled = blocked;
+            monitoringOption.hidden = blocked;
+        }
+
+        if (hint) {
+            if (occupiedDirector && currentRole !== 'monitoring_director') {
+                hint.textContent = 'دور مدير الرقابة العامة محجوز لـ «' + occupiedDirector.name + '». يجب إزالة الدور منه أولاً.';
+                hint.classList.remove('d-none');
+            } else {
+                hint.textContent = '';
+                hint.classList.add('d-none');
+            }
+        }
+    }
+
     function updateSectionsVisibility() {
         const role = $('#directory-role').val();
         const needsDept = (cfg.rolesRequiringDepartment || []).includes(role);
         const needsSection = (cfg.rolesRequiringSection || []).includes(role);
         $('#directory-department').closest('.col-md-4').toggle(needsDept || needsSection || !!role);
         $('#directory-section').closest('.col-md-4').toggle(needsSection);
+        syncSingleRoleOptions();
     }
 
     function updateRecordModeUI() {
@@ -50,8 +79,16 @@
     }
 
     $('#directory-role').on('change', function () {
+        const roleSelect = this;
+        const occupiedDirector = cfg.occupiedMonitoringDirector || null;
+
+        if (roleSelect.value === 'monitoring_director' && occupiedDirector) {
+            window.alert('يوجد مدير رقابة عامة بالفعل: ' + occupiedDirector.name + '.');
+            roleSelect.value = '';
+        }
+
         updateSectionsVisibility();
-        setAbilities(abilitiesForRole($(this).val()));
+        setAbilities(abilitiesForRole($(roleSelect).val()));
         $('#apply-role-abilities-flag').val('1');
     });
 

@@ -1,4 +1,4 @@
-<div class="modal fade" id="checklistAttachmentUploadModal" tabindex="-1" aria-labelledby="checklistAttachmentUploadModalLabel" aria-hidden="true">
+<div class="modal fade" id="checklistAttachmentUploadModal" tabindex="-1" aria-labelledby="checklistAttachmentUploadModalLabel" aria-hidden="true" data-default-title="إضافة مرفق">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header">
@@ -8,7 +8,7 @@
             <div class="modal-body">
                 <p class="text-muted small mb-3" id="checklistAttachmentUploadItemName"></p>
                 <ul class="nav nav-pills nav-fill mb-3" id="checklistAttachmentUploadTabs" role="tablist">
-                    <li class="nav-item" role="presentation">
+                    <li class="nav-item checklist-upload-file-tab" role="presentation">
                         <button class="nav-link active" id="checklist-upload-tab-file" data-bs-toggle="pill" data-bs-target="#checklist-upload-pane-file" type="button" role="tab">
                             <i class="ti ti-upload me-1"></i> رفع ملف
                         </button>

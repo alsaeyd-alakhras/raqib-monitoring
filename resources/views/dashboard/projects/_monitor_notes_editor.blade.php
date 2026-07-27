@@ -1,7 +1,8 @@
 @php
-    $initialPositiveNotes = $project->monitor_notes ?? [];
-    $initialNegativeNotes = $project->monitor_negative_notes ?? [];
-    $initialRecommendations = $project->monitor_recommendations ?? [];
+    $notesSubject = $execution ?? $project ?? null;
+    $initialPositiveNotes = $notesSubject->monitor_notes ?? [];
+    $initialNegativeNotes = $notesSubject->monitor_negative_notes ?? [];
+    $initialRecommendations = $notesSubject->monitor_recommendations ?? [];
     if (empty($initialPositiveNotes)) {
         $initialPositiveNotes = [''];
     }
@@ -202,9 +203,9 @@
     </div>
 </div>
 
-<textarea name="monitor_notes_text" id="monitor_notes_text" class="d-none" aria-hidden="true">{{ implode("\n", array_filter($project->monitor_notes ?? [])) }}</textarea>
-<textarea name="monitor_negative_notes_text" id="monitor_negative_notes_text" class="d-none" aria-hidden="true">{{ implode("\n", array_filter($project->monitor_negative_notes ?? [])) }}</textarea>
-<textarea name="monitor_recommendations_text" id="monitor_recommendations_text" class="d-none" aria-hidden="true">{{ implode("\n", array_filter($project->monitor_recommendations ?? [])) }}</textarea>
+<textarea name="monitor_notes_text" id="monitor_notes_text" class="d-none" aria-hidden="true">{{ implode("\n", array_filter($notesSubject->monitor_notes ?? [])) }}</textarea>
+<textarea name="monitor_negative_notes_text" id="monitor_negative_notes_text" class="d-none" aria-hidden="true">{{ implode("\n", array_filter($notesSubject->monitor_negative_notes ?? [])) }}</textarea>
+<textarea name="monitor_recommendations_text" id="monitor_recommendations_text" class="d-none" aria-hidden="true">{{ implode("\n", array_filter($notesSubject->monitor_recommendations ?? [])) }}</textarea>
 
 @push('scripts')
 <script>

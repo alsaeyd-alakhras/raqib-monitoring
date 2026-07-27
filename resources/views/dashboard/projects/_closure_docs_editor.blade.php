@@ -65,6 +65,7 @@
                                     'current' => $current,
                                     'project' => $project,
                                     'showLateBadge' => true,
+                                    'linkOnly' => true,
                                 ])
                             </td>
                         </tr>

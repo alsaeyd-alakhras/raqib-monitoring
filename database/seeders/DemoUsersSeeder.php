@@ -343,11 +343,22 @@ class DemoUsersSeeder extends Seeder
 
     private function seedDemoUser(array $data): void
     {
+        if (($data['role'] ?? null) === 'monitoring_director') {
+            Person::query()
+                ->where('role', 'monitoring_director')
+                ->where(function ($query) use ($data) {
+                    $query->whereNull('user_id')
+                        ->orWhereHas('user', fn ($userQuery) => $userQuery->where('username', '!=', $data['username']));
+                })
+                ->update(['role' => null]);
+        }
+
         $user = User::updateOrCreate(
             ['email' => $data['email']],
             [
                 'name' => $data['name'],
                 'username' => $data['username'],
+                'phone' => $data['phone'] ?? '0599000000',
                 'user_type' => 'employee',
                 'is_active' => true,
                 'super_admin' => false,
@@ -363,6 +374,7 @@ class DemoUsersSeeder extends Seeder
                 'department_id' => $data['department_id'],
                 'section_id' => $data['section_id'] ?? null,
                 'job_title' => $data['job_title'],
+                'phone' => $data['phone'] ?? '0599000000',
             ]
         );
 
@@ -386,12 +398,17 @@ class DemoUsersSeeder extends Seeder
                 continue;
             }
 
+            $user->update([
+                'phone' => $user->phone ?: ($data['phone'] ?? '0599000000'),
+            ]);
+
             $user->person->update([
                 'name' => $data['name'],
                 'role' => $data['role'],
                 'department_id' => $data['department_id'],
                 'section_id' => $data['section_id'] ?? null,
                 'job_title' => $data['job_title'],
+                'phone' => $user->person->phone ?: ($data['phone'] ?? '0599000000'),
             ]);
 
             $this->syncAbilities($user, app(RoleAbilitiesService::class)->forRole($data['role'] ?? null));

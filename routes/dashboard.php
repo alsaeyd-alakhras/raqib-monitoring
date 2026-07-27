@@ -131,6 +131,7 @@ Route::group([
     Route::prefix('projects/{project}')->name('projects.')->group(function () {
         Route::post('submit-to-secretariat', [ProjectController::class, 'submitToSecretariat'])->name('submit-to-secretariat');
         Route::post('fill-secretariat', [ProjectController::class, 'fillSecretariat'])->name('fill-secretariat');
+        Route::post('sync-regions', [ProjectController::class, 'syncRegions'])->name('sync-regions');
         Route::post('submit-to-coordinator', [ProjectController::class, 'submitToCoordinator'])->name('submit-to-coordinator');
         Route::post('fill-coordinator', [ProjectController::class, 'fillCoordinator'])->name('fill-coordinator');
         Route::post('fill-closure-docs', [ProjectController::class, 'fillClosureDocs'])->name('fill-closure-docs');
@@ -143,11 +144,34 @@ Route::group([
         Route::post('assign-monitor', [ProjectController::class, 'assignMonitor'])->name('assign-monitor');
         Route::get('monitor-work', [ProjectController::class, 'monitorWork'])->name('monitor-work');
         Route::post('fill-monitor', [ProjectController::class, 'fillMonitor'])->name('fill-monitor');
+        Route::post('save-monitor-activity', [ProjectController::class, 'saveMonitorActivity'])->name('save-monitor-activity');
         Route::post('confirm-monitoring', [ProjectController::class, 'confirmMonitoring'])->name('confirm-monitoring');
         Route::post('confirm-passage', [ProjectController::class, 'confirmPassage'])->name('confirm-passage');
         Route::post('reject', [ProjectController::class, 'reject'])->name('reject');
         Route::post('reroute', [ProjectController::class, 'reroute'])->name('reroute');
+
+        Route::prefix('executions/{execution}')->name('executions.')->group(function () {
+            Route::get('/', [ProjectController::class, 'showExecution'])->name('show');
+            Route::post('fill-coordinator', [ProjectController::class, 'fillCoordinatorExecution'])->name('fill-coordinator');
+            Route::post('fill-closure-docs', [ProjectController::class, 'fillClosureDocsExecution'])->name('fill-closure-docs');
+            Route::post('delete-checklist-attachment', [ProjectController::class, 'deleteExecutionChecklistAttachment'])->name('delete-checklist-attachment');
+            Route::post('submit-to-section-manager', [ProjectController::class, 'submitToSectionManagerExecution'])->name('submit-to-section-manager');
+            Route::post('approve-section', [ProjectController::class, 'approveSectionExecution'])->name('approve-section');
+            Route::post('approve-department', [ProjectController::class, 'approveDepartmentExecution'])->name('approve-department');
+            Route::post('set-monitoring-info', [ProjectController::class, 'setMonitoringInfoExecution'])->name('set-monitoring-info');
+            Route::post('assign-monitor', [ProjectController::class, 'assignMonitorExecution'])->name('assign-monitor');
+            Route::get('monitor-work', [ProjectController::class, 'monitorWorkExecution'])->name('monitor-work');
+            Route::post('fill-monitor', [ProjectController::class, 'fillMonitorExecution'])->name('fill-monitor');
+            Route::post('save-monitor-activity', [ProjectController::class, 'saveMonitorActivityExecution'])->name('save-monitor-activity');
+            Route::post('confirm-monitoring', [ProjectController::class, 'confirmMonitoringExecution'])->name('confirm-monitoring');
+            Route::post('confirm-passage', [ProjectController::class, 'confirmPassageExecution'])->name('confirm-passage');
+            Route::post('reject', [ProjectController::class, 'rejectExecution'])->name('reject');
+            Route::post('reroute', [ProjectController::class, 'rerouteExecution'])->name('reroute');
+            Route::post('update-coordinator', [ProjectController::class, 'updateExecutionCoordinator'])->name('update-coordinator');
+        });
     });
+
+    Route::get('project-executions', [ProjectController::class, 'executionsIndex'])->name('project-executions.index');
 
     // Checklist admin ************************
     Route::prefix('checklist-admin')->name('checklist-admin.')->group(function () {

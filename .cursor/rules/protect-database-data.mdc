@@ -1,0 +1,29 @@
+---
+description: حماية بيانات قاعدة البيانات — لا مسح أو إعادة بناء بدون طلب صريح
+alwaysApply: true
+---
+
+# حماية بيانات قاعدة البيانات
+
+## ممنوع بدون طلب صريح من المستخدم
+
+- `php artisan migrate:fresh` (أي بيئة: local / testing / production)
+- `php artisan migrate:refresh`
+- `php artisan db:wipe`
+- `php artisan raqib:demo --fresh`
+- أي أمر يحذف جداول أو يفرّغ القاعدة
+- حذف جماعي لـ `projects` / `project_executions` / `people` / `users` (عدا حسابات demo المعروفة في seeders)
+
+## عند الحاجة لبيانات تجريبية
+
+- استخدم seeders **إ additive** (لا تمس البيانات الموجودة):
+  - `php artisan db:seed --class=DemoUsersSeeder`
+  - `php artisan db:seed --class=DemoProjectsSeeder`
+  - أو: `php artisan raqib:seed-demo-data`
+- مشاريع التجربة تستخدم بادئة `DEMO-` في `project_number` — لا تعدّل مشاريع `P-*` الحقيقية.
+- الاختبارات الآلية (`php artisan test`) تستخدم قاعدة منفصلة إن أمكن؛ **لا** تشغّل `migrate:fresh` على قاعدة التطوير لإصلاح اختبار.
+
+## قبل أي عمل على DB
+
+- إذا احتجت فحص البيانات، استخدم استعلامات read-only أو `tinker` بدون destructive commands.
+- إذا اقترحت إعادة بناء القاعدة، **اسأل المستخدم أولاً** واذكر أن البيانات الحالية ستُفقد.

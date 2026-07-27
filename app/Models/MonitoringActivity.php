@@ -12,7 +12,7 @@ class MonitoringActivity extends Model
     use HasFactory;
 
     protected $fillable = [
-        'reference_code', 'source_type', 'source_id', 'activity_role',
+        'reference_code', 'source_type', 'source_id', 'project_execution_id', 'activity_role',
         'center_id', 'department_id', 'section_id', 'responsible_person_id', 'monitor_person_id',
         'activity_date', 'activity_time',
         'activity_type', 'funder_id',
@@ -79,6 +79,11 @@ class MonitoringActivity extends Model
     public function project(): BelongsTo
     {
         return $this->belongsTo(Project::class, 'source_id');
+    }
+
+    public function projectExecution(): BelongsTo
+    {
+        return $this->belongsTo(ProjectExecution::class);
     }
 
     public function rejectedByUser(): BelongsTo
@@ -324,13 +329,15 @@ class MonitoringActivity extends Model
             'deduction_value' => 'الخصم',
         ];
 
-        if ($this->source_type !== 'project') {
+        if (in_array($this->source_type, ['project', 'project_execution'], true)) {
+            if ($this->source_type === 'project' && ! $this->source_id) {
+                $requiredFields['center_id'] = 'المركز';
+                $requiredFields['department_id'] = 'الدائرة';
+            }
+        } else {
             $requiredFields['center_id'] = 'المركز';
             $requiredFields['department_id'] = 'الدائرة';
             $requiredFields['responsible_person_id'] = 'المسؤول عن النشاط';
-        } elseif (! $this->source_id) {
-            $requiredFields['center_id'] = 'المركز';
-            $requiredFields['department_id'] = 'الدائرة';
         }
 
         $missingFields = [];
