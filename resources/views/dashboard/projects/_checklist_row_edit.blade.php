@@ -11,9 +11,10 @@
     $selectedValue = old("{$prefix}.{$item->id}.value", $current?->{$valueField} ?? 'not_ready');
     $personName = old("{$prefix}.{$item->id}.person_name", $current?->person_name);
     $closureValueLabels = ['ready' => 'جاهز', 'not_ready' => 'غير جاهز'];
-    $itemValueLabels = ($showFileColumn && $item->has_file_field) ? $closureValueLabels : $valueLabels;
+    $isMonitorDocItem = $valueField === 'monitor_value' && $item->has_file_field;
+    $itemValueLabels = (($showFileColumn && $item->has_file_field) || $isMonitorDocItem) ? $closureValueLabels : $valueLabels;
 @endphp
-<tr @if ($item->has_file_field) data-has-file-field="1" @endif>
+<tr @if ($showFileColumn && $item->has_file_field) data-has-file-field="1" @endif>
     <td class="checklist-col-item align-middle">{{ $item->name }}</td>
     <td class="checklist-col-status">
         <select
@@ -54,6 +55,7 @@
                     'deleteAttachmentUrl' => $deleteAttachmentUrl ?? null,
                     'showLateBadge' => $showLateBadge ?? false,
                     'linkOnly' => $linkOnly,
+                    'projectExecutionId' => $projectExecutionId ?? null,
                 ])
             @else
                 <span class="text-muted">—</span>

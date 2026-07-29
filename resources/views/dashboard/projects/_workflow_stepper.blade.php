@@ -3,7 +3,6 @@
         'draft',
         'pending_secretariat',
         'pending_coordinator',
-        'coordinator_filling',
         'pending_section_manager',
         'pending_dept_manager',
         'pending_monitoring_manager',
@@ -14,7 +13,11 @@
     $statusLabels = \App\Models\Project::workflowStatusLabels();
     $currentStatus = $project->workflow_status;
     $isRejected = $currentStatus === 'rejected';
-    $displayStatus = $currentStatus === 'pending_project_manager' ? 'pending_section_manager' : $currentStatus;
+    $displayStatus = match ($currentStatus) {
+        'pending_project_manager' => 'pending_section_manager',
+        'coordinator_filling' => 'pending_coordinator',
+        default => $currentStatus,
+    };
     $currentIndex = $isRejected
         ? -1
         : array_search($displayStatus, $workflowSteps, true);

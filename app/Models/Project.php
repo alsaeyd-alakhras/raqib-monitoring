@@ -33,6 +33,10 @@ class Project extends Model
         'execution_zones',
         'execution_regions',
         'estimated_duration',
+        'coordinator_requirements',
+        'project_lifecycle_notes',
+        'pm_recommendations',
+        'implementation_mechanism',
         'currency_id',
         'project_budget',
         'revenue_amount',
@@ -636,6 +640,25 @@ class Project extends Model
         return '-';
     }
 
+    public static function nominationResponsibilityLabels(): array
+    {
+        return [
+            'project_manager' => 'مدير المشروع',
+            'coordinator' => 'المنسق',
+            'organization' => 'المؤسسة',
+            'external' => 'جهة خارجية',
+        ];
+    }
+
+    public function nominationResponsibilityLabel(?string $value): string
+    {
+        if (! filled($value)) {
+            return '—';
+        }
+
+        return self::nominationResponsibilityLabels()[$value] ?? $value;
+    }
+
     public function isSelfCoordinator(): bool
     {
         return $this->coordinator_id !== null
@@ -814,7 +837,8 @@ class Project extends Model
 
         return $person->role === 'project_manager'
             && (int) $this->project_manager_id === (int) $person->id
-            && $this->hasCoordinatorAssignment();
+            && $this->hasCoordinatorAssignment()
+            && ! ($this->isSelfCoordinator() && in_array($this->workflow_status, ['draft', 'pending_secretariat'], true));
     }
 
     /**
@@ -827,11 +851,12 @@ class Project extends Model
             return false;
         }
 
-        if ($this->isSelfCoordinator() && in_array($this->workflow_status, ['draft', 'pending_secretariat'], true)) {
+        if ($user->can('fill_coordinator', self::class)) {
             return true;
         }
 
-        if ($user->can('fill_coordinator', self::class)) {
+        if ($this->isSelfCoordinator()
+            && in_array($this->workflow_status, ['pending_coordinator', 'coordinator_filling'], true)) {
             return true;
         }
 
@@ -983,7 +1008,7 @@ class Project extends Model
         return match ($returnTarget) {
             'return_project_manager' => 'draft',
             'return_project_manager_review' => 'pending_project_manager',
-            'return_coordinator' => 'coordinator_filling',
+            'return_coordinator' => 'pending_coordinator',
             'return_secretariat' => 'pending_secretariat',
             'return_section_manager' => 'pending_section_manager',
             'return_department_manager' => 'pending_dept_manager',

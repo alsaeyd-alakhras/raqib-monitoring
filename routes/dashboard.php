@@ -129,6 +129,7 @@ Route::group([
         ->name('projects.export-pdf');
 
     Route::prefix('projects/{project}')->name('projects.')->group(function () {
+        Route::post('fill-pm-fields', [ProjectController::class, 'fillPmFields'])->name('fill-pm-fields');
         Route::post('submit-to-secretariat', [ProjectController::class, 'submitToSecretariat'])->name('submit-to-secretariat');
         Route::post('fill-secretariat', [ProjectController::class, 'fillSecretariat'])->name('fill-secretariat');
         Route::post('sync-regions', [ProjectController::class, 'syncRegions'])->name('sync-regions');

@@ -24,6 +24,8 @@ class ProjectExecution extends Model
         'is_active',
         'coordinator_id',
         'coordinator_external_name',
+        'nomination_responsibility',
+        'implementation_mechanism',
         'monitor_person_id',
         'monitoring_date',
         'monitoring_method',
@@ -327,6 +329,11 @@ class ProjectExecution extends Model
             return true;
         }
 
+        if ($this->isSelfCoordinator()
+            && in_array($this->workflow_status, ['pending_coordinator', 'coordinator_filling'], true)) {
+            return true;
+        }
+
         return in_array($this->workflow_status, [
             'pending_section_manager',
             'pending_dept_manager',
@@ -465,6 +472,9 @@ class ProjectExecution extends Model
         }
 
         return match ($person->role) {
+            'project_manager' => (int) $this->project?->project_manager_id === (int) $person->id
+                && $this->isSelfCoordinator()
+                && in_array($this->workflow_status, ['pending_coordinator', 'coordinator_filling'], true),
             'coordinator' => (int) $this->coordinator_id === (int) $person->id
                 && in_array($this->workflow_status, ['pending_coordinator', 'coordinator_filling'], true),
             'section_manager' => $this->workflow_status === 'pending_section_manager'

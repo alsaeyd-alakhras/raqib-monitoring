@@ -165,6 +165,40 @@
 
 <div class="card mb-4">
     <div class="card-header">
+        <h5 class="mb-0">بيانات مدير المشروع</h5>
+    </div>
+    <div class="card-body">
+        <div class="row">
+            <div class="mb-4 col-md-4">
+                <x-form.textarea
+                    name="coordinator_requirements"
+                    label="مطلوب من المنسق"
+                    :value="$project->coordinator_requirements ?? ''"
+                    rows="1"
+                />
+            </div>
+            <div class="mb-4 col-md-4">
+                <x-form.textarea
+                    name="project_lifecycle_notes"
+                    label="دورة حياة المشروع"
+                    :value="$project->project_lifecycle_notes ?? ''"
+                    rows="1"
+                />
+            </div>
+            <div class="mb-4 col-md-4">
+                <x-form.textarea
+                    name="pm_recommendations"
+                    label="التوصيات"
+                    :value="$project->pm_recommendations ?? ''"
+                    rows="1"
+                />
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card mb-4">
+    <div class="card-header">
         <h5 class="mb-0">ثانياً — بيانات التنفيذ</h5>
     </div>
     <div class="card-body">

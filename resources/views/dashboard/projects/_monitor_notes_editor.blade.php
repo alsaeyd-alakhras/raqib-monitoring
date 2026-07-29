@@ -203,9 +203,9 @@
     </div>
 </div>
 
-<textarea name="monitor_notes_text" id="monitor_notes_text" class="d-none" aria-hidden="true">{{ implode("\n", array_filter($notesSubject->monitor_notes ?? [])) }}</textarea>
-<textarea name="monitor_negative_notes_text" id="monitor_negative_notes_text" class="d-none" aria-hidden="true">{{ implode("\n", array_filter($notesSubject->monitor_negative_notes ?? [])) }}</textarea>
-<textarea name="monitor_recommendations_text" id="monitor_recommendations_text" class="d-none" aria-hidden="true">{{ implode("\n", array_filter($notesSubject->monitor_recommendations ?? [])) }}</textarea>
+<textarea name="monitor_notes_text" id="monitor_notes_text" class="d-none" rows="1" aria-hidden="true">{{ implode("\n", array_filter($notesSubject->monitor_notes ?? [])) }}</textarea>
+<textarea name="monitor_negative_notes_text" id="monitor_negative_notes_text" class="d-none" rows="1" aria-hidden="true">{{ implode("\n", array_filter($notesSubject->monitor_negative_notes ?? [])) }}</textarea>
+<textarea name="monitor_recommendations_text" id="monitor_recommendations_text" class="d-none" rows="1" aria-hidden="true">{{ implode("\n", array_filter($notesSubject->monitor_recommendations ?? [])) }}</textarea>
 
 @push('scripts')
 <script>

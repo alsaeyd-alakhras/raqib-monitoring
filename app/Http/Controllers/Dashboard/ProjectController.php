@@ -269,6 +269,7 @@ class ProjectController extends Controller
                 'canViewMonitorData' => $this->canViewMonitorData($project),
                 'canViewCoordinatorData' => $this->canViewCoordinatorData($project),
                 'showCoordinatorInSummary' => false,
+                'canEditPmFields' => $this->canEditPmFields($project),
                 'projectManagerDepartmentName' => $project->projectManagerDepartmentName(),
                 'approverDepartmentManager' => $project->approverDepartmentManager(),
                 'approverDepartmentManagerLabel' => $project->approverDepartmentManagerLabel(),
@@ -383,6 +384,28 @@ class ProjectController extends Controller
 
     /* ===================== Workflow: السلسلة الأولى ===================== */
 
+    public function fillPmFields(Request $request, Project $project): RedirectResponse
+    {
+        $this->authorize('update', Project::class);
+        $this->ensureProjectVisible($project);
+        if (! auth()->user()?->super_admin) {
+            $this->ensureProjectManagerActor($project);
+        }
+        $this->guardStatus($project, ['draft']);
+
+        $validated = $request->validate([
+            'coordinator_requirements' => ['nullable', 'string'],
+            'project_lifecycle_notes' => ['nullable', 'string'],
+            'pm_recommendations' => ['nullable', 'string'],
+        ]);
+
+        $project->update(array_merge($validated, [
+            'updated_by' => auth()->id(),
+        ]));
+
+        return back()->with('success', 'تم حفظ بيانات مدير المشروع.');
+    }
+
     public function submitToSecretariat(Project $project): RedirectResponse
     {
         $this->authorize('update', Project::class);
@@ -491,18 +514,42 @@ class ProjectController extends Controller
         $this->guardCoordinatorFillStatus($project);
         $this->validateCoordinatorFillOnBehalf($request, $project);
 
+        $validated = $request->validate([
+            'implementation_mechanism' => ['nullable', 'string'],
+        ]);
+
         $this->saveChecklistValues($request, $project, 'coordinator_value');
+
+        $project->update([
+            'implementation_mechanism' => $validated['implementation_mechanism'] ?? null,
+            'updated_by' => auth()->id(),
+        ]);
 
         $this->recordCoordinatorFilledBy($request, $project);
         $this->recordCoordinatorFilledAt($project);
 
-        if ($project->workflow_status === 'pending_coordinator') {
-            $project->update(['workflow_status' => 'coordinator_filling']);
+        $project->recalculateReadiness();
+        $project->loadMissing('checklistValues');
+
+        if (! $this->coordinatorChecklistReadyForSubmission($project)) {
+            if ($project->workflow_status === 'coordinator_filling') {
+                $project->update(['workflow_status' => 'pending_coordinator', 'updated_by' => auth()->id()]);
+            }
+
+            return back()->withErrors([
+                'coordinator' => 'تم حفظ التعبئة — أكمل جميع بنود قائمة المنسق قبل الإرسال لمدير القسم.',
+            ]);
         }
 
-        $project->recalculateReadiness();
+        $project->update([
+            'workflow_status' => 'pending_section_manager',
+            'submitted_to_section_manager_at' => now(),
+            'submitted_to_section_manager_by' => auth()->id(),
+            'updated_by' => auth()->id(),
+        ]);
+        $this->clearProjectReturnNotice($project);
 
-        return back()->with('success', 'تم حفظ عمود المنسق.');
+        return back()->with('success', 'تم الحفظ والإرسال لمدير القسم.');
     }
 
     public function fillClosureDocs(Request $request, Project $project): RedirectResponse
@@ -605,7 +652,7 @@ class ProjectController extends Controller
     public function submitToProjectManager(Project $project): RedirectResponse
     {
         $this->authorize('fill_coordinator', Project::class);
-        $this->guardStatus($project, ['coordinator_filling']);
+        $this->guardStatus($project, ['pending_coordinator', 'coordinator_filling']);
         $this->authorizeCoordinatorFill($project);
         $project->loadMissing('checklistValues');
 
@@ -814,9 +861,6 @@ class ProjectController extends Controller
         $canSubmitToDirector = $project->canMonitorSubmitToDirector();
         $awaitingDirector = $project->awaitingMonitoringDirectorConfirmation();
         $canEditMonitorColumn = $project->workflow_status === 'monitoring_in_progress';
-        $canShowMonitorSubmitSection = $this->isMonitorSubmitUnlocked($project)
-            && $canSubmitToDirector
-            && $project->isAssignedMonitor(auth()->user());
 
         return view('dashboard.projects.monitor-work', compact(
             'project',
@@ -825,7 +869,6 @@ class ProjectController extends Controller
             'canSubmitToDirector',
             'awaitingDirector',
             'canEditMonitorColumn',
-            'canShowMonitorSubmitSection',
         ) + [
             'isAssignedMonitor' => $project->isAssignedMonitor(auth()->user()),
             'showCoordinatorInSummary' => true,
@@ -847,11 +890,13 @@ class ProjectController extends Controller
         $this->authorizeMonitorFill($project);
         $this->guardStatus($project, ['monitoring_in_progress']);
 
+        $this->mergeNormalizedActivityTime($request);
+
         $validated = $request->validate([
             'monitor_notes_text' => ['nullable', 'string'],
             'monitor_negative_notes_text' => ['nullable', 'string'],
             'monitor_recommendations_text' => ['nullable', 'string'],
-        ] + $this->monitorActivityFieldRules());
+        ] + $this->monitorActivityFieldRules(), $this->monitorActivityValidationMessages());
 
         $this->savePrimaryActivityFields($project, $validated);
 
@@ -868,11 +913,17 @@ class ProjectController extends Controller
 
         $project->recalculateReadiness();
         $this->savePrimaryActivityFields($project, $validated);
-        $this->unlockMonitorSubmit($project);
+        $project->loadMissing('checklistValues', 'primaryMonitoringActivity');
 
-        return redirect()
-            ->route('dashboard.projects.monitor-work', $project)
-            ->with('success', 'تم حفظ عمل المراقب — يمكنك الآن الإرسال لمدير الرقابة العامة من الأسفل.');
+        if (! $this->monitorChecklistReadyForSubmission($project)) {
+            return redirect()
+                ->route('dashboard.projects.monitor-work', $project)
+                ->withErrors([
+                    'monitor' => 'تم حفظ التعبئة — أكمل جميع بنود قائمة التحقق قبل الإرسال لمدير الرقابة.',
+                ]);
+        }
+
+        return $this->finalizeProjectMonitorSubmission($project);
     }
 
     /** @deprecated استخدم fillMonitor */
@@ -881,45 +932,22 @@ class ProjectController extends Controller
         return $this->fillMonitor($request, $project);
     }
 
+    /** @deprecated يُبقى للتوافق — الإرسال يتم عبر fillMonitor */
     public function confirmMonitoring(Project $project): RedirectResponse
     {
         $this->authorize('fill_monitor', Project::class);
         $this->guardStatus($project, ['monitoring_in_progress']);
         $this->authorizeMonitorFill($project);
 
-        if (! $this->isMonitorSubmitUnlocked($project) || ! $this->monitorChecklistReadyForSubmission($project)) {
+        $project->loadMissing('checklistValues', 'primaryMonitoringActivity');
+
+        if (! $this->monitorChecklistReadyForSubmission($project)) {
             return redirect()
                 ->route('dashboard.projects.monitor-work', $project)
-                ->withErrors(['monitor' => 'يجب حفظ وتعبئة جميع بنود قائمة التحقق قبل الإرسال لمدير الرقابة.']);
+                ->withErrors(['monitor' => 'يجب تعبئة جميع بنود قائمة التحقق قبل الإرسال لمدير الرقابة.']);
         }
 
-        $activity = $project->primaryMonitoringActivity;
-
-        if (! $activity) {
-            return back()->withErrors(['monitor' => 'لا يوجد نشاط رقابي أساسي مرتبط بهذا المشروع.']);
-        }
-
-        if ($activity->workflow_status !== 'in_progress') {
-            abort(422, 'حالة النشاط الحالية لا تسمح بتأكيد إنهاء المراقبة.');
-        }
-
-        $activity->update([
-            'workflow_status' => 'pending_confirmation',
-            'updated_by' => auth()->id(),
-        ]);
-
-        $project->update([
-            'workflow_status' => 'pending_monitoring_confirmation',
-            'monitor_submitted_at' => now(),
-            'monitor_submitted_by' => auth()->id(),
-            'updated_by' => auth()->id(),
-        ]);
-
-        $this->lockMonitorSubmit($project);
-
-        return redirect()
-            ->route('dashboard.projects.monitor-work', $project)
-            ->with('success', 'تم إرسال عمل المراقب لمدير الرقابة العامة — بانتظار تأكيد المرور.');
+        return $this->finalizeProjectMonitorSubmission($project);
     }
 
     private function monitorSubmitSessionKey(Project $project): string
@@ -1040,7 +1068,11 @@ class ProjectController extends Controller
             'workflow_status' => ['required', 'in:' . implode(',', self::STATUSES)],
         ]);
 
-        $project->update($validated + ['updated_by' => auth()->id()]);
+        $workflowStatus = $validated['workflow_status'] === 'coordinator_filling'
+            ? 'pending_coordinator'
+            : $validated['workflow_status'];
+
+        $project->update(['workflow_status' => $workflowStatus, 'updated_by' => auth()->id()]);
 
         return back()->with('success', 'تم تحديث حالة المشروع.');
     }
@@ -1086,9 +1118,17 @@ class ProjectController extends Controller
         $personFieldItemIds = $this->activeChecklistPersonFieldItemIds();
         $fileFieldItemIds = $this->activeChecklistFileFieldItemIds();
         $rules = ['checklist' => ['required', 'array']];
+        $submittedChecklist = $request->input('checklist', []);
+        $itemIdsToValidate = $column === 'coordinator_value'
+            ? array_values(array_intersect(
+                $activeItemIds,
+                array_map('intval', array_keys(is_array($submittedChecklist) ? $submittedChecklist : []))
+            ))
+            : $activeItemIds;
 
-        foreach ($activeItemIds as $itemId) {
-            $allowedValues = ($column === 'coordinator_value' && in_array($itemId, $fileFieldItemIds, true))
+        foreach ($itemIdsToValidate as $itemId) {
+            $isClosureDocItem = in_array($itemId, $fileFieldItemIds, true);
+            $allowedValues = ($isClosureDocItem && in_array($column, ['coordinator_value', 'monitor_value'], true))
                 ? 'ready,not_ready'
                 : 'ready,partial,not_ready,not_required';
             $rules["checklist.{$itemId}.value"] = ['required', 'in:' . $allowedValues];
@@ -1156,7 +1196,7 @@ class ProjectController extends Controller
 
         $validated = $validator->validate();
 
-        foreach ($activeItemIds as $itemId) {
+        foreach ($itemIdsToValidate as $itemId) {
             $data = $validated['checklist'][$itemId] ?? null;
 
             if (! is_array($data)) {
@@ -1302,8 +1342,13 @@ class ProjectController extends Controller
             return true;
         }
 
-        $type = $request->input("{$prefix}.{$itemId}.attachment_type", $existing?->attachment_type ?? 'file');
         $url = trim((string) $request->input("{$prefix}.{$itemId}.attachment_url", ''));
+
+        if ($url !== '' && filter_var($url, FILTER_VALIDATE_URL) !== false) {
+            return true;
+        }
+
+        $type = $request->input("{$prefix}.{$itemId}.attachment_type", $existing?->attachment_type ?? 'file');
 
         if ($type === 'url' && $url !== '') {
             return filter_var($url, FILTER_VALIDATE_URL) !== false;
@@ -1373,7 +1418,6 @@ class ProjectController extends Controller
         array &$payload,
         string $prefix = 'checklist'
     ): void {
-        $type = $request->input("{$prefix}.{$itemId}.attachment_type", 'file');
         $url = trim((string) $request->input("{$prefix}.{$itemId}.attachment_url", ''));
 
         $existing = ProjectChecklistValue::query()
@@ -1382,7 +1426,7 @@ class ProjectController extends Controller
 
         $attachments = $existing ? $existing->attachmentsList() : [];
 
-        if ($type === 'url' && $url !== '' && filter_var($url, FILTER_VALIDATE_URL)) {
+        if ($url !== '' && filter_var($url, FILTER_VALIDATE_URL)) {
             foreach ($attachments as $row) {
                 if (($row['type'] ?? '') === 'file' && ! empty($row['path'])) {
                     Storage::disk('public')->delete($row['path']);
@@ -1810,7 +1854,8 @@ class ProjectController extends Controller
             'canViewRejectionHistory' => $project->canUserViewRejectionHistory(auth()->user()),
             'canViewMonitoringStatusPanel' => $project->canViewMonitoringStatusPanel(auth()->user()),
             'canViewMergedChecklist' => $this->canViewMergedChecklist($project),
-            'canFillClosureDocs' => $canManageCoordinatorColumn && $project->coordinatorCanFillClosureDocs(),
+            'canFillClosureDocs' => $this->coordinatorCanUploadClosureDocsProject($project),
+            'canEditPmFields' => $this->canEditPmFields($project),
             'nextProjectNumberSeq' => Project::sequenceFromProjectNumber(Project::generateProjectNumber()),
             'checkProjectNumberUrl' => route('dashboard.projects.check-project-number'),
             'closureDocItems' => $groups->flatMap(fn ($group) => $group->items)->filter(fn ($item) => $item->has_file_field)->values(),
@@ -1996,7 +2041,7 @@ class ProjectController extends Controller
         }
 
         if ($this->userIsSelfCoordinatorProjectManager($project, $user)
-            && in_array($project->workflow_status, ['draft', 'pending_secretariat'], true)) {
+            && in_array($project->workflow_status, ['pending_coordinator', 'coordinator_filling'], true)) {
             return;
         }
 
@@ -2013,6 +2058,27 @@ class ProjectController extends Controller
         }
 
         return (int) $personId === (int) $project->project_manager_id;
+    }
+
+    private function canEditPmFields(Project $project): bool
+    {
+        if ($project->workflow_status !== 'draft') {
+            return false;
+        }
+
+        $user = auth()->user();
+
+        if (! $user?->can('update', Project::class)) {
+            return false;
+        }
+
+        if ($user->super_admin) {
+            return true;
+        }
+
+        $personId = $user->person?->id;
+
+        return (bool) ($personId && (int) $personId === (int) $project->project_manager_id);
     }
 
     private function canSubmitToSecretariat(Project $project): bool
@@ -2043,12 +2109,7 @@ class ProjectController extends Controller
             return $project->hasCoordinatorAssignment();
         }
 
-        if (! $project->isSelfCoordinator()) {
-            return true;
-        }
-
-        return $project->coordinator_filled_at !== null
-            && $this->coordinatorChecklistReadyForSubmission($project);
+        return true;
     }
 
     private function canSubmitToCoordinatorFromDraft(Project $project): bool
@@ -2209,7 +2270,7 @@ class ProjectController extends Controller
         }
 
         if ($this->userIsSelfCoordinatorProjectManager($project, $user)
-            && in_array($project->workflow_status, ['draft', 'pending_secretariat'], true)) {
+            && in_array($project->workflow_status, ['pending_coordinator', 'coordinator_filling'], true)) {
             return true;
         }
 
@@ -2233,7 +2294,7 @@ class ProjectController extends Controller
         }
 
         if ($project->isSelfCoordinator()) {
-            return true;
+            return in_array($project->workflow_status, ['pending_coordinator', 'coordinator_filling'], true);
         }
 
         if ($project->coordinatorHasUserAccount()) {
@@ -2253,6 +2314,52 @@ class ProjectController extends Controller
         return $this->checklistReadyForSubmission($project, 'coordinator_value');
     }
 
+    private function coordinatorCanUploadClosureDocsProject(Project $project): bool
+    {
+        if (! $project->coordinatorCanFillClosureDocs()) {
+            return false;
+        }
+
+        $user = auth()->user();
+
+        if (! $user) {
+            return false;
+        }
+
+        if ($user->super_admin) {
+            return true;
+        }
+
+        $personId = $user->person?->id;
+
+        if (! $personId) {
+            return false;
+        }
+
+        if ((int) $personId === (int) $project->coordinator_id) {
+            return true;
+        }
+
+        if ((int) $personId !== (int) $project->project_manager_id) {
+            return false;
+        }
+
+        if ($project->isSelfCoordinator()) {
+            return false;
+        }
+
+        if ($project->coordinatorHasUserAccount()) {
+            return false;
+        }
+
+        if ($project->coordinator_readiness_pct !== null
+            && (int) ($project->coordinator_filled_by ?? 0) !== (int) $user->id) {
+            return false;
+        }
+
+        return true;
+    }
+
     private function monitorChecklistReadyForSubmission(Project $project): bool
     {
         return $this->checklistReadyForSubmission($project, 'monitor_value');
@@ -2260,12 +2367,7 @@ class ProjectController extends Controller
 
     private function checklistReadyForSubmission(Project $project, string $column): bool
     {
-        $activeItems = \App\Models\ChecklistItem::query()
-            ->where('is_active', true)
-            ->whereHas('group', fn ($q) => $q->where('is_active', true))
-            ->orderBy('group_id')
-            ->orderBy('order')
-            ->get(['id', 'has_person_field']);
+        $activeItems = $this->activeChecklistSubmissionItems();
 
         if ($activeItems->isEmpty()) {
             return true;
@@ -2276,22 +2378,7 @@ class ProjectController extends Controller
             ->get()
             ->keyBy('checklist_item_id');
 
-        foreach ($activeItems as $item) {
-            $row = $values->get($item->id);
-            $status = $row?->{$column};
-
-            if ($status === null || $status === '') {
-                return false;
-            }
-
-            if ($item->has_person_field && in_array($status, ['ready', 'partial'], true)) {
-                if (! filled(trim((string) ($row?->person_name ?? '')))) {
-                    return false;
-                }
-            }
-        }
-
-        return true;
+        return $this->checklistRowsReadyForSubmission($activeItems, $values, $column);
     }
 
     private function canViewMergedChecklist(Project $project): bool
@@ -2370,7 +2457,7 @@ class ProjectController extends Controller
         return $validated;
     }
 
-    /** @return list<array{name: string, beneficiaries: int|null, execution_site: string|null, coordinator_mode: string, coordinator_id: int|null, coordinator_external_name: string|null}> */
+    /** @return list<array{name: string, beneficiaries: int|null, execution_site: string|null, coordinator_mode: string, coordinator_id: int|null, coordinator_external_name: string|null, nomination_responsibility: string|null}> */
     private function normalizeExecutionRegions(int $zones, mixed $rawRegions, ?int $projectManagerId = null): array
     {
         if ($zones <= 0) {
@@ -2388,6 +2475,7 @@ class ProjectController extends Controller
                     'coordinator_mode' => 'person',
                     'coordinator_id' => null,
                     'coordinator_external_name' => null,
+                    'nomination_responsibility' => null,
                 ];
             }
 
@@ -2409,6 +2497,7 @@ class ProjectController extends Controller
                 'coordinator_mode' => $mode,
                 'coordinator_id' => null,
                 'coordinator_external_name' => null,
+                'nomination_responsibility' => $this->normalizeNominationResponsibility($region['nomination_responsibility'] ?? null),
             ];
 
             return match ($mode) {
@@ -2431,6 +2520,19 @@ class ProjectController extends Controller
                 default => $normalized,
             };
         }, $regions), 0, $zones);
+    }
+
+    private function normalizeNominationResponsibility(mixed $value): ?string
+    {
+        if (! filled($value)) {
+            return null;
+        }
+
+        $value = (string) $value;
+
+        return in_array($value, ['project_manager', 'coordinator', 'organization', 'external'], true)
+            ? $value
+            : null;
     }
 
     private function applyFinancialDefaults(array $validated): array
@@ -2492,7 +2594,11 @@ class ProjectController extends Controller
             'execution_regions.*.coordinator_mode' => ['nullable', 'in:self,person,external'],
             'execution_regions.*.coordinator_id' => ['nullable', 'exists:people,id'],
             'execution_regions.*.coordinator_external_name' => ['nullable', 'string', 'max:255'],
+            'execution_regions.*.nomination_responsibility' => ['nullable', 'in:project_manager,coordinator,organization,external'],
             'estimated_duration' => ['required', 'string', 'max:255'],
+            'coordinator_requirements' => ['nullable', 'string'],
+            'project_lifecycle_notes' => ['nullable', 'string'],
+            'pm_recommendations' => ['nullable', 'string'],
             'currency_id' => ['required', 'exists:currencies,id'],
             'project_budget' => ['required', 'numeric', 'min:0'],
             'revenue_amount' => ['nullable', 'numeric', 'min:0'],
@@ -3037,12 +3143,7 @@ class ProjectController extends Controller
         }
 
         if ($project->isSelfCoordinator()) {
-            if (! in_array($project->workflow_status, ['draft', 'pending_secretariat'], true)) {
-                return false;
-            }
-
-            return $this->userIsSelfCoordinatorProjectManager($project)
-                || auth()->user()?->can('fill_coordinator', Project::class);
+            return false;
         }
 
         if (! auth()->user()?->can('fill_coordinator', Project::class)) {

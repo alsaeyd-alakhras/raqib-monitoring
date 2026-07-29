@@ -50,12 +50,17 @@ trait ManagesProjectExecutions
         $execution->syncMonitoringWorkflowState();
         $execution->refresh();
 
-        $project->load(['center', 'department', 'section', 'funder', 'currency', 'projectManager.department']);
+        $project->load([
+            'center', 'department', 'section', 'funder', 'currency', 'projectManager.department', 'procurementRep',
+            'executions' => fn ($q) => $q->where('is_active', true),
+        ]);
 
         $groups = $this->activeChecklistGroups();
         $values = $execution->checklistValues()->get()->keyBy('checklist_item_id');
         $monitors = Person::withRole('monitor')->orderBy('name')->get();
         $statusLabels = ProjectExecution::workflowStatusLabels();
+        $user = auth()->user();
+        $executionRegionsForDisplay = $this->executionRegionsForViewer($project, $user);
 
         return view('dashboard.project-executions.show', compact(
             'project',
@@ -64,7 +69,8 @@ trait ManagesProjectExecutions
             'values',
             'monitors',
             'statusLabels',
-        ) + $this->executionShowViewData($project, $execution, $groups, $values, $monitors));
+            'executionRegionsForDisplay',
+        ) + $this->executionShowViewData($project, $execution, $groups, $values, $monitors, $executionRegionsForDisplay));
     }
 
     public function monitorWorkExecution(Project $project, ProjectExecution $execution): View
@@ -102,9 +108,6 @@ trait ManagesProjectExecutions
             'canSubmitToDirector' => $execution->canMonitorSubmitToDirector(),
             'awaitingDirector' => $execution->awaitingMonitoringDirectorConfirmation(),
             'canEditMonitorColumn' => $execution->workflow_status === 'monitoring_in_progress',
-            'canShowMonitorSubmitSection' => $this->isExecutionMonitorSubmitUnlocked($execution)
-                && $execution->canMonitorSubmitToDirector()
-                && $execution->isAssignedMonitor(auth()->user()),
             'isAssignedMonitor' => $execution->isAssignedMonitor(auth()->user()),
             'primaryActivity' => $execution->primaryMonitoringActivity,
             'people' => Person::orderBy('name')->get(),
@@ -114,21 +117,44 @@ trait ManagesProjectExecutions
 
     public function fillCoordinatorExecution(Request $request, Project $project, ProjectExecution $execution): RedirectResponse
     {
-        $this->authorize('fill_coordinator', ProjectExecution::class);
         $this->ensureExecutionBelongsToProject($project, $execution);
+        $this->authorizeCoordinatorFillExecutionAbility($execution);
         $this->authorizeCoordinatorFillExecution($execution);
         $this->guardExecutionStatus($execution, ['pending_coordinator', 'coordinator_filling']);
+
+        $validated = $request->validate([
+            'implementation_mechanism' => ['nullable', 'string'],
+        ]);
 
         $this->saveExecutionChecklistValues($request, $project, $execution, 'coordinator_value');
         $this->recordExecutionCoordinatorFilledAt($execution);
 
-        if ($execution->workflow_status === 'pending_coordinator') {
-            $execution->update(['workflow_status' => 'coordinator_filling', 'updated_by' => auth()->id()]);
-        }
+        $execution->update([
+            'implementation_mechanism' => $validated['implementation_mechanism'] ?? null,
+            'updated_by' => auth()->id(),
+        ]);
 
         $execution->recalculateReadiness();
+        $execution->loadMissing('checklistValues');
 
-        return back()->with('success', 'تم حفظ عمود المنسق.');
+        if (! $this->executionCoordinatorChecklistReady($execution)) {
+            if ($execution->workflow_status === 'coordinator_filling') {
+                $execution->update(['workflow_status' => 'pending_coordinator', 'updated_by' => auth()->id()]);
+            }
+
+            return back()->withErrors([
+                'coordinator' => 'تم حفظ التعبئة — أكمل جميع بنود قائمة المنسق قبل الإرسال لمدير القسم.',
+            ]);
+        }
+
+        $execution->update([
+            'workflow_status' => 'pending_section_manager',
+            'submitted_to_section_manager_at' => now(),
+            'submitted_to_section_manager_by' => auth()->id(),
+            'updated_by' => auth()->id(),
+        ]);
+
+        return back()->with('success', 'تم الحفظ والإرسال لمدير القسم.');
     }
 
     public function fillClosureDocsExecution(Request $request, Project $project, ProjectExecution $execution): RedirectResponse
@@ -149,9 +175,9 @@ trait ManagesProjectExecutions
 
     public function submitToSectionManagerExecution(Project $project, ProjectExecution $execution): RedirectResponse
     {
-        $this->authorize('fill_coordinator', ProjectExecution::class);
         $this->ensureExecutionBelongsToProject($project, $execution);
-        $this->guardExecutionStatus($execution, ['coordinator_filling']);
+        $this->authorizeCoordinatorFillExecutionAbility($execution);
+        $this->guardExecutionStatus($execution, ['pending_coordinator', 'coordinator_filling']);
         $this->authorizeCoordinatorFillExecution($execution);
 
         $execution->loadMissing('checklistValues');
@@ -286,11 +312,13 @@ trait ManagesProjectExecutions
         $this->authorizeMonitorFillExecution($execution);
         $this->guardExecutionStatus($execution, ['monitoring_in_progress']);
 
+        $this->mergeNormalizedActivityTime($request);
+
         $validated = $request->validate([
             'monitor_notes_text' => ['nullable', 'string'],
             'monitor_negative_notes_text' => ['nullable', 'string'],
             'monitor_recommendations_text' => ['nullable', 'string'],
-        ] + $this->monitorActivityFieldRules());
+        ] + $this->monitorActivityFieldRules(), $this->monitorActivityValidationMessages());
 
         // احفظ التقييم أولاً — لا يتأثر بفشل checklist لاحقاً
         $this->saveExecutionPrimaryActivityFields($execution, $validated);
@@ -308,11 +336,17 @@ trait ManagesProjectExecutions
 
         $execution->recalculateReadiness();
         $this->saveExecutionPrimaryActivityFields($execution, $validated);
-        $this->unlockExecutionMonitorSubmit($execution);
+        $execution->loadMissing('checklistValues', 'primaryMonitoringActivity');
 
-        return redirect()
-            ->route('dashboard.projects.executions.monitor-work', [$project, $execution])
-            ->with('success', 'تم حفظ عمل المراقب — يمكنك الآن الإرسال لمدير الرقابة العامة من الأسفل.');
+        if (! $this->executionMonitorChecklistReady($execution)) {
+            return redirect()
+                ->route('dashboard.projects.executions.monitor-work', [$project, $execution])
+                ->withErrors([
+                    'monitor' => 'تم حفظ التعبئة — أكمل جميع بنود قائمة التحقق قبل الإرسال لمدير الرقابة.',
+                ]);
+        }
+
+        return $this->finalizeExecutionMonitorSubmission($project, $execution);
     }
 
     /** @deprecated استخدم fillMonitorExecution — يُبقى للتوافق مع روابط قديمة */
@@ -321,6 +355,7 @@ trait ManagesProjectExecutions
         return $this->fillMonitorExecution($request, $project, $execution);
     }
 
+    /** @deprecated يُبقى للتوافق — الإرسال يتم عبر fillMonitorExecution */
     public function confirmMonitoringExecution(Project $project, ProjectExecution $execution): RedirectResponse
     {
         $this->authorize('fill_monitor', ProjectExecution::class);
@@ -328,16 +363,25 @@ trait ManagesProjectExecutions
         $this->guardExecutionStatus($execution, ['monitoring_in_progress']);
         $this->authorizeMonitorFillExecution($execution);
 
-        if (! $this->isExecutionMonitorSubmitUnlocked($execution) || ! $this->executionMonitorChecklistReady($execution)) {
+        $execution->loadMissing('checklistValues', 'primaryMonitoringActivity');
+
+        if (! $this->executionMonitorChecklistReady($execution)) {
             return redirect()
                 ->route('dashboard.projects.executions.monitor-work', [$project, $execution])
-                ->withErrors(['monitor' => 'يجب حفظ وتعبئة جميع بنود قائمة التحقق قبل الإرسال.']);
+                ->withErrors(['monitor' => 'يجب تعبئة جميع بنود قائمة التحقق قبل الإرسال.']);
         }
 
+        return $this->finalizeExecutionMonitorSubmission($project, $execution);
+    }
+
+    protected function finalizeExecutionMonitorSubmission(Project $project, ProjectExecution $execution): RedirectResponse
+    {
         $activity = $execution->primaryMonitoringActivity;
 
         if (! $activity || $activity->workflow_status !== 'in_progress') {
-            abort(422, 'حالة النشاط لا تسمح بتأكيد إنهاء المراقبة.');
+            return redirect()
+                ->route('dashboard.projects.executions.monitor-work', [$project, $execution])
+                ->withErrors(['monitor' => 'لا يوجد نشاط رقابي أساسي مرتبط بهذا المسار.']);
         }
 
         $activity->update(['workflow_status' => 'pending_confirmation', 'updated_by' => auth()->id()]);
@@ -348,11 +392,32 @@ trait ManagesProjectExecutions
             'updated_by' => auth()->id(),
         ]);
 
-        $this->lockExecutionMonitorSubmit($execution);
-
         return redirect()
             ->route('dashboard.projects.executions.monitor-work', [$project, $execution])
-            ->with('success', 'تم إرسال عمل المراقب لمدير الرقابة العامة.');
+            ->with('success', 'تم الحفظ والإرسال لمدير الرقابة العامة.');
+    }
+
+    protected function finalizeProjectMonitorSubmission(Project $project): RedirectResponse
+    {
+        $activity = $project->primaryMonitoringActivity;
+
+        if (! $activity || $activity->workflow_status !== 'in_progress') {
+            return redirect()
+                ->route('dashboard.projects.monitor-work', $project)
+                ->withErrors(['monitor' => 'لا يوجد نشاط رقابي أساسي مرتبط بهذا المشروع.']);
+        }
+
+        $activity->update(['workflow_status' => 'pending_confirmation', 'updated_by' => auth()->id()]);
+        $project->update([
+            'workflow_status' => 'pending_monitoring_confirmation',
+            'monitor_submitted_at' => now(),
+            'monitor_submitted_by' => auth()->id(),
+            'updated_by' => auth()->id(),
+        ]);
+
+        return redirect()
+            ->route('dashboard.projects.monitor-work', $project)
+            ->with('success', 'تم الحفظ والإرسال لمدير الرقابة العامة.');
     }
 
     public function confirmPassageExecution(Project $project, ProjectExecution $execution): RedirectResponse
@@ -446,7 +511,11 @@ trait ManagesProjectExecutions
             'workflow_status' => ['required', 'string', Rule::in(array_keys(ProjectExecution::workflowStatusLabels()))],
         ]);
 
-        $execution->update($validated + ['updated_by' => auth()->id()]);
+        $workflowStatus = $validated['workflow_status'] === 'coordinator_filling'
+            ? 'pending_coordinator'
+            : $validated['workflow_status'];
+
+        $execution->update(['workflow_status' => $workflowStatus, 'updated_by' => auth()->id()]);
         app(ProjectAggregateStatusService::class)->refresh($project);
 
         return back()->with('success', 'تم تحديث حالة المسار.');
@@ -592,6 +661,31 @@ trait ManagesProjectExecutions
         return $project->executionRegionsBeneficiariesTotal();
     }
 
+    private function authorizeCoordinatorFillExecutionAbility(ProjectExecution $execution): void
+    {
+        $user = auth()->user();
+
+        if ($user?->super_admin) {
+            return;
+        }
+
+        if ($user?->can('fill_coordinator', ProjectExecution::class)) {
+            return;
+        }
+
+        $execution->loadMissing('project');
+        $personId = $user?->person?->id;
+
+        if ($execution->isSelfCoordinator()
+            && $personId
+            && (int) $personId === (int) $execution->project?->project_manager_id
+            && in_array($execution->workflow_status, ['pending_coordinator', 'coordinator_filling'], true)) {
+            return;
+        }
+
+        abort(403);
+    }
+
     private function authorizeCoordinatorFillExecution(ProjectExecution $execution): void
     {
         $user = auth()->user();
@@ -667,9 +761,17 @@ trait ManagesProjectExecutions
         $personFieldItemIds = $this->activeChecklistPersonFieldItemIds();
         $fileFieldItemIds = $this->activeChecklistFileFieldItemIds();
         $rules = ['checklist' => ['required', 'array']];
+        $submittedChecklist = $request->input('checklist', []);
+        $itemIdsToValidate = $column === 'coordinator_value'
+            ? array_values(array_intersect(
+                $activeItemIds,
+                array_map('intval', array_keys(is_array($submittedChecklist) ? $submittedChecklist : []))
+            ))
+            : $activeItemIds;
 
-        foreach ($activeItemIds as $itemId) {
-            $allowedValues = ($column === 'coordinator_value' && in_array($itemId, $fileFieldItemIds, true))
+        foreach ($itemIdsToValidate as $itemId) {
+            $isClosureDocItem = in_array($itemId, $fileFieldItemIds, true);
+            $allowedValues = ($isClosureDocItem && in_array($column, ['coordinator_value', 'monitor_value'], true))
                 ? 'ready,not_ready'
                 : 'ready,partial,not_ready,not_required';
             $rules["checklist.{$itemId}.value"] = ['required', 'in:' . $allowedValues];
@@ -740,7 +842,7 @@ trait ManagesProjectExecutions
 
         $validated = $validator->validate();
 
-        foreach ($activeItemIds as $itemId) {
+        foreach ($itemIdsToValidate as $itemId) {
             $data = $validated['checklist'][$itemId] ?? null;
 
             if (! is_array($data)) {
@@ -928,12 +1030,7 @@ trait ManagesProjectExecutions
 
     private function executionChecklistReadyForSubmission(ProjectExecution $execution, string $column): bool
     {
-        $activeItems = \App\Models\ChecklistItem::query()
-            ->where('is_active', true)
-            ->whereHas('group', fn ($q) => $q->where('is_active', true))
-            ->orderBy('group_id')
-            ->orderBy('order')
-            ->get(['id', 'has_person_field']);
+        $activeItems = $this->activeChecklistSubmissionItems();
 
         if ($activeItems->isEmpty()) {
             return true;
@@ -944,6 +1041,31 @@ trait ManagesProjectExecutions
             ->get()
             ->keyBy('checklist_item_id');
 
+        return $this->checklistRowsReadyForSubmission($activeItems, $values, $column);
+    }
+
+    /** @return \Illuminate\Support\Collection<int, \App\Models\ChecklistItem> */
+    private function activeChecklistSubmissionItems(): \Illuminate\Support\Collection
+    {
+        return \App\Models\ChecklistItem::query()
+            ->where('is_active', true)
+            ->whereHas('group', fn ($q) => $q->where('is_active', true))
+            ->orderBy('group_id')
+            ->orderBy('order')
+            ->get(['id', 'has_person_field', 'has_file_field']);
+    }
+
+    /**
+     * @param  \Illuminate\Support\Collection<int, \App\Models\ChecklistItem>  $activeItems
+     * @param  \Illuminate\Support\Collection<int, ProjectChecklistValue>  $values
+     */
+    private function checklistRowsReadyForSubmission(
+        \Illuminate\Support\Collection $activeItems,
+        \Illuminate\Support\Collection $values,
+        string $column
+    ): bool {
+        $closureDocItemIds = Project::closureDocumentItemIds();
+
         foreach ($activeItems as $item) {
             $row = $values->get($item->id);
             $status = $row?->{$column};
@@ -952,11 +1074,74 @@ trait ManagesProjectExecutions
                 return false;
             }
 
+            $isDeferredClosureDoc = $item->has_file_field
+                && in_array((int) $item->id, $closureDocItemIds, true)
+                && in_array($column, ['coordinator_value', 'monitor_value'], true);
+
+            if ($status === 'not_ready' && ! $isDeferredClosureDoc) {
+                return false;
+            }
+
+            if ($column === 'coordinator_value'
+                && $item->has_file_field
+                && $status === 'ready'
+                && ! ($row?->hasAttachment() ?? false)) {
+                return false;
+            }
+
             if ($item->has_person_field && in_array($status, ['ready', 'partial'], true)) {
                 if (! filled(trim((string) ($row?->person_name ?? '')))) {
                     return false;
                 }
             }
+        }
+
+        return true;
+    }
+
+    private function coordinatorCanUploadClosureDocsExecution(ProjectExecution $execution): bool
+    {
+        if (! $execution->coordinatorCanFillClosureDocs()) {
+            return false;
+        }
+
+        $user = auth()->user();
+
+        if (! $user) {
+            return false;
+        }
+
+        if ($user->super_admin) {
+            return true;
+        }
+
+        $personId = $user->person?->id;
+
+        if (! $personId) {
+            return false;
+        }
+
+        if ((int) $personId === (int) $execution->coordinator_id) {
+            return true;
+        }
+
+        $execution->loadMissing('project');
+
+        if ((int) $personId !== (int) $execution->project?->project_manager_id) {
+            return false;
+        }
+
+        if ($execution->isSelfCoordinator()) {
+            return false;
+        }
+
+        if ($execution->coordinatorHasUserAccount()) {
+            return false;
+        }
+
+        if ($execution->coordinator_readiness_pct !== null
+            && (int) ($execution->coordinator_filled_by ?? 0) !== (int) $user->id) {
+            return false;
         }
 
         return true;
@@ -1005,15 +1190,61 @@ trait ManagesProjectExecutions
         })->all();
     }
 
+    protected function mergeNormalizedActivityTime(Request $request): void
+    {
+        if (! $request->has('activity_time')) {
+            return;
+        }
+
+        $request->merge([
+            'activity_time' => $this->normalizeActivityTimeInput($request->input('activity_time')),
+        ]);
+    }
+
+    protected function normalizeActivityTimeInput(mixed $time): ?string
+    {
+        if ($time === null || $time === '') {
+            return null;
+        }
+
+        $time = trim((string) $time);
+
+        if (preg_match('/^\d{1,2}:\d{2}$/', $time)) {
+            [$hours, $minutes] = array_map('intval', explode(':', $time, 2));
+
+            return sprintf('%02d:%02d', $hours, $minutes);
+        }
+
+        if (preg_match('/^(\d{1,2}:\d{2}):\d{2}$/', $time, $matches)) {
+            [$hours, $minutes] = array_map('intval', explode(':', $matches[1], 2));
+
+            return sprintf('%02d:%02d', $hours, $minutes);
+        }
+
+        try {
+            return \Carbon\Carbon::parse($time)->format('H:i');
+        } catch (\Throwable) {
+            return $time;
+        }
+    }
+
+    /** @return array<string, string> */
+    protected function monitorActivityValidationMessages(): array
+    {
+        return [
+            'activity_time.date_format' => 'صيغة الوقت غير صحيحة — اختر الوقت من القائمة أو استخدم ساعة:دقيقة (مثل 14:30).',
+        ];
+    }
+
     /** @return array<string, mixed> */
-    private function executionShowViewData(Project $project, ProjectExecution $execution, $groups, $values, $monitors): array
+    private function executionShowViewData(Project $project, ProjectExecution $execution, $groups, $values, $monitors, array $executionRegionsForDisplay = []): array
     {
         $user = auth()->user();
         $canViewCoordinatorData = $execution->showsCoordinatorDataTo($user);
         $canViewMonitorData = $execution->showsMonitorDataTo($user);
         $canManageCoordinatorColumn = $this->canManageCoordinatorColumnExecution($execution);
         $coordinatorPhase = in_array($execution->workflow_status, ['pending_coordinator', 'coordinator_filling'], true);
-        $canFillClosureDocs = $canManageCoordinatorColumn && $execution->coordinatorCanFillClosureDocs();
+        $canFillClosureDocs = $this->coordinatorCanUploadClosureDocsExecution($execution);
 
         return [
             'canFillCoordinator' => $user?->can('fill_coordinator', ProjectExecution::class) ?? false,
@@ -1056,6 +1287,12 @@ trait ManagesProjectExecutions
             'readinessBreakdown' => $execution->readinessBreakdown(),
             'deleteAttachmentUrl' => route('dashboard.projects.executions.delete-checklist-attachment', [$project, $execution]),
             'closureLateScore' => Project::closureLateScore(),
+            'projectManagerDepartmentName' => $project->projectManagerDepartmentName(),
+            'executionRegionsBeneficiariesTotal' => $this->executionRegionsBeneficiariesTotalForViewer(
+                $project,
+                $user,
+                $executionRegionsForDisplay
+            ),
         ];
     }
 
@@ -1097,7 +1334,7 @@ trait ManagesProjectExecutions
             $execution->loadMissing('project');
 
             if ((int) $personId === (int) $execution->coordinator_id) {
-                return true;
+                return in_array($execution->workflow_status, ['pending_coordinator', 'coordinator_filling'], true);
             }
 
             if ((int) $personId !== (int) $execution->project?->project_manager_id) {
@@ -1105,7 +1342,7 @@ trait ManagesProjectExecutions
             }
 
             if ($execution->isSelfCoordinator()) {
-                return true;
+                return in_array($execution->workflow_status, ['pending_coordinator', 'coordinator_filling'], true);
             }
 
             if ($execution->coordinatorHasUserAccount()) {
@@ -1147,7 +1384,7 @@ trait ManagesProjectExecutions
         }
 
         if ($execution->isSelfCoordinator()) {
-            return true;
+            return in_array($execution->workflow_status, ['pending_coordinator', 'coordinator_filling'], true);
         }
 
         if ($execution->coordinatorHasUserAccount()) {

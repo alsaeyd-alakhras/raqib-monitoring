@@ -28,18 +28,16 @@ class ProjectExecutionsSmokeTest extends ProjectsSmokeTest
 
         $executions = $project->executions()->orderBy('sort_order')->get();
         $this->assertSame('pending_coordinator', $executions[0]->workflow_status);
-        $this->assertSame('pending_section_manager', $executions[1]->workflow_status);
+        $this->assertSame('pending_coordinator', $executions[1]->workflow_status);
         $this->assertTrue($executions[1]->isSelfCoordinator());
 
-        $this->postFillCoordinator($project, ['checklist' => $this->fullChecklist()], $executions[0]);
-        $this->postSubmitToSectionManager($project, $executions[0])->assertRedirect();
+        $this->postFillCoordinator($project, ['checklist' => $this->fullChecklist()], $executions[0])->assertRedirect();
         $this->postApproveSection($project, $executions[0])->assertRedirect();
         $this->postApproveDepartment($project, $executions[0])->assertRedirect();
 
         $monitor = Person::withRole('monitor')->firstOrFail();
         $this->postAssignMonitor($project, ['monitor_person_id' => $monitor->id], $executions[0])->assertRedirect();
         $this->postFillMonitor($project, ['checklist' => $this->fullChecklist('ready', false)], $executions[0])->assertRedirect();
-        $this->postConfirmMonitoring($project, $executions[0])->assertRedirect();
         $this->postConfirmPassage($project, $executions[0])->assertRedirect();
 
         $project->refresh();
@@ -99,7 +97,7 @@ class ProjectExecutionsSmokeTest extends ProjectsSmokeTest
         $this->assertSame((int) $coordinator->id, (int) $executions[0]->coordinator_id);
         $this->assertSame('pending_coordinator', $executions[0]->workflow_status);
         $this->assertSame((int) $pm->id, (int) $executions[1]->coordinator_id);
-        $this->assertSame('pending_section_manager', $executions[1]->workflow_status);
+        $this->assertSame('pending_coordinator', $executions[1]->workflow_status);
         $this->assertTrue($executions[1]->isSelfCoordinator());
 
         $this->actingAs($coordUser->fresh());
@@ -223,7 +221,6 @@ class ProjectExecutionsSmokeTest extends ProjectsSmokeTest
         $execution->update(['coordinator_id' => $coordinator->id]);
 
         $this->postFillCoordinator($project, ['checklist' => $this->fullChecklist()], $execution)->assertRedirect();
-        $this->postSubmitToSectionManager($project, $execution)->assertRedirect();
 
         $execution->refresh();
         $this->assertSame('pending_section_manager', $execution->workflow_status);
@@ -290,7 +287,6 @@ class ProjectExecutionsSmokeTest extends ProjectsSmokeTest
 
         $execution = $this->primaryExecution($project);
         $this->postFillCoordinator($project, ['checklist' => $this->fullChecklist()], $execution);
-        $this->postSubmitToSectionManager($project, $execution)->assertRedirect();
         $this->postApproveSection($project, $execution)->assertRedirect();
         $this->postApproveDepartment($project, $execution)->assertRedirect();
 
@@ -344,7 +340,6 @@ class ProjectExecutionsSmokeTest extends ProjectsSmokeTest
 
         $execution = $this->primaryExecution($project);
         $this->postFillCoordinator($project, ['checklist' => $this->fullChecklist()], $execution);
-        $this->postSubmitToSectionManager($project, $execution)->assertRedirect();
         $this->postApproveSection($project, $execution)->assertRedirect();
         $this->postApproveDepartment($project, $execution)->assertRedirect();
 
@@ -383,7 +378,6 @@ class ProjectExecutionsSmokeTest extends ProjectsSmokeTest
 
         $execution = $this->primaryExecution($project);
         $this->postFillCoordinator($project, ['checklist' => $this->fullChecklist()], $execution);
-        $this->postSubmitToSectionManager($project, $execution)->assertRedirect();
         $this->postApproveSection($project, $execution)->assertRedirect();
         $this->postApproveDepartment($project, $execution)->assertRedirect();
 
@@ -402,7 +396,7 @@ class ProjectExecutionsSmokeTest extends ProjectsSmokeTest
             ->assertSee('checklist-overall-pct', false)
             ->assertSee('الملاحظات الميدانية', false)
             ->assertSee('بيانات النشاط المتبقية', false)
-            ->assertSee('حفظ التعديلات', false)
+            ->assertSee('حفظ وإرسال لمدير الرقابة العامة', false)
             ->assertSee('checklist-readiness.js', false);
 
         $pm = Person::withRole('project_manager')->firstOrFail();
@@ -456,7 +450,6 @@ class ProjectExecutionsSmokeTest extends ProjectsSmokeTest
 
         $execution = $this->primaryExecution($project);
         $this->postFillCoordinator($project, ['checklist' => $this->fullChecklist()], $execution);
-        $this->postSubmitToSectionManager($project, $execution)->assertRedirect();
         $this->postApproveSection($project, $execution)->assertRedirect();
         $this->postApproveDepartment($project, $execution)->assertRedirect();
 
@@ -600,7 +593,6 @@ class ProjectExecutionsSmokeTest extends ProjectsSmokeTest
         $this->advanceProjectThroughSecretariat($project);
         $execution = $this->primaryExecution($project);
         $this->postFillCoordinator($project, ['checklist' => $this->fullChecklist()], $execution);
-        $this->postSubmitToSectionManager($project, $execution)->assertRedirect();
         $this->postApproveSection($project, $execution)->assertRedirect();
         $this->postApproveDepartment($project, $execution)->assertRedirect();
 
@@ -743,8 +735,7 @@ class ProjectExecutionsSmokeTest extends ProjectsSmokeTest
         $this->advanceProjectThroughSecretariat($project);
         $execution = $this->primaryExecution($project);
 
-        $this->postFillCoordinator($project, ['checklist' => $this->fullChecklist()], $execution);
-        $this->postSubmitToSectionManager($project, $execution)->assertRedirect();
+        $this->postFillCoordinator($project, ['checklist' => $this->fullChecklist()], $execution)->assertRedirect();
 
         $execution->refresh();
         $this->assertSame('pending_section_manager', $execution->workflow_status);
@@ -764,7 +755,7 @@ class ProjectExecutionsSmokeTest extends ProjectsSmokeTest
         ])->assertRedirect();
 
         $execution->refresh();
-        $this->assertSame('coordinator_filling', $execution->workflow_status);
+        $this->assertSame('pending_coordinator', $execution->workflow_status);
         $this->assertSame('return_coordinator', $execution->return_target);
 
         $project->executions()->delete();
@@ -797,7 +788,6 @@ class ProjectExecutionsSmokeTest extends ProjectsSmokeTest
         $execution = $this->primaryExecution($project);
 
         $this->postFillCoordinator($project, ['checklist' => $this->fullChecklist()], $execution);
-        $this->postSubmitToSectionManager($project, $execution)->assertRedirect();
         $this->postApproveSection($project, $execution)->assertRedirect();
 
         $execution->refresh();
@@ -852,7 +842,6 @@ class ProjectExecutionsSmokeTest extends ProjectsSmokeTest
         $execution = $this->primaryExecution($project);
 
         $this->postFillCoordinator($project, ['checklist' => $this->fullChecklist()], $execution);
-        $this->postSubmitToSectionManager($project, $execution)->assertRedirect();
         $this->postApproveSection($project, $execution)->assertRedirect();
         $this->postApproveDepartment($project, $execution)->assertRedirect();
         $this->postAssignMonitor($project, ['monitor_person_id' => $monitor->id], $execution)->assertRedirect();
@@ -870,10 +859,6 @@ class ProjectExecutionsSmokeTest extends ProjectsSmokeTest
         ], $execution)
             ->assertRedirect()
             ->assertSessionHas('success');
-        $this->postConfirmMonitoring($project, $execution)
-            ->assertRedirect()
-            ->assertSessionHas('success');
-
         $execution->refresh();
         $this->assertSame('pending_monitoring_confirmation', $execution->workflow_status);
 

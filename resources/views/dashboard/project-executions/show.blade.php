@@ -1,4 +1,11 @@
 <x-front-layout>
+    @if ($errors->has('coordinator'))
+        <div class="alert alert-warning alert-dismissible fade show" role="alert">
+            {{ $errors->first('coordinator') }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    @endif
+
     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
         <div>
             <nav aria-label="breadcrumb">
@@ -15,6 +22,23 @@
             </p>
         </div>
         <a href="{{ route('dashboard.projects.show', $project) }}" class="btn btn-label-secondary">رجوع للمشروع</a>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header"><h5 class="mb-0">ملخص المشروع</h5></div>
+        <div class="card-body pt-3">
+            @include('dashboard.projects._project_summary', [
+                'compactLayout' => true,
+                'executionPathMode' => true,
+                'execution' => $execution,
+                'showActions' => false,
+                'showCoordinatorInSummary' => false,
+                'canViewMonitorData' => $canViewMonitorData ?? false,
+                'canManageCoordinatorColumn' => $canManageCoordinatorColumn ?? false,
+                'executionRegionsForDisplay' => $executionRegionsForDisplay ?? null,
+                'executionRegionsBeneficiariesTotal' => $executionRegionsBeneficiariesTotal ?? null,
+            ])
+        </div>
     </div>
 
     <div class="card mb-4">
@@ -141,8 +165,12 @@
             </div>
             <div class="card-body">
                 @if (($canManageCoordinatorColumn ?? false))
-                    <form action="{{ route('dashboard.projects.executions.fill-coordinator', [$project, $execution]) }}" method="post" enctype="multipart/form-data">
+                    <form action="{{ route('dashboard.projects.executions.fill-coordinator', [$project, $execution]) }}" method="post" enctype="multipart/form-data" data-checklist-readiness>
                         @csrf
+                        @include('dashboard.projects._implementation_mechanism_field', [
+                            'implementationMechanism' => $execution->implementation_mechanism,
+                            'fieldId' => 'execution_implementation_mechanism',
+                        ])
                         @include('dashboard.projects._checklist_edit', [
                             'groups' => $groups,
                             'values' => $values,
@@ -152,12 +180,10 @@
                             'deleteAttachmentUrl' => $deleteAttachmentUrl ?? null,
                             'prefix' => 'checklist',
                             'valueField' => 'coordinator_value',
+                            'projectExecutionId' => $execution->id,
                         ])
                         <div class="mt-3 d-flex gap-2">
-                            <button type="submit" class="btn btn-primary">حفظ</button>
-                            @if ($execution->workflow_status === 'coordinator_filling')
-                                <button formaction="{{ route('dashboard.projects.executions.submit-to-section-manager', [$project, $execution]) }}" type="submit" class="btn btn-success">إرسال لمدير القسم</button>
-                            @endif
+                            <button type="submit" class="btn btn-primary">حفظ وإرسال لمدير القسم</button>
                         </div>
                     </form>
                 @else
@@ -259,6 +285,16 @@
                     if (window.refreshChecklistReadiness) {
                         window.refreshChecklistReadiness(document);
                     }
+                });
+            </script>
+        @endpush
+    @endif
+
+    @if (session('success') || session('warning') || session('danger') || $errors->any())
+        @push('scripts')
+            <script>
+                document.addEventListener('DOMContentLoaded', function () {
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
                 });
             </script>
         @endpush

@@ -334,6 +334,13 @@
                 urlInput.value = url;
             }
 
+            const row = fileField.closest('tr');
+            const statusSelect = row?.querySelector('.checklist-status-select');
+            if (statusSelect && statusSelect.value !== 'ready') {
+                statusSelect.value = 'ready';
+                statusSelect.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+
             syncFileField(fileField);
             fileField.dispatchEvent(new Event('change', { bubbles: true }));
             pendingUploadContext = null;
@@ -361,6 +368,13 @@
         }
         if (urlInput) {
             urlInput.value = '';
+        }
+
+        const row = fileField.closest('tr');
+        const statusSelect = row?.querySelector('.checklist-status-select');
+        if (statusSelect && statusSelect.value !== 'ready') {
+            statusSelect.value = 'ready';
+            statusSelect.dispatchEvent(new Event('change', { bubbles: true }));
         }
 
         syncFileField(fileField);

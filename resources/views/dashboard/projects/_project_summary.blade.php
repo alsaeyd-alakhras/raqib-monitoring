@@ -2,6 +2,8 @@
     $compactLayout = $compactLayout ?? false;
     $showActions = $showActions ?? true;
     $showCoordinatorInSummary = $showCoordinatorInSummary ?? ($canViewCoordinatorData ?? false);
+    $executionPathMode = $executionPathMode ?? false;
+    $executionPath = $execution ?? null;
 @endphp
 
 @once
@@ -107,7 +109,7 @@
 
 @if ($compactLayout)<div class="col-lg-4">@endif
 <div class="project-summary-section">
-    <div class="project-summary-section-title">بيانات المشروع</div>
+    <div class="project-summary-section-title">{{ $executionPathMode ? 'ملخص المشروع' : 'بيانات المشروع' }}</div>
     <table class="project-summary-table">
         <tbody>
             <tr>
@@ -123,10 +125,6 @@
                 <td class="{{ $project->funder?->name ? '' : 'text-empty' }}">{{ $project->funder?->name ?? '—' }}</td>
             </tr>
             <tr>
-                <th scope="row">مندوب المشتريات</th>
-                <td class="{{ $project->procurementRep?->name ? '' : 'text-empty' }}">{{ $project->procurementRep?->name ?? '—' }}</td>
-            </tr>
-            <tr>
                 <th scope="row">الموقع التنظيمي</th>
                 <td>
                     @if ($orgParts)
@@ -137,6 +135,16 @@
                         <span class="text-empty">—</span>
                     @endif
                 </td>
+            </tr>
+            @if ($executionPathMode)
+            <tr>
+                <th scope="row">مدير المشروع</th>
+                <td>{{ $project->projectManager?->name ?? '—' }}</td>
+            </tr>
+            @else
+            <tr>
+                <th scope="row">مندوب المشتريات</th>
+                <td class="{{ $project->procurementRep?->name ? '' : 'text-empty' }}">{{ $project->procurementRep?->name ?? '—' }}</td>
             </tr>
             <tr>
                 <th scope="row">بداية التنفيذ المخطط</th>
@@ -156,6 +164,7 @@
                     {{ $project->execution_start_date?->format('Y-m-d') ?? '—' }}
                 </td>
             </tr>
+            @endif
         </tbody>
     </table>
 </div>
@@ -163,6 +172,51 @@
 
 @if ($compactLayout)<div class="col-lg-4">@endif
 <div class="project-summary-section">
+    @if ($executionPathMode && $executionPath)
+        <div class="project-summary-section-title">مسار التنفيذ الحالي</div>
+        <table class="project-summary-table">
+            <tbody>
+                <tr>
+                    <th scope="row">المنطقة</th>
+                    <td>{{ $executionPath->region_name ?: '—' }}</td>
+                </tr>
+                <tr>
+                    <th scope="row">موقع التنفيذ</th>
+                    <td class="{{ $executionPath->region_execution_site ? '' : 'text-empty' }}">
+                        {{ $executionPath->region_execution_site ?: '—' }}
+                    </td>
+                </tr>
+                <tr>
+                    <th scope="row">المستفيدون</th>
+                    <td class="{{ $executionPath->region_beneficiaries !== null ? '' : 'text-empty' }}">
+                        {{ $executionPath->region_beneficiaries !== null ? number_format($executionPath->region_beneficiaries) : '—' }}
+                    </td>
+                </tr>
+                <tr>
+                    <th scope="row">المنسق</th>
+                    <td>{{ $executionPath->coordinatorDisplayName() }}</td>
+                </tr>
+                <tr>
+                    <th scope="row">مسؤولية ترشيح الأسماء</th>
+                    <td>{{ $project->nominationResponsibilityLabel($executionPath->nomination_responsibility) }}</td>
+                </tr>
+                @if ($canViewMonitorData ?? false)
+                <tr>
+                    <th scope="row">المراقب</th>
+                    <td class="{{ $executionPath->monitorPerson?->name ? '' : 'text-empty' }}">
+                        {{ $executionPath->monitorPerson?->name ?? '—' }}
+                    </td>
+                </tr>
+                @endif
+                @if (filled($executionPath->implementation_mechanism) && ! ($canManageCoordinatorColumn ?? false))
+                <tr>
+                    <th scope="row">آلية التنفيذ</th>
+                    <td>{!! nl2br(e($executionPath->implementation_mechanism)) !!}</td>
+                </tr>
+                @endif
+            </tbody>
+        </table>
+    @else
     <div class="project-summary-section-title">الفريق والاعتماد</div>
     <table class="project-summary-table">
         <tbody>
@@ -212,6 +266,7 @@
             @endif
         </tbody>
     </table>
+    @endif
 </div>
 @if ($compactLayout)</div>@endif
 
@@ -250,6 +305,9 @@
                                     @if ($region['beneficiaries'] !== null)
                                         ({{ number_format($region['beneficiaries']) }})
                                     @endif
+                                    @if (! empty($region['nomination_responsibility']))
+                                        — مسؤولية الترشيح: {{ $project->nominationResponsibilityLabel($region['nomination_responsibility']) }}
+                                    @endif
                                 </span>
                             @endforeach
                             @if ($regionsTotal !== null)
@@ -264,6 +322,20 @@
                             {{ $project->estimated_duration ?: '—' }}
                         </td>
                     </tr>
+                    @if (filled($project->coordinator_requirements) || filled($project->project_lifecycle_notes) || filled($project->pm_recommendations))
+                    <tr>
+                        <th scope="row">مطلوب من المنسق</th>
+                        <td class="{{ $project->coordinator_requirements ? '' : 'text-empty' }}">{{ $project->coordinator_requirements ?: '—' }}</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">دورة حياة المشروع</th>
+                        <td class="{{ $project->project_lifecycle_notes ? '' : 'text-empty' }}">{{ $project->project_lifecycle_notes ?: '—' }}</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">توصيات مدير المشروع</th>
+                        <td class="{{ $project->pm_recommendations ? '' : 'text-empty' }}">{{ $project->pm_recommendations ?: '—' }}</td>
+                    </tr>
+                    @endif
                     <tr>
                         <th scope="row">موازنة المشروع</th>
                         <td class="{{ $project->project_budget !== null ? '' : 'text-empty' }}">

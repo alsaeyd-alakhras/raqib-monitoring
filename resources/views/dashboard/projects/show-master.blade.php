@@ -39,6 +39,8 @@
         </div>
     </div>
 
+    @include('dashboard.projects._pm_fields_panel', ['project' => $project])
+
     <div class="card mb-4">
         <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
             <h5 class="mb-0">مسارات التنفيذ (المناطق)</h5>

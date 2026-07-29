@@ -73,6 +73,43 @@
             return defaultCoordinatorMode;
         }
 
+        function nominationOptions(selectedValue) {
+            const options = [
+                ['', '— اختياري —'],
+                ['project_manager', 'مدير المشروع'],
+                ['coordinator', 'المنسق'],
+                ['organization', 'المؤسسة'],
+                ['external', 'جهة خارجية'],
+            ];
+
+            return options.map(([value, label]) => {
+                const selected = String(value) === String(selectedValue || '') ? ' selected' : '';
+
+                return `<option value="${escapeHtml(value)}"${selected}>${escapeHtml(label)}</option>`;
+            }).join('');
+        }
+
+        function nominationFieldHtml(index, saved, readonly) {
+            const selected = saved.nomination_responsibility || '';
+
+            if (readonly) {
+                return `
+                    <input type="hidden" name="execution_regions[${index}][nomination_responsibility]" value="${escapeHtml(selected)}">
+                `;
+            }
+
+            return `
+                <label class="form-label mt-3 mb-1" for="execution_regions_${index}_nomination_responsibility">مسؤولية ترشيح الأسماء (اختياري)</label>
+                <select
+                    name="execution_regions[${index}][nomination_responsibility]"
+                    id="execution_regions_${index}_nomination_responsibility"
+                    class="form-select region-nomination-select"
+                >
+                    ${nominationOptions(selected)}
+                </select>
+            `;
+        }
+
         function coordinatorReadonlyHtml(index, saved, mode) {
             let label = '—';
 
@@ -92,6 +129,7 @@
                     <input type="hidden" name="execution_regions[${index}][coordinator_mode]" value="${escapeHtml(mode)}">
                     ${saved.coordinator_id ? `<input type="hidden" name="execution_regions[${index}][coordinator_id]" value="${escapeHtml(saved.coordinator_id)}">` : ''}
                     ${saved.coordinator_external_name ? `<input type="hidden" name="execution_regions[${index}][coordinator_external_name]" value="${escapeHtml(saved.coordinator_external_name)}">` : ''}
+                    ${nominationFieldHtml(index, saved, true)}
                 </div>
             `;
         }
@@ -142,8 +180,9 @@
                         <div class="form-text">بدون حساب — يعبّئ مدير المشروع نيابةً عنه.</div>
                     </div>
                     <div class="region-coordinator-self-hint alert alert-info py-2 mt-2 mb-0 small${mode === 'self' ? '' : ' d-none'}" data-region-index="${index}">
-                        مدير المشروع يعبّئ checklist هذا المسار مباشرة بعد الأمانة.
+                        بعد موافقة السكرتاريا، يعبّئ مدير المشروع قائمة المنسق لهذا المسار.
                     </div>
+                    ${nominationFieldHtml(index, saved, false)}
                 </div>
             `;
         }

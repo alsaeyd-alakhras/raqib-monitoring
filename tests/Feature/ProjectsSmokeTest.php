@@ -569,7 +569,13 @@ class ProjectsSmokeTest extends TestCase
         $checklist = [];
 
         foreach (ChecklistItem::where('is_active', true)->get() as $item) {
-            $itemValue = ($deferClosureDocs && $item->has_file_field) ? 'not_ready' : $value;
+            if ($deferClosureDocs && $item->has_file_field) {
+                $itemValue = 'not_ready';
+            } elseif ($item->has_file_field && ! in_array($value, ['ready', 'not_ready'], true)) {
+                $itemValue = 'not_ready';
+            } else {
+                $itemValue = $value;
+            }
             $entry = ['value' => $itemValue];
 
             if ($item->has_person_field && in_array($itemValue, ['ready', 'partial'], true)) {
@@ -664,23 +670,18 @@ class ProjectsSmokeTest extends TestCase
         $this->assertStringStartsWith('projects/' . $project->project_number . '/', (string) $project->allocation_image_path);
         $this->assertStringContainsString('allocation.', (string) $project->allocation_image_path);
 
-        // 3) fill coordinator checklist
+        // 3) fill coordinator checklist and submit to section manager
         $this->postFillCoordinator($project, ['checklist' => $this->fullChecklist()])
             ->assertRedirect();
         $project->refresh();
         $subject = $this->workflowSubject($project);
-        $this->assertSame('coordinator_filling', $subject->workflow_status);
+        $this->assertSame('pending_section_manager', $subject->workflow_status);
         $this->assertNotNull($subject->coordinator_filled_at);
         $this->assertNotNull($subject->coordinator_readiness_pct);
         $this->assertLessThan(100.0, (float) $subject->coordinator_readiness_pct);
-
-        // 4) submit to section manager, dept manager, approve
-        $this->postSubmitToSectionManager($project)->assertRedirect();
-        $project->refresh();
-        $subject = $this->workflowSubject($project);
-        $this->assertSame('pending_section_manager', $subject->workflow_status);
         $this->assertNotNull($subject->submitted_to_section_manager_at);
 
+        // 4) dept manager, approve
         $this->postApproveSection($project)->assertRedirect();
         $project->refresh();
         $subject = $this->workflowSubject($project);
@@ -709,6 +710,13 @@ class ProjectsSmokeTest extends TestCase
             ->assertStatus(200);
 
         $checklistMonitor = $this->fullChecklist('partial', false);
+        $blockingItem = ChecklistItem::query()
+            ->where('is_active', true)
+            ->where('has_file_field', false)
+            ->orderBy('group_id')
+            ->orderBy('order')
+            ->firstOrFail();
+        $checklistMonitor[$blockingItem->id] = ['value' => 'not_ready'];
         $this->postFillMonitor($project, [
             'checklist' => $checklistMonitor,
             'monitor_notes_text' => "ملاحظة إيجابية 1\nملاحظة إيجابية 2",
@@ -724,13 +732,16 @@ class ProjectsSmokeTest extends TestCase
             'quality_value' => 80,
             'closure_value' => 75,
             'deduction_value' => 0,
-        ])->assertRedirect();
+        ])
+            ->assertRedirect()
+            ->assertSessionHasErrors('monitor');
 
         $project->refresh();
         $subject = $this->workflowSubject($project);
         $activity->refresh();
-        $this->assertEquals(50.0, (float) $subject->monitor_readiness_pct);
-        $this->assertEquals(50.0, (float) $activity->execution_value);
+        $this->assertSame('monitoring_in_progress', $subject->workflow_status);
+        $this->assertEquals(40.48, (float) $subject->monitor_readiness_pct);
+        $this->assertEquals(40.48, (float) $activity->execution_value);
         $this->assertSame('in_progress', $activity->workflow_status);
         $this->assertSame((int) $pm->id, (int) $activity->responsible_person_id);
         $this->assertSame('2026-07-14', $activity->activity_date->format('Y-m-d'));
@@ -742,10 +753,25 @@ class ProjectsSmokeTest extends TestCase
         $this->assertEquals(80.0, (float) $activity->quality_value);
         $this->assertEquals(75.0, (float) $activity->closure_value);
         $this->assertEquals(0.0, (float) $activity->deduction_value);
-        $this->assertEquals(66.5, (float) $activity->kpi_value);
+        $this->assertEquals(62.69, (float) $activity->kpi_value);
 
-        // 7) monitor submits to monitoring director
-        $this->postConfirmMonitoring($project)->assertRedirect();
+        // 7) monitor completes checklist and submits to monitoring director
+        $this->postFillMonitor($project, [
+            'checklist' => $this->fullChecklist('ready', false),
+            'monitor_notes_text' => "ملاحظة إيجابية 1\nملاحظة إيجابية 2",
+            'monitor_negative_notes_text' => "ملاحظة سلبية 1",
+            'field_problem' => 0,
+            'responsible_person_id' => $pm->id,
+            'activity_date' => '2026-07-14',
+            'activity_time' => '10:30',
+            'activity_type' => 'تفتيش ميداني',
+            'subject' => 'موضوع نشاط اختباري',
+            'notes' => 'ملاحظة نشاط رقابي',
+            'action_taken' => 'إجراء متخذ تجريبي',
+            'quality_value' => 80,
+            'closure_value' => 75,
+            'deduction_value' => 0,
+        ])->assertRedirect();
         $project->refresh();
         $subject = $this->workflowSubject($project);
         $activity->refresh();
@@ -805,7 +831,7 @@ class ProjectsSmokeTest extends TestCase
         ])->assertRedirect();
 
         $project->refresh();
-        $this->assertSame('coordinator_filling', $project->workflow_status);
+        $this->assertSame('pending_coordinator', $project->workflow_status);
 
         $this->get(route('dashboard.projects.show', $project))->assertStatus(200);
 
@@ -1001,7 +1027,7 @@ class ProjectsSmokeTest extends TestCase
         $project->delete();
     }
 
-    public function test_submit_to_project_manager_requires_saved_coordinator_fill(): void
+    public function test_coordinator_fill_and_submit_requires_complete_checklist(): void
     {
         $user = User::first();
         $user->super_admin = 1;
@@ -1023,21 +1049,17 @@ class ProjectsSmokeTest extends TestCase
         $execution = $this->primaryExecution($project);
         $this->assertSame('pending_coordinator', $execution->workflow_status);
 
-        $execution->update(['workflow_status' => 'coordinator_filling']);
-
         $this->from(route('dashboard.projects.executions.show', [$project, $execution]))
             ->postSubmitToSectionManager($project, $execution)
             ->assertRedirect()
             ->assertSessionHasErrors('coordinator');
 
         $execution->refresh();
-        $this->assertSame('coordinator_filling', $execution->workflow_status);
+        $this->assertSame('pending_coordinator', $execution->workflow_status);
 
         $this->postFillCoordinator($project, ['checklist' => $this->fullChecklist()], $execution)
-            ->assertRedirect();
-
-        $this->postSubmitToSectionManager($project, $execution)
-            ->assertRedirect();
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
 
         $execution->refresh();
         $this->assertSame('pending_section_manager', $execution->workflow_status);
@@ -1207,7 +1229,7 @@ class ProjectsSmokeTest extends TestCase
         ])->assertRedirect();
 
         $project->refresh();
-        $this->assertSame('coordinator_filling', $project->workflow_status);
+        $this->assertSame('pending_coordinator', $project->workflow_status);
         $this->assertSame('return_coordinator', $project->return_target);
 
         $project->delete();
@@ -1355,7 +1377,7 @@ class ProjectsSmokeTest extends TestCase
         ])->assertRedirect();
 
         $project->refresh();
-        $this->assertSame('coordinator_filling', $project->workflow_status);
+        $this->assertSame('pending_coordinator', $project->workflow_status);
         $this->assertSame('return_coordinator', $project->return_target);
 
         $project->delete();
@@ -1589,7 +1611,7 @@ class ProjectsSmokeTest extends TestCase
             ]))->assertRedirect();
 
             $project = Project::where('project_name', $projectName)->firstOrFail();
-            $project->update(['workflow_status' => 'coordinator_filling']);
+            $project->update(['workflow_status' => 'pending_coordinator']);
 
             $this->post(route('dashboard.projects.fill-coordinator', $project), [
                 'fill_on_behalf' => '1',
@@ -1635,7 +1657,7 @@ class ProjectsSmokeTest extends TestCase
             ]))->assertRedirect();
 
             $project = Project::where('project_name', $projectName)->firstOrFail();
-            $project->update(['workflow_status' => 'coordinator_filling']);
+            $project->update(['workflow_status' => 'pending_coordinator']);
 
             $this->post(route('dashboard.projects.fill-coordinator', $project), [
                 'checklist' => $this->fullChecklist(),
@@ -1651,7 +1673,7 @@ class ProjectsSmokeTest extends TestCase
                 ->assertSee('منسق خارجي', false)
                 ->assertDontSee('قائمة التحقق — عمود المنسق', false)
                 ->assertDontSee('قائمة التحقق — عمود المراقب', false)
-                ->assertDontSee('حفظ عمود المنسق', false);
+                ->assertDontSee('حفظ وإرسال لمدير القسم', false);
 
             $project->update([
                 'workflow_status' => 'pending_section_manager',
@@ -1665,7 +1687,7 @@ class ProjectsSmokeTest extends TestCase
                 ->assertOk()
                 ->assertSee('قائمة التحقق — عمود المنسق', false)
                 ->assertDontSee('قائمة التحقق — عمود المراقب', false)
-                ->assertDontSee('حفظ عمود المنسق', false);
+                ->assertDontSee('حفظ وإرسال لمدير القسم', false);
 
             ProjectChecklistValue::where('project_id', $project->id)->delete();
             $project->delete();
@@ -1747,7 +1769,7 @@ class ProjectsSmokeTest extends TestCase
             'rejection_reason' => 'نقص في المستندات',
             'return_target' => 'return_coordinator',
             'workflow_status_before' => 'pending_dept_manager',
-            'workflow_status_after' => 'coordinator_filling',
+            'workflow_status_after' => 'pending_coordinator',
         ]);
 
         $project->rejections()->delete();
@@ -1882,7 +1904,7 @@ class ProjectsSmokeTest extends TestCase
             'project_number' => 'P-' . ($this->nextProjectNumberSeq() + random_int(10000, 99999)),
             'project_manager_id' => $pm->id,
             'coordinator_id' => $coordinator->id,
-            'workflow_status' => 'coordinator_filling',
+            'workflow_status' => 'pending_coordinator',
             'rejection_reason' => 'نقص سابق',
             'rejected_by' => User::first()->id,
             'rejected_at' => now(),
@@ -1896,8 +1918,6 @@ class ProjectsSmokeTest extends TestCase
         $this->post(route('dashboard.projects.fill-coordinator', $project), [
             'checklist' => $this->fullChecklist('ready'),
         ])->assertRedirect();
-
-        $this->post(route('dashboard.projects.submit-to-project-manager', $project))->assertRedirect();
 
         $project->refresh();
         $this->assertNull($project->rejection_reason);
@@ -1959,7 +1979,7 @@ class ProjectsSmokeTest extends TestCase
             'project_name' => 'مشروع التحقق من اسم الشخص',
             'project_number' => 'P-' . ($this->nextProjectNumberSeq() + random_int(30000, 39999)),
             'coordinator_id' => $coordinator->id,
-            'workflow_status' => 'coordinator_filling',
+            'workflow_status' => 'pending_coordinator',
             'created_by' => $user->id,
             'updated_by' => $user->id,
         ]));
@@ -2112,7 +2132,7 @@ class ProjectsSmokeTest extends TestCase
         $execution = $this->primaryExecution($project->fresh());
 
         $this->postFillCoordinator($project, ['checklist' => $this->fullChecklist()], $execution)->assertRedirect();
-        $this->postSubmitToSectionManager($project, $execution)->assertRedirect();
+        $execution->refresh();
         $execution->refresh();
         $this->assertSame('pending_section_manager', $execution->workflow_status);
 
@@ -2178,8 +2198,9 @@ class ProjectsSmokeTest extends TestCase
         $execution = $this->primaryExecution($project->fresh());
 
         $this->postFillCoordinator($project, ['checklist' => $this->fullChecklist()], $execution)->assertRedirect();
-        $this->postSubmitToSectionManager($project, $execution)->assertRedirect();
+        $execution->refresh();
 
+        $pmUser->update(['super_admin' => false]);
         $this->actingAs($pmUser->fresh());
 
         $this->get(route('dashboard.projects.executions.show', [$project, $execution->fresh()]))
@@ -2430,6 +2451,68 @@ class ProjectsSmokeTest extends TestCase
             ->assertDontSee('docs.example.com');
 
         ProjectChecklistValue::where('project_id', $project->id)->delete();
+        $project->delete();
+    }
+
+    public function test_monitor_can_submit_with_closure_doc_items_not_ready(): void
+    {
+        $pm = Person::where('role', 'project_manager')->whereNotNull('user_id')->firstOrFail();
+        $coordinator = Person::withRole('coordinator')->whereNotNull('user_id')->firstOrFail();
+        $monitor = Person::withRole('monitor')->whereNotNull('user_id')->firstOrFail();
+
+        $project = Project::create(array_merge($this->sampleProjectFields(), [
+            'project_name' => 'مشروع مراقب مستندات ' . uniqid(),
+            'project_number' => 'P-' . ($this->nextProjectNumberSeq() + random_int(70000, 79999)),
+            'project_manager_id' => $pm->id,
+            'coordinator_id' => $coordinator->id,
+            'monitor_person_id' => $monitor->id,
+            'workflow_status' => 'monitoring_in_progress',
+            'created_by' => User::first()->id,
+            'updated_by' => User::first()->id,
+        ]));
+
+        $activity = MonitoringActivity::create([
+            'reference_code' => 'MP-TEST-' . uniqid(),
+            'source_type' => 'project',
+            'source_id' => $project->id,
+            'activity_role' => 'primary',
+            'center_id' => $project->center_id,
+            'department_id' => $project->department_id,
+            'section_id' => $project->section_id,
+            'monitor_person_id' => $monitor->id,
+            'funder_id' => $project->funder_id,
+            'subject' => $project->project_name,
+            'field_problem' => false,
+            'workflow_status' => 'in_progress',
+            'is_passage_complete' => false,
+            'created_by' => User::first()->id,
+            'updated_by' => User::first()->id,
+        ]);
+        $project->update(['primary_monitoring_activity_id' => $activity->id]);
+
+        $this->actingAs($monitor->user);
+        $checklist = $this->fullChecklist('ready', false);
+        foreach (Project::closureDocumentItemIds() as $itemId) {
+            $checklist[$itemId]['value'] = 'not_ready';
+            unset($checklist[$itemId]['person_name']);
+        }
+
+        $this->postFillMonitor($project, [
+            'checklist' => $checklist,
+            'field_problem' => 0,
+            'responsible_person_id' => $pm->id,
+            'activity_date' => now()->format('Y-m-d'),
+            'activity_time' => '06:51 PM',
+            'activity_type' => 'تفتيش ميداني',
+        ])
+            ->assertRedirect()
+            ->assertSessionDoesntHaveErrors('monitor');
+        $project->refresh();
+        $this->assertSame('pending_monitoring_confirmation', $project->workflow_status);
+
+        ProjectChecklistValue::where('project_id', $project->id)->delete();
+        $project->update(['primary_monitoring_activity_id' => null]);
+        $activity->delete();
         $project->delete();
     }
 
@@ -2722,7 +2805,7 @@ class ProjectsSmokeTest extends TestCase
         }
     }
 
-    public function test_secretariat_fill_self_coordinator_sends_to_section_manager(): void
+    public function test_secretariat_fill_self_coordinator_sends_to_coordinator(): void
     {
         Storage::fake('public');
 
@@ -2766,7 +2849,7 @@ class ProjectsSmokeTest extends TestCase
                 ->assertRedirect();
 
             $project->refresh();
-            $this->assertProjectAfterSecretariat($project, 'pending_section_manager');
+            $this->assertProjectAfterSecretariat($project, 'pending_coordinator');
 
             $this->get(route('dashboard.projects.show', $project))->assertOk();
 
@@ -2776,6 +2859,202 @@ class ProjectsSmokeTest extends TestCase
         } finally {
             $this->deleteEphemeralUser($pmUser);
         }
+    }
+
+    public function test_self_coordinator_submits_to_secretariat_without_checklist(): void
+    {
+        Storage::fake('public');
+
+        [$pmUser, $pm] = $this->createEphemeralProjectManager([
+            'projects.view',
+            'projects.create',
+            'projects.update',
+        ]);
+
+        try {
+            $this->actingAs($pmUser);
+            $name = 'self بدون checklist ' . uniqid();
+            $office = json_decode((string) Constant::where('key', 'association_offices')->value('value'), true)[0] ?? 'مكتب غزة';
+
+            $this->post('/projects', $this->sampleProjectPostData([
+                'project_name' => $name,
+                'project_manager_id' => $pm->id,
+                'execution_zones' => 1,
+                'execution_regions' => $this->regionsWithCoordinatorMode('self', [
+                    ['name' => $office, 'beneficiaries' => 100],
+                ]),
+            ]))->assertRedirect();
+
+            $project = Project::where('project_name', $name)->firstOrFail();
+            $this->assertNull($project->coordinator_filled_at);
+
+            $this->post(route('dashboard.projects.submit-to-secretariat', $project))->assertRedirect();
+            $project->refresh();
+            $this->assertSame('pending_secretariat', $project->workflow_status);
+
+            $project->executions()->delete();
+            $project->delete();
+        } finally {
+            $this->deleteEphemeralUser($pmUser);
+        }
+    }
+
+    public function test_self_coordinator_fills_coordinator_after_secretariat_then_section_manager(): void
+    {
+        Storage::fake('public');
+
+        [$pmUser, $pm] = $this->createEphemeralProjectManager([
+            'projects.view',
+            'projects.create',
+            'projects.update',
+        ]);
+
+        $secretariatUser = $this->secretariatUserForDepartment((int) $pm->department_id);
+
+        try {
+            $this->actingAs($pmUser);
+            $name = 'self تعبئة بعد سكرتاريا ' . uniqid();
+            $office = json_decode((string) Constant::where('key', 'association_offices')->value('value'), true)[0] ?? 'مكتب غزة';
+
+            $this->post('/projects', $this->sampleProjectPostData([
+                'project_name' => $name,
+                'project_manager_id' => $pm->id,
+                'execution_zones' => 1,
+                'execution_regions' => $this->regionsWithCoordinatorMode('self', [
+                    ['name' => $office, 'beneficiaries' => 100],
+                ]),
+            ]))->assertRedirect();
+
+            $project = Project::where('project_name', $name)->firstOrFail();
+            $this->post(route('dashboard.projects.submit-to-secretariat', $project))->assertRedirect();
+
+            $this->actingAs($secretariatUser);
+            $seq = $this->nextProjectNumberSeq() + random_int(88200, 88299);
+            $this->post(route('dashboard.projects.fill-secretariat', $project), $this->secretariatFillData($seq))
+                ->assertRedirect();
+
+            $project->refresh();
+            $execution = $this->primaryExecution($project);
+            $this->assertSame('pending_coordinator', $execution->workflow_status);
+
+            $this->actingAs($pmUser);
+            $this->postFillCoordinator($project, [
+                'checklist' => $this->fullChecklist(),
+                'implementation_mechanism' => 'آلية تنفيذ تجريبية',
+            ], $execution)->assertRedirect();
+
+            $execution->refresh();
+            $this->assertSame('pending_section_manager', $execution->workflow_status);
+            $this->assertSame('آلية تنفيذ تجريبية', $execution->implementation_mechanism);
+
+            $project->executions()->delete();
+            $project->delete();
+        } finally {
+            $this->deleteEphemeralUser($pmUser);
+        }
+    }
+
+    public function test_coordinator_partial_fill_stays_pending_without_submit(): void
+    {
+        $user = User::first();
+        $user->super_admin = 1;
+        $this->actingAs($user);
+
+        $coordinator = Person::withRole('coordinator')->firstOrFail();
+        $projectName = 'مشروع تعبئة جزئية ' . uniqid();
+
+        $this->post('/projects', $this->sampleProjectPostData([
+            'project_name' => $projectName,
+            'coordinator_mode' => 'person',
+            'coordinator_id' => $coordinator->id,
+            'execution_zones' => 1,
+            'execution_regions' => [array_merge($this->sampleProjectFields()['execution_regions'][0], [
+                'coordinator_mode' => 'person',
+                'coordinator_id' => $coordinator->id,
+            ])],
+        ]))->assertRedirect();
+
+        $project = Project::where('project_name', $projectName)->firstOrFail();
+        $this->advanceProjectThroughSecretariat($project);
+        $execution = $this->primaryExecution($project);
+
+        $partialChecklist = [];
+        $firstItem = ChecklistItem::where('is_active', true)->firstOrFail();
+        $partialChecklist[$firstItem->id] = ['value' => 'ready'];
+
+        $this->postFillCoordinator($project, ['checklist' => $partialChecklist], $execution)
+            ->assertRedirect()
+            ->assertSessionHasErrors('coordinator');
+
+        $execution->refresh();
+        $this->assertSame('pending_coordinator', $execution->workflow_status);
+        $this->assertNotNull(
+            ProjectChecklistValue::where('project_id', $project->id)
+                ->where('project_execution_id', $execution->id)
+                ->where('checklist_item_id', $firstItem->id)
+                ->value('coordinator_value')
+        );
+
+        $project->executions()->delete();
+        $project->delete();
+    }
+
+    public function test_coordinator_file_attachment_persists_after_submit_to_section_manager(): void
+    {
+        $user = User::first();
+        $user->super_admin = 1;
+        $this->actingAs($user);
+
+        $docItemId = (int) ChecklistItem::query()->where('name', 'التوثيق')->where('has_file_field', true)->value('id');
+        $this->assertGreaterThan(0, $docItemId);
+
+        $coordinator = Person::withRole('coordinator')->firstOrFail();
+        $projectName = 'مشروع مرفق بعد الإرسال ' . uniqid();
+
+        $this->post('/projects', $this->sampleProjectPostData([
+            'project_name' => $projectName,
+            'coordinator_mode' => 'person',
+            'coordinator_id' => $coordinator->id,
+            'execution_zones' => 1,
+            'execution_regions' => [array_merge($this->sampleProjectFields()['execution_regions'][0], [
+                'coordinator_mode' => 'person',
+                'coordinator_id' => $coordinator->id,
+            ])],
+        ]))->assertRedirect();
+
+        $project = Project::where('project_name', $projectName)->firstOrFail();
+        $this->advanceProjectThroughSecretariat($project);
+        $execution = $this->primaryExecution($project);
+
+        $checklist = $this->fullChecklist();
+        $checklist[$docItemId] = [
+            'value' => 'ready',
+            'person_name' => 'موثّق',
+            'attachment_url' => 'https://docs.example.com/persist-after-submit.pdf',
+        ];
+
+        $this->postFillCoordinator($project, ['checklist' => $checklist], $execution)
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
+
+        $execution->refresh();
+        $this->assertSame('pending_section_manager', $execution->workflow_status);
+
+        $row = ProjectChecklistValue::where('project_id', $project->id)
+            ->where('project_execution_id', $execution->id)
+            ->where('checklist_item_id', $docItemId)
+            ->first();
+
+        $this->assertNotNull($row);
+        $this->assertTrue($row->hasAttachment());
+
+        $this->get(route('dashboard.projects.executions.show', [$project, $execution]))
+            ->assertOk()
+            ->assertSee('persist-after-submit.pdf', false);
+
+        ProjectChecklistValue::where('project_id', $project->id)->delete();
+        $project->executions()->delete();
+        $project->delete();
     }
 
     private function seedCoordinatorChecklistReady(Project $project, string $value = 'ready'): void
@@ -2918,7 +3197,7 @@ class ProjectsSmokeTest extends TestCase
         }
     }
 
-    public function test_return_secretariat_correction_sends_to_section_manager_not_coordinator(): void
+    public function test_return_secretariat_correction_sends_self_coordinator_to_coordinator(): void
     {
         Storage::fake('public');
 
@@ -2974,7 +3253,7 @@ class ProjectsSmokeTest extends TestCase
                 ->assertRedirect();
 
             $project->refresh();
-            $this->assertProjectAfterSecretariat($project, 'pending_section_manager');
+            $this->assertProjectAfterSecretariat($project, 'pending_coordinator');
             $this->assertSame(Project::formatFromSequence($newSeq), $project->project_number);
 
             ProjectChecklistValue::where('project_id', $project->id)->delete();
@@ -3002,7 +3281,7 @@ class ProjectsSmokeTest extends TestCase
             'coordinator_id' => $pm->id,
             'execution_zones' => 0,
             'execution_regions' => [],
-            'workflow_status' => 'draft',
+            'workflow_status' => 'pending_coordinator',
             'created_by' => User::first()->id,
             'updated_by' => User::first()->id,
         ]));

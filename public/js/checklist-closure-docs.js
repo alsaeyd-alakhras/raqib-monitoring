@@ -66,6 +66,18 @@
         const rows = form.querySelectorAll('tr[data-has-file-field]');
         let firstError = null;
 
+        if (!isClosureDocsForm && form?.querySelector('[data-checklist-readiness]')) {
+            const readinessRoot = form.querySelector('[data-checklist-readiness]');
+            const overallEl = form.closest('.card')?.querySelector('.checklist-overall-pct')
+                || readinessRoot?.querySelector('.checklist-overall-pct');
+            const overallText = overallEl?.textContent?.trim() || '';
+            const overallPct = parseFloat(overallText.replace('%', ''));
+
+            if (overallText !== '—' && !Number.isNaN(overallPct) && overallPct <= 0) {
+                firstError = 'أكمل جميع بنود قائمة المنسق (الحالة والمرفقات) قبل الإرسال لمدير القسم.';
+            }
+        }
+
         rows.forEach((row) => {
             if (!isFileRow(row)) {
                 return;

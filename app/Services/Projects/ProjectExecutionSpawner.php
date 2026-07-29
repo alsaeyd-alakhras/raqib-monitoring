@@ -29,6 +29,7 @@ class ProjectExecutionSpawner
                     'region_name' => $region['name'],
                     'region_beneficiaries' => $region['beneficiaries'],
                     'region_execution_site' => $region['execution_site'],
+                    'nomination_responsibility' => $region['nomination_responsibility'] ?? null,
                     'sort_order' => $index,
                     'is_active' => true,
                 ];
@@ -71,6 +72,7 @@ class ProjectExecutionSpawner
                 'sort_order' => $index,
                 'coordinator_id' => $coordinator['coordinator_id'],
                 'coordinator_external_name' => $coordinator['coordinator_external_name'],
+                'nomination_responsibility' => $region['nomination_responsibility'] ?? null,
                 'workflow_status' => $initialStatus,
                 'coordinator_submitted_at' => $initialStatus === 'pending_coordinator' ? now() : null,
                 'coordinator_submitted_by' => $initialStatus === 'pending_coordinator' ? $actorUserId : null,
@@ -114,6 +116,7 @@ class ProjectExecutionSpawner
                 'coordinator_mode' => $region['coordinator_mode'] ?? null,
                 'coordinator_id' => $region['coordinator_id'] ?? null,
                 'coordinator_external_name' => $region['coordinator_external_name'] ?? null,
+                'nomination_responsibility' => $region['nomination_responsibility'] ?? null,
             ];
         }, $display, array_keys($display)));
     }
@@ -157,13 +160,6 @@ class ProjectExecutionSpawner
 
     private function initialWorkflowStatusForRegion(array $region, Project $project): string
     {
-        $coordinator = $this->resolveRegionCoordinator($region, $project);
-
-        if ($coordinator['coordinator_id'] !== null
-            && (int) $coordinator['coordinator_id'] === (int) $project->project_manager_id) {
-            return 'pending_section_manager';
-        }
-
         return 'pending_coordinator';
     }
 
@@ -192,6 +188,9 @@ class ProjectExecutionSpawner
             'sort_order' => $sortOrder,
             'coordinator_id' => $coordinator['coordinator_id'],
             'coordinator_external_name' => $coordinator['coordinator_external_name'],
+            'nomination_responsibility' => filled($region['nomination_responsibility'] ?? null)
+                ? (string) $region['nomination_responsibility']
+                : null,
             'workflow_status' => $initialStatus,
             'coordinator_submitted_at' => $initialStatus === 'pending_coordinator' ? now() : null,
             'coordinator_submitted_by' => $initialStatus === 'pending_coordinator' ? $actorUserId : null,

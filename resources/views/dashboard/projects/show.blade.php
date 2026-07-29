@@ -73,6 +73,8 @@
         </div>
     </div>
 
+    @include('dashboard.projects._pm_fields_panel', ['project' => $project])
+
     {{-- سير العمل: دورة الاعتماد الإدارية --}}
     <div class="card mb-4">
         <div class="card-header"><h5 class="mb-0">سير العمل</h5></div>
@@ -111,12 +113,9 @@
             @if ($project->workflow_status === 'pending_secretariat')
                 <div class="alert alert-info py-2 mb-3">
                     @if ($project->hasCompletedSecretariatPhase())
-                        تصحيح رقم ومرفق التخصيص — سكرتاريا الدائرة. بعد الحفظ يُرسل المشروع مباشرة لمدير القسم.
-                    @elseif ($project->isSelfCoordinator())
-                        المشروع بانتظار سكرتاريا الدائرة لتعبئة رقم التخصيص ومرفق التخصيص.
-                        يجب على مدير المشروع/المنسق إكمال قائمة التحقق قبل أن تُرسل السكرتاريا لمدير القسم.
+                        تصحيح رقم ومرفق التخصيص — سكرتاريا الدائرة. بعد الحفظ تُستأنف مسارات التنفيذ.
                     @else
-                        المشروع بانتظار سكرتاريا الدائرة لتعبئة رقم التخصيص ومرفق التخصيص قبل إرساله للمنسق.
+                        المشروع بانتظار سكرتاريا الدائرة لتعبئة رقم التخصيص ومرفق التخصيص قبل بدء مسارات التنفيذ.
                     @endif
                 </div>
             @endif
@@ -148,25 +147,10 @@
                     @csrf
                     <button type="submit" class="btn btn-primary">إرسال للمنسق</button>
                 </form>
-            @elseif ($project->workflow_status === 'draft' && $canUpdate && $project->isSelfCoordinator() && ! $project->hasCompletedSecretariatPhase())
-                <div class="alert alert-secondary py-2 mb-0">
-                    أكمل تعبئة قائمة المنسق واحفظها، ثم يظهر زر الإرسال لسكرتاريا الدائرة.
-                </div>
-            @elseif ($project->workflow_status === 'draft' && $canUpdate && $project->isSelfCoordinator() && $project->hasCompletedSecretariatPhase() && ! ($canSubmitToSectionManager ?? false))
-                <div class="alert alert-secondary py-2 mb-0">
-                    تم تعبئة التخصيص سابقاً — راجع قائمة المنسق واحفظها، ثم أرسل لمدير القسم.
-                </div>
             @endif
 
             @if ($project->workflow_status === 'pending_secretariat' && auth()->user()?->can('fill_secretariat', 'App\Models\Project') && ($canShowSecretariatForm ?? true))
                 @include('dashboard.projects._secretariat_form')
-            @endif
-
-            @if ($canSubmitToProjectManager ?? false)
-                <form action="{{ route('dashboard.projects.submit-to-project-manager', $project) }}" method="post" class="d-inline">
-                    @csrf
-                    <button type="submit" class="btn btn-primary">إرسال لمدير القسم</button>
-                </form>
             @endif
 
             @if ($canSubmitToSectionManager ?? false)
@@ -174,10 +158,6 @@
                     @csrf
                     <button type="submit" class="btn btn-primary">إرسال لمدير القسم</button>
                 </form>
-            @elseif (in_array($project->workflow_status, ['pending_coordinator', 'coordinator_filling']) && ($canManageCoordinatorColumn ?? false))
-                <div class="alert alert-secondary py-2 mb-0">
-                    قبل الإرسال لمدير القسم يجب حفظ تعبئة المنسق أولاً (من المنسق نفسه أو نيابةً عنه إن وُجدت).
-                </div>
             @endif
 
             @if ($project->workflow_status === 'pending_section_manager' && ($canApproveSection ?? false))
@@ -332,7 +312,10 @@
                                 'readinessBreakdown' => $readinessBreakdown ?? null,
                                 'project' => $project,
                             ])
-                            <button type="submit" class="btn btn-primary">حفظ عمود المنسق</button>
+                            @include('dashboard.projects._implementation_mechanism_field', [
+                                'implementationMechanism' => $project->implementation_mechanism,
+                            ])
+                            <button type="submit" class="btn btn-primary">حفظ وإرسال لمدير القسم</button>
                         </div>
                     @else
                         @include('dashboard.projects._checklist_edit', [
@@ -342,7 +325,10 @@
                             'readinessBreakdown' => $readinessBreakdown ?? null,
                             'project' => $project,
                         ])
-                        <button type="submit" class="btn btn-primary">حفظ عمود المنسق</button>
+                        @include('dashboard.projects._implementation_mechanism_field', [
+                            'implementationMechanism' => $project->implementation_mechanism,
+                        ])
+                        <button type="submit" class="btn btn-primary">حفظ وإرسال لمدير القسم</button>
                     @endif
                 </form>
             @else

@@ -55,6 +55,7 @@
                                 'showFileColumn' => $showFileColumn,
                                 'project' => $project ?? null,
                                 'deleteAttachmentUrl' => $deleteAttachmentUrl ?? null,
+                                'projectExecutionId' => $projectExecutionId ?? null,
                             ])
                         @endforeach
                     </tbody>

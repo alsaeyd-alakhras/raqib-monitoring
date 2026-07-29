@@ -1,7 +1,6 @@
 @php
     $workflowSteps = [
         'pending_coordinator',
-        'coordinator_filling',
         'pending_section_manager',
         'pending_dept_manager',
         'pending_monitoring_manager',
@@ -12,10 +11,11 @@
 
     $statusLabels = \App\Models\ProjectExecution::workflowStatusLabels();
     $currentStatus = $execution->workflow_status;
+    $displayStatus = $currentStatus === 'coordinator_filling' ? 'pending_coordinator' : $currentStatus;
     $isRejected = $currentStatus === 'rejected';
     $currentIndex = $isRejected
         ? -1
-        : array_search($currentStatus, $workflowSteps, true);
+        : array_search($displayStatus, $workflowSteps, true);
     $stepTimestamps = $execution->workflowStepTimestamps();
 @endphp
 

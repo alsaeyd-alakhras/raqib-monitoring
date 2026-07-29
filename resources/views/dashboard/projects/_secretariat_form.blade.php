@@ -93,11 +93,7 @@
 
             <div class="col-12">
                 <button type="submit" class="btn btn-primary">
-                    @if ($project->isSelfCoordinator())
-                        حفظ وإرسال لمدير القسم
-                    @else
-                        حفظ وإرسال للمنسق
-                    @endif
+                    حفظ وبدء مسارات التنفيذ
                 </button>
             </div>
         </form>

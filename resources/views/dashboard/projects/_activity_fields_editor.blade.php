@@ -1,6 +1,12 @@
 @php
     $activity = $activity ?? null;
     $fieldProblemValue = old('field_problem', isset($activity) ? (int) $activity->field_problem : 0);
+    $textareaRows = $textareaRows ?? 3;
+    $activityTimeValue = old('activity_time');
+
+    if ($activityTimeValue === null && ! empty($activity?->activity_time)) {
+        $activityTimeValue = substr((string) $activity->activity_time, 0, 5);
+    }
 @endphp
 
 @if (! $activity)
@@ -39,7 +45,7 @@
                         type="time"
                         name="activity_time"
                         label="الوقت"
-                        :value="old('activity_time', $activity->activity_time ?? '')"
+                        :value="$activityTimeValue ?? ''"
                     />
                 </div>
                 <div class="mb-3 col-md-6">
@@ -64,6 +70,7 @@
                     <x-form.textarea
                         name="subject"
                         label="الموضوع"
+                        :rows="$textareaRows"
                         :value="old('subject', $activity->subject ?? '')"
                     />
                 </div>
@@ -71,6 +78,7 @@
                     <x-form.textarea
                         name="notes"
                         label="ملاحظة النشاط الرقابي"
+                        :rows="$textareaRows"
                         :value="old('notes', $activity->notes ?? '')"
                     />
                     <div class="form-text">ملاحظة عامة على النشاط — مختلفة عن ملاحظات قائمة التحقق أعلاه.</div>
@@ -89,6 +97,7 @@
                     <x-form.textarea
                         name="action_taken"
                         label="الإجراء المتخذ"
+                        :rows="$textareaRows"
                         :value="old('action_taken', $activity->action_taken ?? '')"
                     />
                 </div>

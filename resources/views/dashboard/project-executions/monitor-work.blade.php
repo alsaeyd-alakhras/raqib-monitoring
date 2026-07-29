@@ -83,7 +83,13 @@
 
     @if (($canEditMonitorColumn ?? true) && ($isAssignedMonitor ?? true))
         {{-- حقول التقييم أولاً في HTML حتى لا تُقطع عند max_input_vars --}}
-        <form action="{{ route('dashboard.projects.executions.fill-monitor', [$project, $execution]) }}" method="post">
+        <form
+            action="{{ route('dashboard.projects.executions.fill-monitor', [$project, $execution]) }}"
+            method="post"
+            data-confirm="حفظ وإرسال عمل المراقب لمدير الرقابة العامة؟ لن تستطيع تعديل البيانات بعد الإرسال إلا بإرجاع المسار."
+            data-confirm-title="تأكيد الحفظ والإرسال"
+            data-confirm-variant="primary"
+        >
             @csrf
 
             <div class="card mb-4">
@@ -95,6 +101,7 @@
                         'activity' => $primaryActivity ?? null,
                         'people' => $people ?? collect(),
                         'activityTypes' => $activityTypes ?? [],
+                        'textareaRows' => 1,
                     ])
                 </div>
             </div>
@@ -112,6 +119,7 @@
                         'valueField' => 'monitor_value',
                         'readinessBreakdown' => $readinessBreakdown ?? null,
                         'prefix' => 'checklist',
+                        'inputClass' => 'monitor-checklist-input',
                     ])
 
                     @include('dashboard.projects._monitor_notes_editor', ['execution' => $execution])
@@ -119,8 +127,8 @@
             </div>
 
             <div class="mb-4">
-                <button type="submit" class="btn btn-outline-primary">
-                    <i class="fa-solid fa-floppy-disk me-1"></i> حفظ التعديلات
+                <button type="submit" class="btn btn-success btn-lg">
+                    <i class="fa-solid fa-paper-plane me-1"></i> حفظ وإرسال لمدير الرقابة العامة
                 </button>
             </div>
         </form>
@@ -154,7 +162,7 @@
         </div>
     @endif
 
-    @if ($execution->workflow_status === 'passage_complete' || $awaitingDirector || ($canShowMonitorSubmitSection ?? false))
+    @if ($execution->workflow_status === 'passage_complete' || $awaitingDirector)
         <div class="card mb-4 border-{{ $awaitingDirector ? 'warning' : 'success' }}">
             <div class="card-header bg-label-{{ $awaitingDirector ? 'warning' : 'success' }}">
                 <h5 class="mb-0">إرسال العمل لمدير الرقابة</h5>
@@ -164,46 +172,34 @@
                     <div class="alert alert-success mb-0">
                         <strong>تم المرور على هذا المسار.</strong> لا يلزم أي إجراء إضافي.
                     </div>
-                @elseif ($awaitingDirector)
+                @else
                     <div class="alert alert-warning mb-0">
                         <strong>تم الإرسال بنجاح.</strong> عملك وصل لمدير الرقابة العامة — بانتظار تأكيد المرور النهائي.
                     </div>
-                @else
-                    <p class="text-muted mb-3">
-                        تم حفظ عملك. اضغط الزر أدناه لإرسال المسار لمدير الرقابة العامة.
-                        <strong>الحفظ وحده لا يُرسل المسار — هذا الزر خطوة الإرسال الرسمية.</strong>
-                    </p>
-                    @if ($execution->readiness_status)
-                        <p class="small mb-3">
-                            <strong>تقييم الجاهزية (معلوماتي):</strong>
-                            {{ $readinessStatusLabels[$execution->readiness_status] ?? $execution->readiness_status }}
-                            — لا يمنع الإرسال.
-                        </p>
-                    @endif
-                    @if ($primaryActivity ?? null)
-                        <p class="small mb-3">
-                            <strong>حالة التحقق (معلوماتي):</strong>
-                            {{ $primaryActivity->verification_status }}
-                            — لا يمنع الإرسال.
-                        </p>
-                    @endif
-                    <form action="{{ route('dashboard.projects.executions.confirm-monitoring', [$project, $execution]) }}" method="post" data-confirm="إرسال عمل المراقب لمدير الرقابة العامة؟ لن تستطيع تعديل البيانات بعد الإرسال إلا بإرجاع المسار." data-confirm-title="تأكيد الإرسال" data-confirm-variant="primary">
-                        @csrf
-                        <button type="submit" class="btn btn-success btn-lg">
-                            <i class="fa-solid fa-paper-plane me-1"></i> إرسال لمدير الرقابة العامة
-                        </button>
-                    </form>
                 @endif
             </div>
-        </div>
-    @elseif (($canEditMonitorColumn ?? false) && ($isAssignedMonitor ?? true))
-        <div class="alert alert-info mb-4">
-            <strong>الخطوة التالية:</strong> احفظ التعديلات من الأعلى أولاً، ثم سيظهر خيار الإرسال لمدير الرقابة العامة في هذه الصفحة.
         </div>
     @endif
 
     @push('scripts')
+        <script src="{{ asset('js/checklist-status-style.js') }}"></script>
         <script src="{{ asset('js/checklist-readiness.js') }}"></script>
         <script src="{{ asset('js/checklist-person-required.js') }}"></script>
+        <script>
+            document.addEventListener('DOMContentLoaded', function () {
+                if (window.initChecklistReadiness) {
+                    window.initChecklistReadiness(document);
+                }
+                if (window.initChecklistStatusStyle) {
+                    window.initChecklistStatusStyle(document);
+                }
+                if (window.initChecklistPersonRequired) {
+                    window.initChecklistPersonRequired(document);
+                }
+                if (window.refreshChecklistReadiness) {
+                    window.refreshChecklistReadiness(document);
+                }
+            });
+        </script>
     @endpush
 </x-front-layout>
