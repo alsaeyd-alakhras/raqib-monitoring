@@ -12,4 +12,5 @@ return [
 
     'setup_report_path' => 'logs/raqib-setup-report.json',
     'employee_import_report_path' => 'logs/employee-import-report.json',
+    'promote_coordinators_report_path' => 'logs/promote-coordinators-report.json',
 ];

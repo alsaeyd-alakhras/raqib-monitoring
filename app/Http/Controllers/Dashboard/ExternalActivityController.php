@@ -1,0 +1,275 @@
+<?php
+
+namespace App\Http\Controllers\Dashboard;
+
+use App\Http\Controllers\Controller;
+use App\Http\Controllers\Dashboard\Concerns\GeneratesActivityReferenceCode;
+use App\Models\Center;
+use App\Models\Constant;
+use App\Models\Funder;
+use App\Models\MonitoringActivity;
+use App\Models\Person;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\View\View;
+
+class ExternalActivityController extends Controller
+{
+    use GeneratesActivityReferenceCode;
+
+    public function create(): View
+    {
+        $this->authorize('create_external', MonitoringActivity::class);
+
+        return view('dashboard.external-activities.create', $this->formData());
+    }
+
+    public function store(Request $request): RedirectResponse
+    {
+        $this->authorize('create_external', MonitoringActivity::class);
+
+        $validated = $request->validate($this->externalValidationRules());
+        $user = auth()->user();
+        $monitorPersonId = $this->resolveMonitorPersonId($request, $user);
+
+        $activity = MonitoringActivity::create([
+            ...$validated,
+            'reference_code' => $this->generateReferenceCode('external'),
+            'source_type' => 'external',
+            'source_id' => null,
+            'activity_role' => 'secondary',
+            'workflow_status' => 'in_progress',
+            'is_passage_complete' => false,
+            'monitor_person_id' => $monitorPersonId,
+            'created_by' => $user?->id,
+            'updated_by' => $user?->id,
+        ]);
+
+        if ($request->input('action') === 'submit') {
+            return $this->performSubmit($activity);
+        }
+
+        return redirect()
+            ->route('dashboard.external-activities.edit', $activity)
+            ->with('success', 'تم إنشاء النشاط الخارجي بنجاح.');
+    }
+
+    public function edit(MonitoringActivity $monitoring_activity): View
+    {
+        $this->authorizeExternalEdit($monitoring_activity);
+
+        $monitoring_activity->load(['rejectedByUser', 'submittedByUser']);
+
+        return view('dashboard.external-activities.edit', $this->formData() + [
+            'activity' => $monitoring_activity,
+        ]);
+    }
+
+    public function update(Request $request, MonitoringActivity $monitoring_activity): RedirectResponse
+    {
+        $this->authorizeExternalEdit($monitoring_activity);
+
+        $validated = $request->validate($this->externalValidationRules());
+
+        $monitoring_activity->update($validated + [
+            'updated_by' => auth()->id(),
+        ]);
+
+        if ($request->input('action') === 'submit') {
+            return $this->performSubmit($monitoring_activity);
+        }
+
+        return redirect()
+            ->route('dashboard.external-activities.edit', $monitoring_activity)
+            ->with('success', 'تم حفظ النشاط الخارجي بنجاح.');
+    }
+
+    public function submit(MonitoringActivity $monitoring_activity): RedirectResponse
+    {
+        $this->authorizeExternalEdit($monitoring_activity);
+
+        return $this->performSubmit($monitoring_activity);
+    }
+
+    public function approve(MonitoringActivity $monitoring_activity): RedirectResponse
+    {
+        $this->authorize('approve_external', MonitoringActivity::class);
+        $this->guardExternalActivity($monitoring_activity);
+        $this->guardStatus($monitoring_activity, ['pending_confirmation']);
+
+        $monitoring_activity->update([
+            'workflow_status' => 'completed',
+            'is_passage_complete' => true,
+            'passage_completed_at' => now(),
+            'passage_completed_by' => auth()->id(),
+            'updated_by' => auth()->id(),
+        ]);
+
+        return redirect()
+            ->route('dashboard.monitoring-activities.show', $monitoring_activity)
+            ->with('success', 'تم اعتماد النشاط الخارجي.');
+    }
+
+    public function returnToMonitor(Request $request, MonitoringActivity $monitoring_activity): RedirectResponse
+    {
+        $this->authorize('approve_external', MonitoringActivity::class);
+        $this->guardExternalActivity($monitoring_activity);
+        $this->guardStatus($monitoring_activity, ['pending_confirmation']);
+
+        $validated = $request->validate([
+            'rejection_reason' => ['required', 'string', 'max:5000'],
+            'gap_owner' => ['required', 'in:monitor,other'],
+        ]);
+
+        $monitoring_activity->update($validated + [
+            'workflow_status' => 'in_progress',
+            'rejected_by' => auth()->id(),
+            'rejected_at' => now(),
+            'updated_by' => auth()->id(),
+        ]);
+
+        return redirect()
+            ->route('dashboard.monitoring-activities.show', $monitoring_activity)
+            ->with('success', 'تم إرجاع النشاط للمراقب للتعديل.');
+    }
+
+    public function rejectFinal(Request $request, MonitoringActivity $monitoring_activity): RedirectResponse
+    {
+        $this->authorize('approve_external', MonitoringActivity::class);
+        $this->guardExternalActivity($monitoring_activity);
+        $this->guardStatus($monitoring_activity, ['pending_confirmation']);
+
+        $validated = $request->validate([
+            'rejection_reason' => ['required', 'string', 'max:5000'],
+            'gap_owner' => ['required', 'in:monitor,other'],
+        ]);
+
+        $monitoring_activity->update($validated + [
+            'workflow_status' => 'rejected',
+            'rejected_by' => auth()->id(),
+            'rejected_at' => now(),
+            'updated_by' => auth()->id(),
+        ]);
+
+        return redirect()
+            ->route('dashboard.monitoring-activities.show', $monitoring_activity)
+            ->with('success', 'تم رفض النشاط الخارجي نهائياً.');
+    }
+
+    private function performSubmit(MonitoringActivity $activity): RedirectResponse
+    {
+        $this->guardExternalActivity($activity);
+        $this->guardStatus($activity, ['in_progress']);
+
+        if (! $activity->isAssignedMonitor(auth()->user()) && ! auth()->user()?->super_admin) {
+            abort(403, 'هذا النشاط غير مُسنَد إليك.');
+        }
+
+        $activity->update([
+            'workflow_status' => 'pending_confirmation',
+            'submitted_at' => now(),
+            'submitted_by' => auth()->id(),
+            'updated_by' => auth()->id(),
+            'rejection_reason' => null,
+            'rejected_by' => null,
+            'rejected_at' => null,
+            'gap_owner' => null,
+        ]);
+
+        return redirect()
+            ->route('dashboard.monitoring-activities.show', $activity)
+            ->with('success', 'تم إرسال النشاط لمدير الرقابة — بانتظار الاعتماد.');
+    }
+
+    private function authorizeExternalEdit(MonitoringActivity $activity): void
+    {
+        $this->authorize('create_external', MonitoringActivity::class);
+        $this->guardExternalActivity($activity);
+
+        $user = auth()->user();
+
+        if ($user?->super_admin || $user?->isMonitoringDirector()) {
+            return;
+        }
+
+        if (! $activity->canMonitorEditExternal($user)) {
+            abort(403, 'لا يمكن تعديل هذا النشاط في حالته الحالية.');
+        }
+    }
+
+    private function guardExternalActivity(MonitoringActivity $activity): void
+    {
+        if (! $activity->isExternal()) {
+            abort(404);
+        }
+    }
+
+    /** @param  array<int, string>  $allowed */
+    private function guardStatus(MonitoringActivity $activity, array $allowed): void
+    {
+        if (! in_array($activity->workflow_status, $allowed, true)) {
+            abort(422, 'حالة النشاط الحالية لا تسمح بهذا الإجراء.');
+        }
+    }
+
+    private function resolveMonitorPersonId(Request $request, $user): ?int
+    {
+        if ($user?->isMonitoringDirector() || $user?->super_admin) {
+            $monitorId = $request->integer('monitor_person_id');
+
+            return $monitorId > 0 ? $monitorId : null;
+        }
+
+        return $user?->person?->id;
+    }
+
+    /** @return array<string, mixed> */
+    private function formData(): array
+    {
+        return [
+            'centers' => Center::orderBy('name')->get(),
+            'funders' => Funder::orderBy('name')->get(),
+            'people' => Person::orderBy('name')->get(),
+            'monitors' => Person::withRole('monitor')->orderBy('name')->get(),
+            'activityTypes' => $this->constantOptions('activity_types'),
+            'monitoringMethods' => $this->constantOptions('monitoring_methods'),
+            'monitoringStages' => $this->constantOptions('monitoring_stages'),
+            'suggestedReferenceCode' => $this->generateReferenceCode('external'),
+            'canPickMonitor' => auth()->user()?->isMonitoringDirector() || auth()->user()?->super_admin,
+        ];
+    }
+
+    /** @return array<string, mixed> */
+    private function externalValidationRules(): array
+    {
+        return [
+            'center_id' => ['required', 'exists:centers,id'],
+            'department_id' => ['required', 'exists:departments,id'],
+            'section_id' => ['nullable', 'exists:sections,id'],
+            'responsible_person_id' => ['nullable', 'exists:people,id'],
+            'activity_date' => ['nullable', 'date'],
+            'activity_time' => ['nullable', 'date_format:H:i'],
+            'activity_type' => ['nullable', 'string'],
+            'funder_id' => ['nullable', 'exists:funders,id'],
+            'subject' => ['nullable', 'string'],
+            'notes' => ['nullable', 'string'],
+            'field_problem' => ['required', 'boolean'],
+            'action_taken' => ['nullable', 'string'],
+            'execution_value' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'quality_value' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'closure_value' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'deduction_value' => ['nullable', 'numeric', 'max:0'],
+            'monitoring_method' => ['nullable', 'string'],
+            'monitoring_stage' => ['nullable', 'string'],
+        ];
+    }
+
+    /** @return array<string, string> */
+    private function constantOptions(string $key): array
+    {
+        $value = Constant::where('key', $key)->value('value');
+        $decoded = is_string($value) ? json_decode($value, true) : $value;
+
+        return is_array($decoded) ? $decoded : [];
+    }
+}

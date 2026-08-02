@@ -67,6 +67,8 @@ return [
         'confirm_completion' => 'تأكيد اكتمال المرور',
         'edit_ratings' => 'تعديل قيم التقييم',
         'reject' => 'رفض النشاط',
+        'create_external' => 'إضافة نشاط خارجي',
+        'approve_external' => 'اعتماد نشاط خارجي',
     ],
 
     'projects' => [

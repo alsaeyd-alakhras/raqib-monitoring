@@ -174,6 +174,10 @@ $(document).ready(function () {
                 if (urlParams.has('family_id')) {
                     d.family_id = urlParams.get('family_id');
                 }
+
+                if (typeof extraAjaxDataFn === 'function') {
+                    extraAjaxDataFn(d);
+                }
             },
             dataSrc: function (json) {
                 if (typeof SUMMABLE_COLUMNS !== 'undefined' && SUMMABLE_COLUMNS.enabled && json.totals) {

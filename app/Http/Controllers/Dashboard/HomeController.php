@@ -24,7 +24,7 @@ class HomeController extends Controller
         $person = $user?->person;
         $role = $person?->role ?? ($user?->super_admin ? 'super_admin' : 'guest');
 
-        $projectsQuery = Project::query()->visibleToUser($user);
+        $projectsQuery = Project::query()->visibleToUser($user)->with('projectManager');
         $visibleProjects = (clone $projectsQuery)->get();
 
         $executionDashboardRoles = ['coordinator', 'monitor', 'section_manager', 'department_manager', 'monitoring_director'];
@@ -71,9 +71,14 @@ class HomeController extends Controller
             if ($person?->role === 'monitor' && ! $user->super_admin) {
                 $activitiesQuery->where('monitor_person_id', $person->id);
             }
+            $pendingConfirmationQuery = (clone $activitiesQuery)->where('workflow_status', 'pending_confirmation');
+            if ($user?->isMonitoringDirector()) {
+                $pendingConfirmationQuery = MonitoringActivity::query()->pendingDirectorApproval();
+            }
+
             $monitoringStats = [
                 'total' => (clone $activitiesQuery)->count(),
-                'pending_confirmation' => (clone $activitiesQuery)->where('workflow_status', 'pending_confirmation')->count(),
+                'pending_confirmation' => $pendingConfirmationQuery->count(),
                 'in_progress' => (clone $activitiesQuery)->where('workflow_status', 'in_progress')->count(),
             ];
         }
@@ -153,6 +158,16 @@ class HomeController extends Controller
             'pipelineExecutions' => $pipelineExecutions,
             'activeSingleProjects' => $activeSingleProjects,
             'executionTrackProjects' => $executionTrackProjects,
+            'pendingApprovalActivities' => MonitoringActivity::query()
+                ->pendingDirectorApproval()
+                ->with(['monitorPerson', 'center', 'department'])
+                ->orderByDesc('submitted_at')
+                ->orderByDesc('updated_at')
+                ->take(15)
+                ->get(),
+            'pendingApprovalCount' => MonitoringActivity::query()
+                ->pendingDirectorApproval()
+                ->count(),
         ];
     }
 

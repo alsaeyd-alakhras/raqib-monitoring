@@ -13,6 +13,7 @@ use App\Http\Controllers\Dashboard\DepartmentController;
 use App\Http\Controllers\Dashboard\DirectoryController;
 use App\Http\Controllers\Dashboard\FunderController;
 use App\Http\Controllers\Dashboard\HomeController;
+use App\Http\Controllers\Dashboard\ExternalActivityController;
 use App\Http\Controllers\Dashboard\MonitoringActivityController;
 use App\Http\Controllers\Dashboard\OrganizationalStructureController;
 use App\Http\Controllers\Dashboard\PersonController;
@@ -99,6 +100,17 @@ Route::group([
         ->name('monitoring-activities.filters');
     Route::get('monitoring-activities/check-reference-code', [MonitoringActivityController::class, 'checkReferenceCode'])
         ->name('monitoring-activities.check-reference-code');
+
+    Route::prefix('external-activities')->name('external-activities.')->group(function () {
+        Route::get('create', [ExternalActivityController::class, 'create'])->name('create');
+        Route::post('/', [ExternalActivityController::class, 'store'])->name('store');
+        Route::get('{monitoring_activity}/edit', [ExternalActivityController::class, 'edit'])->name('edit');
+        Route::post('{monitoring_activity}', [ExternalActivityController::class, 'update'])->name('update');
+        Route::post('{monitoring_activity}/submit', [ExternalActivityController::class, 'submit'])->name('submit');
+        Route::post('{monitoring_activity}/approve', [ExternalActivityController::class, 'approve'])->name('approve');
+        Route::post('{monitoring_activity}/return', [ExternalActivityController::class, 'returnToMonitor'])->name('return');
+        Route::post('{monitoring_activity}/reject', [ExternalActivityController::class, 'rejectFinal'])->name('reject');
+    });
 
     Route::resources([
         'monitoring-activities' => MonitoringActivityController::class,

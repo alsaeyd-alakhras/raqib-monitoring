@@ -183,13 +183,25 @@
     @endcan
 
     @if ($monitoringStats)
-        <div class="card mb-4">
-            <div class="card-header"><h5 class="mb-0">النشاطات الرقابية</h5></div>
+        <div class="card mb-4 {{ ($isMonitoringDirector ?? false) && ($monitoringStats['pending_confirmation'] ?? 0) > 0 ? 'border-warning border-2' : '' }}">
+            <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <h5 class="mb-0">النشاطات الرقابية</h5>
+                @if (($isMonitoringDirector ?? false) && ($monitoringStats['pending_confirmation'] ?? 0) > 0)
+                    <a href="{{ route('dashboard.monitoring-activities.index', ['pending_my_approval' => 1]) }}" class="btn btn-sm btn-warning">
+                        {{ $monitoringStats['pending_confirmation'] }} خارجي بانتظار اعتمادك
+                    </a>
+                @endif
+            </div>
             <div class="card-body">
                 <div class="row g-3">
                     <div class="col-md-4"><strong>الإجمالي:</strong> {{ $monitoringStats['total'] }}</div>
                     <div class="col-md-4"><strong>قيد العمل:</strong> {{ $monitoringStats['in_progress'] }}</div>
-                    <div class="col-md-4"><strong>بانتظار التأكيد:</strong> {{ $monitoringStats['pending_confirmation'] }}</div>
+                    <div class="col-md-4">
+                        <strong>{{ ($isMonitoringDirector ?? false) ? 'خارجي بانتظار الاعتماد:' : 'بانتظار الاعتماد:' }}</strong>
+                        <span class="{{ ($monitoringStats['pending_confirmation'] ?? 0) > 0 ? 'text-warning fw-semibold' : '' }}">
+                            {{ $monitoringStats['pending_confirmation'] }}
+                        </span>
+                    </div>
                 </div>
             </div>
         </div>

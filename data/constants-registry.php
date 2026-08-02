@@ -36,7 +36,7 @@ return [
     'source_types' => [
         'label' => 'مصادر النشاط الرقابي',
         'used_in' => ['monitoring_activities.source_type'],
-        'value_shape' => 'list<string> (project|external|meeting)',
+        'value_shape' => 'list<string> (project|external|meeting|project_execution)',
     ],
     'checklist_options' => [
         'label' => 'خيارات قائمة التحقق (عرض)',

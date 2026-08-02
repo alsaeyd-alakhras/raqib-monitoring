@@ -49,6 +49,7 @@ return [
         'projectexecutions.fill_monitor',
         'monitoringactivities.view',
         'monitoringactivities.update',
+        'monitoringactivities.create_external',
     ],
     'monitoring_director' => [
         'projects.view',
@@ -65,6 +66,7 @@ return [
         'monitoringactivities.confirm_completion',
         'monitoringactivities.edit_ratings',
         'monitoringactivities.reject',
+        'monitoringactivities.approve_external',
     ],
     'general_management' => [
         'projects.view',

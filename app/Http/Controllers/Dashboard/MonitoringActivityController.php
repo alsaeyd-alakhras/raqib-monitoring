@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Dashboard;
 
+use App\Http\Controllers\Dashboard\Concerns\GeneratesActivityReferenceCode;
 use App\Exports\MonitoringActivityExport;
 use App\Http\Controllers\Controller;
 use App\Models\Center;
@@ -24,11 +25,16 @@ use Yajra\DataTables\Facades\DataTables;
 
 class MonitoringActivityController extends Controller
 {
+    use GeneratesActivityReferenceCode;
+
     public function index(Request $request): View|JsonResponse
     {
         $this->authorize('view', MonitoringActivity::class);
 
-        $query = MonitoringActivity::with(['center', 'department', 'section', 'monitorPerson', 'responsiblePerson']);
+        $query = MonitoringActivity::with([
+            'center', 'department', 'section', 'monitorPerson', 'responsiblePerson',
+            'projectExecution.project',
+        ]);
         $closureItemIds = Project::closureDocumentItemIds();
         if ($closureItemIds !== []) {
             $query->with(['project.checklistValues' => fn ($q) => $q->whereIn('checklist_item_id', $closureItemIds)]);
@@ -42,12 +48,15 @@ class MonitoringActivityController extends Controller
             if ($request->to_date) {
                 $query->whereDate('activity_date', '<=', $request->to_date);
             }
+            if ($request->boolean('pending_my_approval')) {
+                $query->external()->where('workflow_status', 'pending_confirmation');
+            }
             if ($request->column_filters) {
                 $this->applyColumnFilters($query, $request->column_filters);
             }
             $this->applySort($query, $request->sort_column, $request->sort_direction);
 
-            $sourceTypes = $this->sourceTypeLabels();
+            $sourceTypes = MonitoringActivity::sourceTypeLabels();
             $workflowLabels = MonitoringActivity::workflowStatusLabels();
 
             $rows = $query->get()->map(function (MonitoringActivity $activity) use ($sourceTypes, $workflowLabels) {
@@ -56,11 +65,22 @@ class MonitoringActivityController extends Controller
                     $closureDocs = $activity->project->closureAttachmentSummary();
                 }
 
+                $user = auth()->user();
+                $canEdit = $this->canEditActivityInList($activity, $user);
+                $canApproveExternal = $user?->can('approve_external', MonitoringActivity::class) ?? false;
+                $needsDirectorApproval = $canApproveExternal && $activity->canDirectorReview();
+                $editUrl = $activity->isExternal()
+                    ? route('dashboard.external-activities.edit', $activity)
+                    : route('dashboard.monitoring-activities.edit', $activity);
+                $showUrl = $activity->workflowContextUrl()
+                    ?? route('dashboard.monitoring-activities.show', $activity);
+
                 return [
                     'id' => $activity->id,
                     'reference_code' => $activity->reference_code,
                     'activity_date' => optional($activity->activity_date)->format('Y-m-d') ?? '-',
                     'source_type_label' => $sourceTypes[$activity->source_type] ?? $activity->source_type,
+                    'source_type_key' => $activity->source_type,
                     'activity_type' => $activity->activity_type ?? '-',
                     'org_label' => trim(($activity->center?->name ?? '-') . ' / ' . ($activity->department?->name ?? '-')),
                     'responsible_name' => $activity->responsiblePerson?->name ?? '-',
@@ -69,6 +89,12 @@ class MonitoringActivityController extends Controller
                     'kpi_value' => $activity->kpi_value !== null ? number_format((float) $activity->kpi_value, 2) : '-',
                     'kpi_rating' => $activity->kpi_rating ?? '-',
                     'workflow_status_label' => $workflowLabels[$activity->workflow_status] ?? $activity->workflow_status,
+                    'workflow_status_key' => $activity->workflow_status,
+                    'edit_url' => $editUrl,
+                    'show_url' => $showUrl,
+                    'can_edit' => $canEdit,
+                    'needs_director_approval' => $needsDirectorApproval,
+                    'submitted_at_label' => $activity->submitted_at?->format('Y-m-d H:i') ?? '-',
                     'closure_docs_attached' => $closureDocs['attached'],
                     'closure_docs_total' => $closureDocs['total'],
                     'closure_docs_complete' => $closureDocs['complete'],
@@ -83,10 +109,17 @@ class MonitoringActivityController extends Controller
                 ->make(true);
         }
 
+        $canFilterPendingApproval = auth()->user()?->can('approve_external', MonitoringActivity::class) ?? false;
+        $pendingApprovalCount = $canFilterPendingApproval
+            ? MonitoringActivity::query()->pendingDirectorApproval()->count()
+            : 0;
+
         return view('dashboard.monitoring-activities.index', [
-            'sourceTypes' => $this->sourceTypeLabels(),
+            'sourceTypes' => MonitoringActivity::sourceTypeLabels(),
             'workflowStatusLabels' => MonitoringActivity::workflowStatusLabels(),
             'canViewClosureDocsColumnInList' => $this->userCanViewClosureDocsColumnInList(),
+            'canFilterPendingApproval' => $canFilterPendingApproval,
+            'pendingApprovalCount' => $pendingApprovalCount,
         ]);
     }
 
@@ -112,7 +145,7 @@ class MonitoringActivityController extends Controller
         }
 
         $rows = $query->get();
-        $sourceTypes = $this->sourceTypeLabels();
+        $sourceTypes = MonitoringActivity::sourceTypeLabels();
         $workflowLabels = MonitoringActivity::workflowStatusLabels();
 
         $options = match ($column) {
@@ -181,9 +214,13 @@ class MonitoringActivityController extends Controller
             ->with('success', 'تم إنشاء النشاط الرقابي بنجاح.');
     }
 
-    public function show(MonitoringActivity $monitoring_activity): View
+    public function show(MonitoringActivity $monitoring_activity): View|RedirectResponse
     {
         $this->authorize('view', MonitoringActivity::class);
+
+        if ($workflowUrl = $monitoring_activity->workflowContextUrl()) {
+            return redirect($workflowUrl);
+        }
 
         return view('dashboard.monitoring-activities.show', $this->buildShowData($monitoring_activity));
     }
@@ -212,7 +249,7 @@ class MonitoringActivityController extends Controller
         ]);
 
         return Excel::download(
-            new MonitoringActivityExport($monitoring_activity, $this->sourceTypeLabels(), MonitoringActivity::workflowStatusLabels()),
+            new MonitoringActivityExport($monitoring_activity, MonitoringActivity::sourceTypeLabels(), MonitoringActivity::workflowStatusLabels()),
             'النشاط الرقابي ' . $monitoring_activity->reference_code . '.xlsx'
         );
     }
@@ -222,6 +259,7 @@ class MonitoringActivityController extends Controller
         $monitoring_activity->load([
             'center', 'department', 'section', 'monitorPerson', 'responsiblePerson',
             'funder', 'rejectedByUser', 'createdByUser', 'updatedByUser', 'passageCompletedByUser',
+            'submittedByUser',
             'project.projectManager', 'project.coordinator',
         ]);
 
@@ -254,12 +292,22 @@ class MonitoringActivityController extends Controller
             'activity' => $monitoring_activity,
             'linkedProject' => $linkedProject,
             'secondaryActivities' => $secondaryActivities,
-            'sourceTypes' => $this->sourceTypeLabels(),
+            'sourceTypes' => MonitoringActivity::sourceTypeLabels(),
             'workflowStatusLabels' => MonitoringActivity::workflowStatusLabels(),
             'canViewCoordinatorData' => $linkedProject?->showsCoordinatorDataTo($user) ?? false,
             'canViewMonitorData' => $linkedProject?->showsMonitorDataTo($user) ?? true,
             'canMonitorSubmit' => $monitoring_activity->canMonitorSubmit() && $monitoring_activity->isAssignedMonitor($user),
             'isMonitorEditor' => $this->isMonitorOnlyEditor($monitoring_activity),
+            'canDirectorReviewExternal' => $monitoring_activity->canDirectorReview()
+                && ($user?->can('approve_external', MonitoringActivity::class) ?? false),
+            'canEditExternal' => $monitoring_activity->isExternal() && (
+                $monitoring_activity->canMonitorEditExternal($user)
+                || $user?->super_admin
+                || $user?->isMonitoringDirector()
+            ) && $monitoring_activity->workflow_status === 'in_progress',
+            'externalEditUrl' => $monitoring_activity->isExternal()
+                ? route('dashboard.external-activities.edit', $monitoring_activity)
+                : null,
         ];
     }
 
@@ -391,16 +439,28 @@ class MonitoringActivityController extends Controller
 
         $validated = $request->validate([
             'rejection_reason' => ['required', 'string'],
-            'gap_owner' => ['required', 'in:coordinator,dept_manager,other'],
+            'gap_owner' => ['required', 'in:coordinator,dept_manager,monitor,other'],
+            'reject_action' => ['nullable', 'in:return,reject_final'],
         ]);
 
-        $monitoring_activity->update($validated + [
+        $payload = $validated + [
             'rejected_by' => auth()->id(),
             'rejected_at' => now(),
             'updated_by' => auth()->id(),
-        ]);
+        ];
 
-        return back()->with('success', 'تم رفض النشاط الرقابي.');
+        if ($monitoring_activity->activity_role !== 'primary') {
+            $action = $validated['reject_action'] ?? 'return';
+            $payload['workflow_status'] = $action === 'reject_final' ? 'rejected' : 'in_progress';
+        }
+
+        $monitoring_activity->update($payload);
+
+        $message = ($validated['reject_action'] ?? 'return') === 'reject_final'
+            ? 'تم رفض النشاط الرقابي نهائياً.'
+            : 'تم إرجاع النشاط للمراقب.';
+
+        return back()->with('success', $message);
     }
 
     private function authorizeEditAfterClosure(MonitoringActivity $monitoringActivity): void
@@ -551,7 +611,7 @@ class MonitoringActivityController extends Controller
 
             switch ($fieldName) {
                 case 'source_type_label':
-                    $sourceMap = array_flip($this->sourceTypeLabels());
+                    $sourceMap = array_flip(MonitoringActivity::sourceTypeLabels());
                     $keys = array_values(array_filter(array_map(fn ($v) => $sourceMap[$v] ?? null, $filteredValues)));
                     if ($keys !== []) {
                         $query->whereIn('source_type', $keys);
@@ -698,20 +758,11 @@ class MonitoringActivityController extends Controller
             'people' => Person::orderBy('name')->get(),
             'monitors' => Person::withRole('monitor')->orderBy('name')->get(),
             'projects' => $projects,
-            'sourceTypes' => $this->sourceTypeLabels(),
+            'sourceTypes' => MonitoringActivity::sourceTypeLabels(),
             'activityTypes' => $this->constantOptions('activity_types'),
             'monitoringMethods' => $this->constantOptions('monitoring_methods'),
             'monitoringStages' => $this->constantOptions('monitoring_stages'),
             'workflowStatusLabels' => MonitoringActivity::workflowStatusLabels(),
-        ];
-    }
-
-    private function sourceTypeLabels(): array
-    {
-        return [
-            'project' => 'مشروع',
-            'external' => 'خارجي',
-            'meeting' => 'محضر اجتماع',
         ];
     }
 
@@ -753,7 +804,7 @@ class MonitoringActivityController extends Controller
             'deduction_value' => ['nullable', 'numeric', 'max:0'],
             'monitoring_method' => ['nullable', 'string'],
             'monitoring_stage' => ['nullable', 'string'],
-            'workflow_status' => ['required', 'in:pending_monitor,in_progress,pending_confirmation,completed'],
+            'workflow_status' => ['required', 'in:pending_monitor,in_progress,pending_confirmation,completed,rejected'],
             'is_passage_complete' => ['required', 'boolean'],
         ];
     }
@@ -787,22 +838,23 @@ class MonitoringActivityController extends Controller
         ]);
     }
 
-    private function generateReferenceCode(string $sourceType): string
+    private function canEditActivityInList(MonitoringActivity $activity, $user): bool
     {
-        $prefix = match ($sourceType) {
-            'project' => 'MP',
-            'external' => 'MA',
-            'meeting' => 'MM',
-            default => 'MX',
-        };
+        if (! $user || ! $user->can('update', MonitoringActivity::class)) {
+            return false;
+        }
 
-        $lastNumber = MonitoringActivity::where('reference_code', 'like', $prefix . '-%')
-            ->selectRaw('MAX(CAST(SUBSTR(reference_code, ?) AS UNSIGNED)) as max_num', [strlen($prefix) + 2])
-            ->value('max_num');
+        if ($activity->isExternal()) {
+            return $activity->canMonitorEditExternal($user)
+                || $user->super_admin
+                || $user->isMonitoringDirector();
+        }
 
-        $nextNumber = ((int) $lastNumber) + 1;
+        if ($activity->workflow_status === 'completed' && ! $user->can('edit_ratings', MonitoringActivity::class)) {
+            return false;
+        }
 
-        return $prefix . '-' . $nextNumber;
+        return true;
     }
 
     private function userCanViewClosureDocsColumnInList(): bool

@@ -21,6 +21,7 @@ class MonitoringActivity extends Model
         'kpi_value', 'kpi_rating',
         'monitoring_method', 'monitoring_stage', 'workflow_status', 'is_passage_complete',
         'passage_completed_at', 'passage_completed_by',
+        'submitted_at', 'submitted_by',
         'rejection_reason', 'rejected_by', 'rejected_at', 'gap_owner',
         'created_by', 'updated_by',
     ];
@@ -35,6 +36,7 @@ class MonitoringActivity extends Model
         'deduction_value' => 'float',
         'kpi_value' => 'float',
         'passage_completed_at' => 'datetime',
+        'submitted_at' => 'datetime',
         'rejected_at' => 'datetime',
     ];
 
@@ -106,6 +108,89 @@ class MonitoringActivity extends Model
         return $this->belongsTo(User::class, 'passage_completed_by');
     }
 
+    public function submittedByUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'submitted_by');
+    }
+
+    public function isExternal(): bool
+    {
+        return $this->source_type === 'external' && $this->activity_role !== 'primary';
+    }
+
+    public function canMonitorEditExternal(?User $user): bool
+    {
+        if (! $this->isExternal() || $this->workflow_status !== 'in_progress') {
+            return false;
+        }
+
+        if (! $user) {
+            return false;
+        }
+
+        if ($user->super_admin) {
+            return true;
+        }
+
+        $personId = $user->person?->id;
+
+        if (! $personId) {
+            return false;
+        }
+
+        return (int) $this->monitor_person_id === (int) $personId
+            || (int) $this->created_by === (int) $user->id;
+    }
+
+    public function canDirectorReview(): bool
+    {
+        return $this->isExternal() && $this->workflow_status === 'pending_confirmation';
+    }
+
+    /**
+     * صفحة سير العمل المرتبطة (مشروع/مسار) — null للأنشطة الخارجية والثانوية.
+     */
+    public function workflowContextUrl(): ?string
+    {
+        if ($this->source_type === 'project_execution' && $this->project_execution_id) {
+            $execution = $this->relationLoaded('projectExecution')
+                ? $this->projectExecution
+                : $this->projectExecution()->with('project')->first();
+
+            if ($execution?->project) {
+                return route('dashboard.projects.executions.show', [$execution->project, $execution]);
+            }
+        }
+
+        if ($this->source_type === 'project' && $this->source_id && $this->activity_role === 'primary') {
+            return route('dashboard.projects.show', $this->source_id);
+        }
+
+        return null;
+    }
+
+    public function clearRejection(): void
+    {
+        $this->rejection_reason = null;
+        $this->rejected_by = null;
+        $this->rejected_at = null;
+        $this->gap_owner = null;
+    }
+
+    public function scopeExternal(Builder $query): Builder
+    {
+        return $query
+            ->where('source_type', 'external')
+            ->where('activity_role', '!=', 'primary');
+    }
+
+    public function scopePendingDirectorApproval(Builder $query): Builder
+    {
+        return $query
+            ->external()
+            ->where('workflow_status', 'pending_confirmation');
+    }
+
     public function isAssignedMonitor(?User $user): bool
     {
         $personId = $user?->person?->id;
@@ -115,9 +200,15 @@ class MonitoringActivity extends Model
 
     public function canMonitorSubmit(): bool
     {
-        return $this->activity_role !== 'primary'
-            && $this->workflow_status === 'in_progress'
-            && $this->monitor_person_id !== null;
+        if ($this->activity_role === 'primary') {
+            return false;
+        }
+
+        if ($this->workflow_status !== 'in_progress' || $this->monitor_person_id === null) {
+            return false;
+        }
+
+        return $this->isExternal() || $this->activity_role === 'secondary';
     }
 
     public function scopeSecondaryForProject(Builder $query, int $projectId): Builder
@@ -138,13 +229,29 @@ class MonitoringActivity extends Model
             ->exists();
     }
 
+    public static function sourceTypeLabels(): array
+    {
+        return [
+            'project' => 'مشروع',
+            'external' => 'خارجي',
+            'meeting' => 'محضر اجتماع',
+            'project_execution' => 'مسار تنفيذ',
+        ];
+    }
+
+    public function getSourceTypeLabelAttribute(): string
+    {
+        return self::sourceTypeLabels()[$this->source_type] ?? $this->source_type;
+    }
+
     public static function workflowStatusLabels(): array
     {
         return [
             'pending_monitor' => 'بانتظار تعيين مراقب',
             'in_progress' => 'المراقب يعمل',
-            'pending_confirmation' => 'بانتظار التأكيد',
+            'pending_confirmation' => 'بانتظار اعتماد مدير الرقابة',
             'completed' => 'مكتمل',
+            'rejected' => 'مرفوض',
         ];
     }
 

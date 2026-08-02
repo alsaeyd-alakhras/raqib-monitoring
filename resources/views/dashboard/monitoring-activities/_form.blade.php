@@ -50,20 +50,30 @@
                 <form action="{{ route('dashboard.monitoring-activities.reject', $activity) }}" method="post" data-confirm="هل أنت متأكد من رفض هذا النشاط؟" data-confirm-title="تأكيد الرفض" data-confirm-variant="danger">
                     @csrf
                     <div class="row g-2">
-                        <div class="col-md-5">
-                            <label class="form-label">سبب الرفض</label>
-                            <textarea name="rejection_reason" class="form-control" required></textarea>
-                        </div>
                         <div class="col-md-4">
+                            <label class="form-label">سبب الرفض</label>
+                            <textarea name="rejection_reason" class="form-control" rows="1" required></textarea>
+                        </div>
+                        <div class="col-md-3">
                             <label class="form-label">مسؤولية النقص</label>
                             <select name="gap_owner" class="form-select" required>
                                 <option value="coordinator">المنسق</option>
                                 <option value="dept_manager">مدير الدائرة</option>
+                                <option value="monitor">المراقب</option>
                                 <option value="other">أخرى</option>
                             </select>
                         </div>
-                        <div class="col-md-3 d-flex align-items-end">
-                            <button type="submit" class="btn btn-danger">رفض النشاط</button>
+                        @if ($activity->activity_role !== 'primary')
+                            <div class="col-md-3">
+                                <label class="form-label">نوع الإجراء</label>
+                                <select name="reject_action" class="form-select" required>
+                                    <option value="return">إرجاع للمراقب</option>
+                                    <option value="reject_final">رفض نهائي</option>
+                                </select>
+                            </div>
+                        @endif
+                        <div class="col-md-2 d-flex align-items-end">
+                            <button type="submit" class="btn btn-danger">تنفيذ</button>
                         </div>
                     </div>
                 </form>

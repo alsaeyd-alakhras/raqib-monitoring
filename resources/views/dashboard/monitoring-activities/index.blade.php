@@ -38,6 +38,14 @@
                 color: #b45309;
                 border: 1px solid #fcd34d;
             }
+
+            #monitoring-activities-table tbody tr.table-row-needs-approval > td {
+                background-color: #fff8e6 !important;
+            }
+
+            #monitoring-activities-table tbody tr.table-row-needs-approval:hover > td {
+                background-color: #ffefb8 !important;
+            }
         </style>
     @endpush
 
@@ -63,6 +71,23 @@
                 </a>
             </div>
         @endcan
+        @can('create_external', 'App\Models\MonitoringActivity')
+            <div class="mx-2 nav-item">
+                <a href="{{ route('dashboard.external-activities.create') }}" class="m-0 btn btn-primary">
+                    <i class="fa-solid fa-globe"></i> إضافة نشاط خارجي
+                </a>
+            </div>
+        @endcan
+        @if ($canFilterPendingApproval ?? false)
+            <div class="mx-2 nav-item">
+                <button type="button" class="btn btn-outline-warning" id="filterPendingApproval" title="أنشطة خارجية بانتظار اعتمادي">
+                    <i class="fa-solid fa-clock"></i> خارجي بانتظار اعتمادي
+                    @if (($pendingApprovalCount ?? 0) > 0)
+                        <span class="badge bg-warning text-dark ms-1">{{ $pendingApprovalCount }}</span>
+                    @endif
+                </button>
+            </div>
+        @endif
         <div class="mx-2 nav-item">
             <button class="p-2 border-0 btn btn-outline-danger rounded-pill d-none" type="button" id="filterBtnClear" title="إزالة التصفية">
                 <i class="fa-solid fa-eraser"></i>
@@ -211,6 +236,58 @@
             const abilityEdit = {{ Auth::user()->can('update', 'App\Models\MonitoringActivity') ? 'true' : 'false' }};
             const abilityDelete = {{ Auth::user()->can('delete', 'App\Models\MonitoringActivity') ? 'true' : 'false' }};
             const canClosureDocs = {{ $canClosureDocs ? 'true' : 'false' }};
+            const urlParams = new URLSearchParams(window.location.search);
+            let pendingMyApproval = urlParams.get('pending_my_approval') === '1';
+
+            function setPendingApprovalFilter(active) {
+                pendingMyApproval = active;
+                const btn = document.getElementById('filterPendingApproval');
+                if (!btn) {
+                    return;
+                }
+                btn.classList.toggle('active', active);
+                btn.classList.toggle('btn-warning', active);
+                btn.classList.toggle('btn-outline-warning', !active);
+            }
+
+            if (pendingMyApproval) {
+                setPendingApprovalFilter(true);
+            }
+
+            function extraAjaxDataFn(d) {
+                if (pendingMyApproval) {
+                    d.pending_my_approval = 1;
+                }
+            }
+
+            function rowCallbackFn(row, data) {
+                if (data.needs_director_approval) {
+                    $(row).addClass('table-row-needs-approval');
+                }
+            }
+
+            function renderSourceBadge(label, key) {
+                const variant = {
+                    project: 'primary',
+                    external: 'info',
+                    meeting: 'secondary',
+                    project_execution: 'warning',
+                }[key] || 'secondary';
+
+                return '<span class="badge bg-label-' + variant + '">' + (label || '—') + '</span>';
+            }
+
+            function renderWorkflowBadge(label, key) {
+                const variant = {
+                    completed: 'success',
+                    pending_confirmation: 'warning',
+                    in_progress: 'info',
+                    rejected: 'danger',
+                    pending_monitor: 'secondary',
+                }[key] || 'secondary';
+
+                return '<span class="badge bg-label-' + variant + '">' + (label || '—') + '</span>';
+            }
 
             function renderClosureDocsIndicator(row) {
                 if (!row.closure_docs_total) {
@@ -258,16 +335,18 @@
                 },
                 {
                     data: 'id', name: 'view', orderable: false, searchable: false, className: 'sticky-r3 col-icon',
-                    render: function (data) {
+                    render: function (data, type, row) {
                         if (!abilityView) return '';
-                        return '<a href="' + urlShow.replace(':id', data) + '" class="action-btn btn-view" title="عرض"><i class="fas fa-eye"></i></a>';
+                        const href = row.show_url || urlShow.replace(':id', data);
+                        return '<a href="' + href + '" class="action-btn btn-view" title="عرض"><i class="fas fa-eye"></i></a>';
                     }
                 },
                 {
                     data: 'id', name: 'edit', orderable: false, searchable: false, className: 'sticky-r4 col-icon',
-                    render: function (data) {
-                        if (!abilityEdit) return '';
-                        return '<a href="' + urlEdit.replace(':id', data) + '" class="action-btn btn-edit" title="تعديل"><i class="fas fa-edit"></i></a>';
+                    render: function (data, type, row) {
+                        if (!row.can_edit) return '';
+                        const href = row.edit_url || urlEdit.replace(':id', data);
+                        return '<a href="' + href + '" class="action-btn btn-edit" title="تعديل"><i class="fas fa-edit"></i></a>';
                     }
                 },
                 { data: 'reference_code', name: 'reference_code', orderable: false, className: 'sticky-r5 col-code',
@@ -276,7 +355,12 @@
                     }
                 },
                 { data: 'activity_date', name: 'activity_date', orderable: false, className: 'text-center' },
-                { data: 'source_type_label', name: 'source_type_label', orderable: false },
+                {
+                    data: 'source_type_label', name: 'source_type_label', orderable: false,
+                    render: function (data, type, row) {
+                        return renderSourceBadge(data, row.source_type_key);
+                    }
+                },
                 { data: 'activity_type', name: 'activity_type', orderable: false },
                 { data: 'org_label', name: 'org_label', orderable: false },
                 { data: 'responsible_name', name: 'responsible_name', orderable: false },
@@ -284,7 +368,12 @@
                 { data: 'subject', name: 'subject', orderable: false },
                 { data: 'kpi_value', name: 'kpi_value', orderable: false, className: 'text-center' },
                 { data: 'kpi_rating', name: 'kpi_rating', orderable: false, className: 'text-center' },
-                { data: 'workflow_status_label', name: 'workflow_status_label', orderable: false }
+                {
+                    data: 'workflow_status_label', name: 'workflow_status_label', orderable: false,
+                    render: function (data, type, row) {
+                        return renderWorkflowBadge(data, row.workflow_status_key);
+                    }
+                }
             ];
 
             if (canClosureDocs) {
@@ -324,6 +413,13 @@
             function drawCallbackFn() {
                 initVerificationPopovers();
             }
+
+            document.getElementById('filterPendingApproval')?.addEventListener('click', function () {
+                setPendingApprovalFilter(!pendingMyApproval);
+                if (typeof table !== 'undefined') {
+                    table.ajax.reload();
+                }
+            });
         </script>
         <script src="{{ asset('js/datatable.js') }}"></script>
     @endpush
