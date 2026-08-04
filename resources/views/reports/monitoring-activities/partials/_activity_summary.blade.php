@@ -183,6 +183,10 @@
                 <td class="{{ $activity->activity_type ? '' : 'text-empty' }}">{{ $activity->activity_type ?? '—' }}</td>
             </tr>
             <tr>
+                <th scope="row">التفصيل</th>
+                <td class="{{ $activity->detail ? '' : 'text-empty' }}">{{ $activity->detail ?? '—' }}</td>
+            </tr>
+            <tr>
                 <th scope="row">الممول</th>
                 <td class="{{ $activity->funder?->name ? '' : 'text-empty' }}">{{ $activity->funder?->name ?? '—' }}</td>
             </tr>
@@ -213,8 +217,37 @@
                 <th scope="row">الإجراء المتخذ</th>
                 <td class="{{ $activity->action_taken ? '' : 'text-empty' }}">{{ $activity->action_taken ?: '—' }}</td>
             </tr>
+            <tr>
+                <th scope="row">تاريخ الإغلاق</th>
+                <td class="{{ $activity->closure_date ? '' : 'text-empty' }}">{{ $activity->closure_date?->format('Y-m-d') ?? '—' }}</td>
+            </tr>
+            @if ($activity->hasAttachments())
+                <tr>
+                    <th scope="row">المرفقات</th>
+                    <td>
+                        <div class="d-flex flex-wrap gap-1">
+                            @foreach ($activity->attachmentsList() as $row)
+                                @php
+                                    $isExternal = ($row['type'] ?? '') === 'url';
+                                    $url = $isExternal
+                                        ? ($row['url'] ?? null)
+                                        : (! empty($row['path']) ? asset('storage/' . ltrim($row['path'], '/')) : null);
+                                    $label = $activity->attachmentRowLabel($row);
+                                @endphp
+                                @if ($url)
+                                    <a href="{{ $url }}" target="_blank" rel="noopener" class="badge bg-label-primary text-decoration-none">
+                                        <i class="ti {{ $isExternal ? 'ti-external-link' : 'ti-paperclip' }} me-1"></i>{{ $label }}
+                                    </a>
+                                @endif
+                            @endforeach
+                        </div>
+                    </td>
+                </tr>
+            @endif
         </tbody>
     </table>
+
+    @include('dashboard.external-activities._field_notes_display', ['activity' => $activity])
 </div>
 @if ($compactLayout)</div>@endif
 
@@ -227,7 +260,16 @@
             @foreach ($evalLabels as $field => $label)
                 <tr>
                     <th scope="row">{{ $label }}</th>
-                    <td class="{{ $activity->{$field} !== null ? '' : 'text-empty' }}">{{ $activity->{$field} !== null ? $activity->{$field} : '—' }}</td>
+                    <td class="{{ $activity->{$field} !== null ? '' : 'text-empty' }}">
+                        @if ($activity->{$field} !== null)
+                            {{ $activity->{$field} }}%
+                            @if ($activity->scaleLabelFor($field))
+                                <span class="badge bg-label-info">{{ $activity->scaleLabelFor($field) }}</span>
+                            @endif
+                        @else
+                            —
+                        @endif
+                    </td>
                 </tr>
             @endforeach
             <tr>

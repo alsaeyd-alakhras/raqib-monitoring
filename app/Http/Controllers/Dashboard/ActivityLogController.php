@@ -3,15 +3,23 @@
 namespace App\Http\Controllers\Dashboard;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Dashboard\Concerns\ResolvesPerPage;
 use App\Models\ActivityLog;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\View\View;
 
 class ActivityLogController extends Controller
 {
-    public function index()
+    use ResolvesPerPage;
+
+    public function index(Request $request): View
     {
-        $logs = ActivityLog::with('user')->orderBy('created_at','DESC')->paginate(10);
+        $logs = ActivityLog::with('user')
+            ->orderBy('created_at', 'DESC')
+            ->paginate($this->resolvePerPage($request, 10))
+            ->withQueryString();
+
         return view('dashboard.pages.logs', compact('logs'));
     }
 

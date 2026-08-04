@@ -110,6 +110,7 @@ Route::group([
         Route::post('{monitoring_activity}/approve', [ExternalActivityController::class, 'approve'])->name('approve');
         Route::post('{monitoring_activity}/return', [ExternalActivityController::class, 'returnToMonitor'])->name('return');
         Route::post('{monitoring_activity}/reject', [ExternalActivityController::class, 'rejectFinal'])->name('reject');
+        Route::post('{monitoring_activity}/delete-attachment', [ExternalActivityController::class, 'deleteExternalActivityAttachment'])->name('delete-attachment');
     });
 
     Route::resources([

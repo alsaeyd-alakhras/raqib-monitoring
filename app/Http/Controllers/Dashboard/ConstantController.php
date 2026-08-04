@@ -83,7 +83,7 @@ class ConstantController extends Controller
             'monitoring' => [
                 'label' => 'قوائم الرقابة',
                 'icon' => 'fa-clipboard-check',
-                'keys' => ['activity_types', 'monitoring_methods', 'monitoring_stages'],
+                'keys' => ['activity_types', 'activity_details', 'monitoring_methods', 'monitoring_stages'],
             ],
             'scales' => [
                 'label' => 'مقاييس التقييم',

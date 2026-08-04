@@ -156,6 +156,7 @@
                                 <tr>
                                     <th>المشروع</th>
                                     <th>المنطقة</th>
+                                    <th>مدير المشروع</th>
                                     <th>المنسق</th>
                                     <th>المراقب</th>
                                     <th>الحالة</th>
@@ -170,6 +171,7 @@
                                             <br><span class="text-muted small">{{ $execution->project?->project_number ?: '—' }}</span>
                                         </td>
                                         <td>{{ $execution->region_name }}</td>
+                                        <td class="small">{{ $execution->project?->projectManager?->name ?? '—' }}</td>
                                         <td class="small">{{ $execution->coordinatorDisplayName() }}</td>
                                         <td class="small">{{ $execution->monitorPerson?->name ?? '—' }}</td>
                                         <td>

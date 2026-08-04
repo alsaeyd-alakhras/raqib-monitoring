@@ -33,6 +33,11 @@ return [
         'used_in' => ['monitoring_activities.activity_type'],
         'value_shape' => 'list<string>',
     ],
+    'activity_details' => [
+        'label' => 'تفاصيل النشاط الرقابي',
+        'used_in' => ['monitoring_activities.detail (external)'],
+        'value_shape' => 'list<string>',
+    ],
     'source_types' => [
         'label' => 'مصادر النشاط الرقابي',
         'used_in' => ['monitoring_activities.source_type'],

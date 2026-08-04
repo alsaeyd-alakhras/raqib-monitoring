@@ -15,8 +15,9 @@ class MonitoringActivity extends Model
         'reference_code', 'source_type', 'source_id', 'project_execution_id', 'activity_role',
         'center_id', 'department_id', 'section_id', 'responsible_person_id', 'monitor_person_id',
         'activity_date', 'activity_time',
-        'activity_type', 'funder_id',
+        'activity_type', 'detail', 'funder_id',
         'subject', 'notes', 'field_problem', 'action_taken',
+        'closure_date', 'attachments', 'positive_notes', 'negative_notes', 'recommendations',
         'execution_value', 'quality_value', 'closure_value', 'deduction_value',
         'kpi_value', 'kpi_rating',
         'monitoring_method', 'monitoring_stage', 'workflow_status', 'is_passage_complete',
@@ -28,6 +29,11 @@ class MonitoringActivity extends Model
 
     protected $casts = [
         'activity_date' => 'date',
+        'closure_date' => 'date',
+        'attachments' => 'array',
+        'positive_notes' => 'array',
+        'negative_notes' => 'array',
+        'recommendations' => 'array',
         'field_problem' => 'boolean',
         'is_passage_complete' => 'boolean',
         'execution_value' => 'float',
@@ -474,7 +480,119 @@ class MonitoringActivity extends Model
             $invalid[] = 'مرحلة المراقبة';
         }
 
+        if ($this->detail && ! in_array($this->detail, $this->getConstantValues('activity_details'), true)) {
+            $invalid[] = 'التفصيل';
+        }
+
         return $invalid;
+    }
+
+    /** @return list<array<string, mixed>> */
+    public function attachmentsList(): array
+    {
+        $stored = is_array($this->attachments) ? $this->attachments : [];
+
+        return array_values(array_map(fn (array $row) => $this->normalizeAttachmentRow($row), $stored));
+    }
+
+    public function hasAttachments(): bool
+    {
+        return $this->attachmentsList() !== [];
+    }
+
+    /** @param  array<string, mixed>  $row */
+    public function attachmentRowLabel(array $row): string
+    {
+        if (($row['type'] ?? '') === 'url') {
+            $host = parse_url((string) ($row['url'] ?? ''), PHP_URL_HOST);
+
+            return $host ? 'رابط — ' . $host : 'رابط خارجي';
+        }
+
+        return (string) ($row['original_name'] ?? $row['name'] ?? 'مرفق');
+    }
+
+    /** @param  list<array<string, mixed>>  $attachments */
+    public function syncAttachments(array $attachments): void
+    {
+        $this->attachments = array_values(array_map(
+            fn (array $row) => $this->normalizeAttachmentRow($row),
+            $attachments
+        ));
+    }
+
+    public function attachmentsStorageDirectory(): string
+    {
+        return 'monitoring-activities/' . $this->id . '/attachments';
+    }
+
+    public function scaleLabelFor(string $field): ?string
+    {
+        $scaleKey = match ($field) {
+            'execution_value' => 'scale_execution',
+            'quality_value' => 'scale_quality',
+            'closure_value' => 'scale_closure',
+            'deduction_value' => 'scale_deduction',
+            default => null,
+        };
+
+        if ($scaleKey === null || $this->{$field} === null) {
+            return null;
+        }
+
+        $value = (float) $this->{$field};
+        $scale = $this->getConstantScale($scaleKey);
+
+        foreach ($scale as $tier) {
+            if (isset($tier['value']) && (float) $tier['value'] === $value) {
+                return $tier['label'] ?? null;
+            }
+        }
+
+        return null;
+    }
+
+    public function formattedScaleValue(string $field): ?string
+    {
+        if ($this->{$field} === null) {
+            return null;
+        }
+
+        $label = $this->scaleLabelFor($field);
+
+        if ($label) {
+            return $this->{$field} . '% — ' . $label;
+        }
+
+        return (string) $this->{$field};
+    }
+
+    /** @return list<array{value:int|float,label:string}> */
+    public static function scaleOptions(string $scaleKey): array
+    {
+        $value = Constant::where('key', $scaleKey)->value('value');
+        $decoded = is_string($value) ? json_decode($value, true) : $value;
+
+        return is_array($decoded) ? $decoded : [];
+    }
+
+    /** @return list<array{value:int|float,label:string}> */
+    protected function getConstantScale(string $key): array
+    {
+        return self::scaleOptions($key);
+    }
+
+    /** @param  array<string, mixed>  $row */
+    protected function normalizeAttachmentRow(array $row): array
+    {
+        return [
+            'id' => (string) ($row['id'] ?? ''),
+            'type' => (string) ($row['type'] ?? 'file'),
+            'path' => isset($row['path']) ? (string) $row['path'] : null,
+            'url' => isset($row['url']) ? (string) $row['url'] : null,
+            'original_name' => isset($row['original_name']) ? (string) $row['original_name'] : (isset($row['name']) ? (string) $row['name'] : null),
+            'uploaded_at' => isset($row['uploaded_at']) ? (string) $row['uploaded_at'] : null,
+        ];
     }
 
     protected function getConstantValues(string $key): array

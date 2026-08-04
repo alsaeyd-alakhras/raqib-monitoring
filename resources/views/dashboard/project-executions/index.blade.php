@@ -59,8 +59,9 @@
                 </tbody>
             </table>
         </div>
-        @if ($executions->hasPages())
-            <div class="card-footer">{{ $executions->links() }}</div>
-        @endif
+        <div class="card-footer d-flex flex-wrap justify-content-between align-items-center gap-2">
+            @include('dashboard.partials._per_page_select', ['defaultPerPage' => 15])
+            {{ $executions->links() }}
+        </div>
     </div>
 </x-front-layout>

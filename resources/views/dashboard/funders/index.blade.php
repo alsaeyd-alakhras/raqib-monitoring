@@ -50,6 +50,7 @@
                     </tbody>
                 </table>
             </div>
+            @include('dashboard.partials._per_page_select', ['defaultPerPage' => 15])
             <div>
                 {{ $funders->links() }}
             </div>

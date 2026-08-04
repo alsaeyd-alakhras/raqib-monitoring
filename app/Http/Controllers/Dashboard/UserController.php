@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Dashboard;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Dashboard\Concerns\ResolvesPerPage;
 use App\Models\ActivityLog;
 use App\Models\RoleUser;
 use App\Models\User;
@@ -14,6 +15,8 @@ use Illuminate\Support\Facades\Storage;
 
 class UserController extends Controller
 {
+    use ResolvesPerPage;
+
     private const EMPLOYEE_DEFAULT_ABILITIES = [
         'aiddistributions.view',
         'aiddistributions.create',
@@ -89,14 +92,17 @@ class UserController extends Controller
     /**
      * Display the specified resource.
      */
-    public function show(User $user)
+    public function show(Request $request, User $user)
     {
 
         if (Auth::user()->id != $user->id && !Auth::user()->can('view', User::class)) {
             abort(403);
         }
         $profile = Auth::user()->id == $user->id && !Auth::user()->can('view', User::class) ? true : false;
-        $logs = ActivityLog::where('user_id', $user->id)->orderBy('created_at', 'DESC')->paginate(20);
+        $logs = ActivityLog::where('user_id', $user->id)
+            ->orderBy('created_at', 'DESC')
+            ->paginate($this->resolvePerPage($request, 20))
+            ->withQueryString();
         return view('dashboard.users.show', compact('user', 'logs', 'profile'));
     }
 

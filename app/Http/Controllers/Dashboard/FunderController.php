@@ -3,16 +3,22 @@
 namespace App\Http\Controllers\Dashboard;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Dashboard\Concerns\ResolvesPerPage;
 use App\Models\Funder;
 use Illuminate\Http\Request;
+use Illuminate\View\View;
 
 class FunderController extends Controller
 {
-    public function index()
+    use ResolvesPerPage;
+
+    public function index(Request $request): View
     {
         $this->authorize('view', Funder::class);
 
-        $funders = Funder::orderBy('name')->paginate(15);
+        $funders = Funder::orderBy('name')
+            ->paginate($this->resolvePerPage($request))
+            ->withQueryString();
 
         return view('dashboard.funders.index', compact('funders'));
     }

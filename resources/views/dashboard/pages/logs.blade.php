@@ -55,7 +55,8 @@
                             </li>
                         @endforeach
                     </ul>
-                    <div>
+                    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+                        @include('dashboard.partials._per_page_select', ['defaultPerPage' => 10])
                         {{ $logs->links() }}
                     </div>
                 </div>

@@ -18,6 +18,7 @@ use Illuminate\View\View;
 
 trait ManagesProjectExecutions
 {
+    use ResolvesPerPage;
     public function executionsIndex(Request $request): View
     {
         $this->authorize('view', ProjectExecution::class);
@@ -26,7 +27,9 @@ trait ManagesProjectExecutions
             ->where('is_active', true)
             ->visibleToUser(auth()->user());
 
-        $executions = $query->orderByDesc('updated_at')->paginate(15);
+        $executions = $query->orderByDesc('updated_at')
+            ->paginate($this->resolvePerPage($request))
+            ->withQueryString();
         $statusLabels = ProjectExecution::workflowStatusLabels();
 
         return view('dashboard.project-executions.index', compact('executions', 'statusLabels'));

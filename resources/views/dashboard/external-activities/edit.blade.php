@@ -25,7 +25,7 @@
         </div>
     </div>
 
-    <form action="{{ route('dashboard.external-activities.update', $activity) }}" method="post" class="external-activity-form">
+    <form action="{{ route('dashboard.external-activities.update', $activity) }}" method="post" enctype="multipart/form-data" class="external-activity-form">
         @csrf
         @include('dashboard.external-activities._form')
     </form>

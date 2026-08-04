@@ -39,7 +39,7 @@ class HomeController extends Controller
             $visibleExecutions = ProjectExecution::query()
                 ->where('is_active', true)
                 ->visibleToUser($user)
-                ->with(['project', 'coordinator', 'monitorPerson'])
+                ->with(['project.projectManager', 'coordinator', 'monitorPerson'])
                 ->orderByDesc('updated_at')
                 ->get();
 

@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Dashboard;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Dashboard\Concerns\ConvertsMultilineNotes;
 use App\Http\Controllers\Dashboard\Concerns\GeneratesActivityReferenceCode;
+use App\Http\Controllers\Dashboard\Concerns\ManagesExternalActivityAttachments;
 use App\Models\Center;
 use App\Models\Constant;
 use App\Models\Funder;
@@ -11,11 +13,14 @@ use App\Models\MonitoringActivity;
 use App\Models\Person;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
 class ExternalActivityController extends Controller
 {
     use GeneratesActivityReferenceCode;
+    use ManagesExternalActivityAttachments;
+    use ConvertsMultilineNotes;
 
     public function create(): View
     {
@@ -33,8 +38,7 @@ class ExternalActivityController extends Controller
         $monitorPersonId = $this->resolveMonitorPersonId($request, $user);
 
         $activity = MonitoringActivity::create([
-            ...$validated,
-            'reference_code' => $this->generateReferenceCode('external'),
+            ...$this->payloadWithNotes($request, $validated),
             'source_type' => 'external',
             'source_id' => null,
             'activity_role' => 'secondary',
@@ -44,6 +48,8 @@ class ExternalActivityController extends Controller
             'created_by' => $user?->id,
             'updated_by' => $user?->id,
         ]);
+
+        $this->mergeActivityAttachments($request, $activity);
 
         if ($request->input('action') === 'submit') {
             return $this->performSubmit($activity);
@@ -69,11 +75,13 @@ class ExternalActivityController extends Controller
     {
         $this->authorizeExternalEdit($monitoring_activity);
 
-        $validated = $request->validate($this->externalValidationRules());
+        $validated = $request->validate($this->externalValidationRules($monitoring_activity));
 
-        $monitoring_activity->update($validated + [
+        $monitoring_activity->update($this->payloadWithNotes($request, $validated) + [
             'updated_by' => auth()->id(),
         ]);
+
+        $this->mergeActivityAttachments($request, $monitoring_activity);
 
         if ($request->input('action') === 'submit') {
             return $this->performSubmit($monitoring_activity);
@@ -232,17 +240,31 @@ class ExternalActivityController extends Controller
             'people' => Person::orderBy('name')->get(),
             'monitors' => Person::withRole('monitor')->orderBy('name')->get(),
             'activityTypes' => $this->constantOptions('activity_types'),
+            'activityDetails' => $this->constantOptions('activity_details'),
             'monitoringMethods' => $this->constantOptions('monitoring_methods'),
             'monitoringStages' => $this->constantOptions('monitoring_stages'),
+            'scaleExecution' => MonitoringActivity::scaleOptions('scale_execution'),
+            'scaleQuality' => MonitoringActivity::scaleOptions('scale_quality'),
+            'scaleClosure' => MonitoringActivity::scaleOptions('scale_closure'),
+            'scaleDeduction' => MonitoringActivity::scaleOptions('scale_deduction'),
             'suggestedReferenceCode' => $this->generateReferenceCode('external'),
             'canPickMonitor' => auth()->user()?->isMonitoringDirector() || auth()->user()?->super_admin,
+            'checkReferenceCodeUrl' => route('dashboard.monitoring-activities.check-reference-code'),
         ];
     }
 
     /** @return array<string, mixed> */
-    private function externalValidationRules(): array
+    private function externalValidationRules(?MonitoringActivity $activity = null): array
     {
+        $detailOptions = array_values($this->constantOptions('activity_details'));
+
         return [
+            'reference_code' => [
+                'required',
+                'string',
+                'max:100',
+                Rule::unique('monitoring_activities', 'reference_code')->ignore($activity?->id),
+            ],
             'center_id' => ['required', 'exists:centers,id'],
             'department_id' => ['required', 'exists:departments,id'],
             'section_id' => ['nullable', 'exists:sections,id'],
@@ -250,21 +272,51 @@ class ExternalActivityController extends Controller
             'activity_date' => ['nullable', 'date'],
             'activity_time' => ['nullable', 'date_format:H:i'],
             'activity_type' => ['nullable', 'string'],
+            'detail' => ['nullable', 'string', Rule::in($detailOptions)],
             'funder_id' => ['nullable', 'exists:funders,id'],
             'subject' => ['nullable', 'string'],
             'notes' => ['nullable', 'string'],
             'field_problem' => ['required', 'boolean'],
             'action_taken' => ['nullable', 'string'],
-            'execution_value' => ['nullable', 'numeric', 'min:0', 'max:100'],
-            'quality_value' => ['nullable', 'numeric', 'min:0', 'max:100'],
-            'closure_value' => ['nullable', 'numeric', 'min:0', 'max:100'],
-            'deduction_value' => ['nullable', 'numeric', 'max:0'],
+            'closure_date' => ['nullable', 'date'],
+            'positive_notes_text' => ['nullable', 'string'],
+            'negative_notes_text' => ['nullable', 'string'],
+            'recommendations_text' => ['nullable', 'string'],
+            'execution_value' => ['nullable', Rule::in($this->scaleAllowedValues('scale_execution'))],
+            'quality_value' => ['nullable', Rule::in($this->scaleAllowedValues('scale_quality'))],
+            'closure_value' => ['nullable', Rule::in($this->scaleAllowedValues('scale_closure'))],
+            'deduction_value' => ['nullable', Rule::in($this->scaleAllowedValues('scale_deduction'))],
             'monitoring_method' => ['nullable', 'string'],
             'monitoring_stage' => ['nullable', 'string'],
+            'activity_attachment_urls' => ['nullable', 'array'],
+            'activity_attachment_urls.*' => ['nullable', 'url', 'max:2048'],
+            'activity_attachments' => ['nullable', 'array'],
+            'activity_attachments.*' => ['nullable', 'file', 'max:10240', 'mimes:pdf,doc,docx,xls,xlsx,jpg,jpeg,png'],
         ];
     }
 
-    /** @return array<string, string> */
+    /** @return array<string, mixed> */
+    private function payloadWithNotes(Request $request, array $validated): array
+    {
+        unset($validated['positive_notes_text'], $validated['negative_notes_text'], $validated['recommendations_text']);
+
+        return $validated + [
+            'positive_notes' => $this->linesToArray($request->input('positive_notes_text')),
+            'negative_notes' => $this->linesToArray($request->input('negative_notes_text')),
+            'recommendations' => $this->linesToArray($request->input('recommendations_text')),
+        ];
+    }
+
+    /** @return list<int|float> */
+    private function scaleAllowedValues(string $scaleKey): array
+    {
+        return array_map(
+            fn (array $tier) => $tier['value'],
+            MonitoringActivity::scaleOptions($scaleKey)
+        );
+    }
+
+    /** @return array<int|string, string> */
     private function constantOptions(string $key): array
     {
         $value = Constant::where('key', $key)->value('value');

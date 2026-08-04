@@ -13,7 +13,7 @@
         <a href="{{ route('dashboard.monitoring-activities.index') }}" class="btn btn-label-secondary">رجوع للقائمة</a>
     </div>
 
-    <form action="{{ route('dashboard.external-activities.store') }}" method="post" class="external-activity-form">
+    <form action="{{ route('dashboard.external-activities.store') }}" method="post" enctype="multipart/form-data" class="external-activity-form">
         @csrf
         @include('dashboard.external-activities._form')
     </form>

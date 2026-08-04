@@ -6,7 +6,10 @@ use App\Models\Center;
 use App\Models\Department;
 use App\Models\MonitoringActivity;
 use App\Models\Person;
+use App\Models\ProjectExecution;
 use App\Models\User;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class ExternalActivitiesTest extends TestCase
@@ -44,17 +47,18 @@ class ExternalActivitiesTest extends TestCase
     }
 
     /** @return array<string, mixed> */
-    private function externalPayload(Center $center, Department $department): array
+    private function externalPayload(Center $center, Department $department, ?string $referenceCode = null): array
     {
         return [
+            'reference_code' => $referenceCode ?? ('MA-TEST-' . uniqid()),
             'center_id' => $center->id,
             'department_id' => $department->id,
             'subject' => 'نشاط خارجي — اختبار ' . uniqid(),
             'notes' => 'ملاحظة ميدانية',
             'field_problem' => 0,
-            'execution_value' => 85,
-            'quality_value' => 80,
-            'closure_value' => 75,
+            'execution_value' => 80,
+            'quality_value' => 85,
+            'closure_value' => 60,
             'deduction_value' => 0,
             'activity_date' => now()->format('Y-m-d'),
             'activity_time' => '10:00',
@@ -64,7 +68,9 @@ class ExternalActivitiesTest extends TestCase
     /** @param  array<string, mixed>  $data */
     private function putExternal(MonitoringActivity $activity, array $data)
     {
-        return $this->post(route('dashboard.external-activities.update', $activity), $data);
+        return $this->post(route('dashboard.external-activities.update', $activity), $data + [
+            'reference_code' => $data['reference_code'] ?? $activity->reference_code,
+        ]);
     }
 
     public function test_monitor_external_activity_full_workflow(): void
@@ -121,7 +127,8 @@ class ExternalActivitiesTest extends TestCase
 
         $this->putExternal($activity, array_merge($payload, [
             'subject' => $updatedSubject . ' - resubmit',
-            'closure_value' => 90,
+            'closure_value' => 100,
+            'reference_code' => $activity->reference_code,
             'action' => 'submit',
         ]))->assertRedirect(route('dashboard.monitoring-activities.show', $activity));
 
@@ -266,5 +273,138 @@ class ExternalActivitiesTest extends TestCase
 
         $this->get(route('dashboard.monitoring-activities.show', $activity))
             ->assertRedirect(route('dashboard.projects.executions.show', [$project, $execution]));
+    }
+
+    public function test_external_activity_accepts_custom_reference_code(): void
+    {
+        $monitorUser = $this->monitorUser();
+        ['center' => $center, 'department' => $department] = $this->orgDefaults();
+        $customCode = 'MA-CUSTOM-' . uniqid();
+        $payload = $this->externalPayload($center, $department, $customCode);
+
+        $this->actingAs($monitorUser);
+        $this->post(route('dashboard.external-activities.store'), $payload + ['action' => 'save'])
+            ->assertRedirect();
+
+        $activity = MonitoringActivity::where('reference_code', $customCode)->firstOrFail();
+        $this->assertSame($customCode, $activity->reference_code);
+
+        $activity->delete();
+    }
+
+    public function test_external_activity_rejects_duplicate_reference_code(): void
+    {
+        $monitorUser = $this->monitorUser();
+        ['center' => $center, 'department' => $department] = $this->orgDefaults();
+        $code = 'MA-DUP-' . uniqid();
+        $payload = $this->externalPayload($center, $department, $code);
+
+        $this->actingAs($monitorUser);
+        $this->post(route('dashboard.external-activities.store'), $payload + ['action' => 'save']);
+
+        $first = MonitoringActivity::where('reference_code', $code)->firstOrFail();
+
+        $payload['subject'] = 'نشاط مكرر — ' . uniqid();
+        $this->post(route('dashboard.external-activities.store'), $payload + ['action' => 'save'])
+            ->assertSessionHasErrors('reference_code');
+
+        $first->delete();
+    }
+
+    public function test_external_activity_saves_extended_content_fields(): void
+    {
+        $monitorUser = $this->monitorUser();
+        ['center' => $center, 'department' => $department] = $this->orgDefaults();
+        $payload = $this->externalPayload($center, $department) + [
+            'detail' => 'زيارة ميدانية',
+            'closure_date' => '2026-08-15',
+            'positive_notes_text' => "ملاحظة إيجابية 1\nملاحظة إيجابية 2",
+            'negative_notes_text' => "ملاحظة سلبية 1",
+            'recommendations_text' => "توصية 1\nتوصية 2",
+        ];
+
+        $this->actingAs($monitorUser);
+        $this->post(route('dashboard.external-activities.store'), $payload + ['action' => 'save'])
+            ->assertRedirect();
+
+        $activity = MonitoringActivity::where('subject', $payload['subject'])->firstOrFail();
+        $this->assertSame('زيارة ميدانية', $activity->detail);
+        $this->assertSame('2026-08-15', $activity->closure_date?->format('Y-m-d'));
+        $this->assertSame(['ملاحظة إيجابية 1', 'ملاحظة إيجابية 2'], $activity->positive_notes);
+        $this->assertSame(['ملاحظة سلبية 1'], $activity->negative_notes);
+        $this->assertSame(['توصية 1', 'توصية 2'], $activity->recommendations);
+
+        $activity->delete();
+    }
+
+    public function test_external_activity_stores_file_and_url_attachments(): void
+    {
+        Storage::fake('public');
+
+        $monitorUser = $this->monitorUser();
+        ['center' => $center, 'department' => $department] = $this->orgDefaults();
+        $payload = $this->externalPayload($center, $department);
+
+        $this->actingAs($monitorUser);
+        $this->post(route('dashboard.external-activities.store'), $payload + [
+            'action' => 'save',
+            'activity_attachment_urls' => ['https://example.com/report.pdf'],
+            'activity_attachments' => [
+                UploadedFile::fake()->create('evidence.pdf', 100, 'application/pdf'),
+            ],
+        ])->assertRedirect();
+
+        $activity = MonitoringActivity::where('subject', $payload['subject'])->firstOrFail();
+        $this->assertCount(2, $activity->attachmentsList());
+
+        $this->post(route('dashboard.external-activities.delete-attachment', $activity), [
+            'attachment_id' => $activity->attachmentsList()[0]['id'],
+        ])->assertRedirect();
+
+        $activity->refresh();
+        $this->assertCount(1, $activity->attachmentsList());
+
+        $activity->delete();
+    }
+
+    public function test_external_activity_scale_values_compute_kpi(): void
+    {
+        $monitorUser = $this->monitorUser();
+        ['center' => $center, 'department' => $department] = $this->orgDefaults();
+        $payload = $this->externalPayload($center, $department);
+
+        $this->actingAs($monitorUser);
+        $this->post(route('dashboard.external-activities.store'), $payload + ['action' => 'save']);
+
+        $activity = MonitoringActivity::where('subject', $payload['subject'])->firstOrFail();
+        $this->assertSame(80.0, $activity->execution_value);
+        $this->assertSame(85.0, $activity->quality_value);
+        $this->assertSame(60.0, $activity->closure_value);
+        $this->assertSame(0.0, $activity->deduction_value);
+        $this->assertSame(75.5, $activity->kpi_value);
+        $this->assertSame('جيد', $activity->kpi_rating);
+
+        $activity->delete();
+    }
+
+    public function test_director_home_shows_project_manager_column_in_execution_tracks(): void
+    {
+        $execution = ProjectExecution::query()
+            ->where('is_active', true)
+            ->whereHas('project.projectManager')
+            ->with('project.projectManager')
+            ->first();
+
+        if (! $execution?->project?->projectManager) {
+            $this->markTestSkipped('No active execution with project manager in database');
+        }
+
+        $director = $this->directorUser();
+        $this->actingAs($director);
+
+        $this->get(route('dashboard.home'))
+            ->assertOk()
+            ->assertSee('مدير المشروع')
+            ->assertSee($execution->project->projectManager->name);
     }
 }

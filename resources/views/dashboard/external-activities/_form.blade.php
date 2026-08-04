@@ -3,11 +3,20 @@
     $selectedCenterId = old('center_id', $isEditing ? $activity->center_id : '');
     $selectedDepartmentId = old('department_id', $isEditing ? $activity->department_id : '');
     $selectedSectionId = old('section_id', $isEditing ? $activity->section_id : '');
-    $referenceCode = $isEditing ? $activity->reference_code : ($suggestedReferenceCode ?? '');
+    $referenceCodeValue = old('reference_code', $isEditing ? $activity->reference_code : ($suggestedReferenceCode ?? ''));
     $defaultDate = old('activity_date', $isEditing && $activity->activity_date ? $activity->activity_date->format('Y-m-d') : now()->format('Y-m-d'));
     $defaultTime = old('activity_time', $isEditing ? $activity->activity_time : now()->format('H:i'));
     $fieldProblemValue = old('field_problem', $isEditing ? (int) $activity->field_problem : 0);
+    $closureDateValue = old('closure_date', $isEditing && $activity->closure_date ? $activity->closure_date->format('Y-m-d') : '');
     $canPickMonitor = $canPickMonitor ?? false;
+    $checkReferenceCodeUrl = $checkReferenceCodeUrl ?? route('dashboard.monitoring-activities.check-reference-code');
+
+    $scaleFields = [
+        'execution_value' => ['label' => 'التنفيذ', 'options' => $scaleExecution ?? []],
+        'quality_value' => ['label' => 'الجودة', 'options' => $scaleQuality ?? []],
+        'closure_value' => ['label' => 'الإغلاق', 'options' => $scaleClosure ?? []],
+        'deduction_value' => ['label' => 'الخصم', 'options' => $scaleDeduction ?? []],
+    ];
 @endphp
 
 @push('styles')
@@ -53,16 +62,27 @@
 @endif
 
 <div class="card mb-4">
-    <div class="card-header d-flex flex-wrap align-items-center gap-2">
+    <div class="card-header">
         <h5 class="mb-0">الأساسيات</h5>
-        <span class="text-muted small">رمز النشاط:</span>
-        <span class="badge bg-label-primary">{{ $referenceCode }}</span>
-        @if ($isEditing)
-            <span class="text-muted small">(يُولَّد تلقائياً ولا يمكن تغييره)</span>
-        @endif
     </div>
     <div class="card-body">
         <div class="row">
+            <div class="mb-4 col-md-4">
+                <label class="form-label" for="reference_code">رمز النشاط</label>
+                <input
+                    type="text"
+                    name="reference_code"
+                    id="reference_code"
+                    class="form-control @error('reference_code') is-invalid @enderror"
+                    value="{{ $referenceCodeValue }}"
+                    required
+                    autocomplete="off"
+                >
+                <div id="reference-code-feedback" class="form-text"></div>
+                @error('reference_code')
+                    <div class="invalid-feedback">{{ $message }}</div>
+                @enderror
+            </div>
             <div class="mb-4 col-md-4">
                 <x-form.input
                     type="date"
@@ -177,18 +197,17 @@
                 <x-form.textarea
                     name="subject"
                     label="الموضوع"
-                    rows="2"
+                    rows="1"
                     data-autogrow
                     :value="old('subject', $isEditing ? $activity->subject : '')"
                 />
             </div>
             <div class="mb-4 col-md-6">
-                <x-form.textarea
-                    name="notes"
-                    label="ملاحظة النشاط الرقابي"
-                    rows="2"
-                    data-autogrow
-                    :value="old('notes', $isEditing ? $activity->notes : '')"
+                <x-form.select
+                    name="detail"
+                    label="التفصيل"
+                    :options="$activityDetails ?? []"
+                    :value="old('detail', $isEditing ? $activity->detail : '')"
                 />
             </div>
             <div class="mb-4 col-md-4">
@@ -201,14 +220,38 @@
                     <div class="invalid-feedback">{{ $message }}</div>
                 @enderror
             </div>
-            <div class="mb-4 col-md-8">
+            <div class="mb-4 col-md-4">
+                <x-form.input
+                    type="date"
+                    name="closure_date"
+                    label="تاريخ الإغلاق"
+                    :value="$closureDateValue"
+                />
+            </div>
+            <div class="mb-4 col-md-12">
                 <x-form.textarea
                     name="action_taken"
                     label="الإجراء المتخذ"
-                    rows="3"
+                    rows="1"
                     data-autogrow
                     :value="old('action_taken', $isEditing ? $activity->action_taken : '')"
                 />
+            </div>
+            <div class="mb-4 col-md-12">
+                <x-form.textarea
+                    name="notes"
+                    label="ملاحظة النشاط الرقابي"
+                    rows="1"
+                    data-autogrow
+                    :value="old('notes', $isEditing ? $activity->notes : '')"
+                />
+            </div>
+            <div class="mb-4 col-md-12">
+                <label class="form-label">المرفقات</label>
+                @include('dashboard.external-activities._attachments_field', ['activity' => $activity ?? null])
+            </div>
+            <div class="mb-4 col-md-12">
+                @include('dashboard.external-activities._field_notes_editor', ['activity' => $activity ?? null])
             </div>
         </div>
     </div>
@@ -220,49 +263,33 @@
     </div>
     <div class="card-body">
         <div class="row">
-            <div class="mb-4 col-md-3">
-                <x-form.input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    max="100"
-                    name="execution_value"
-                    label="نسبة التنفيذ"
-                    :value="old('execution_value', $isEditing ? $activity->execution_value : '')"
-                />
-            </div>
-            <div class="mb-4 col-md-3">
-                <x-form.input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    max="100"
-                    name="quality_value"
-                    label="الجودة"
-                    :value="old('quality_value', $isEditing ? $activity->quality_value : '')"
-                />
-            </div>
-            <div class="mb-4 col-md-3">
-                <x-form.input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    max="100"
-                    name="closure_value"
-                    label="الإغلاق"
-                    :value="old('closure_value', $isEditing ? $activity->closure_value : '')"
-                />
-            </div>
-            <div class="mb-4 col-md-3">
-                <x-form.input
-                    type="number"
-                    step="0.01"
-                    max="0"
-                    name="deduction_value"
-                    label="الخصم (سالب أو صفر)"
-                    :value="old('deduction_value', $isEditing ? $activity->deduction_value : 0)"
-                />
-            </div>
+            @foreach ($scaleFields as $fieldName => $scaleConfig)
+                <div class="mb-4 col-md-3">
+                    <label class="form-label" for="{{ $fieldName }}">{{ $scaleConfig['label'] }}</label>
+                    <select
+                        name="{{ $fieldName }}"
+                        id="{{ $fieldName }}"
+                        class="form-select @error($fieldName) is-invalid @enderror"
+                    >
+                        <option value="">— اختر —</option>
+                        @foreach ($scaleConfig['options'] as $tier)
+                            @php
+                                $tierValue = $tier['value'] ?? null;
+                                $tierLabel = $tier['label'] ?? $tierValue;
+                                $selectedValue = old($fieldName, $isEditing ? $activity->{$fieldName} : '');
+                            @endphp
+                            @if ($tierValue !== null)
+                                <option value="{{ $tierValue }}" @selected((string) $selectedValue === (string) $tierValue)>
+                                    {{ $tierLabel }} — {{ $tierValue }}
+                                </option>
+                            @endif
+                        @endforeach
+                    </select>
+                    @error($fieldName)
+                        <div class="invalid-feedback">{{ $message }}</div>
+                    @enderror
+                </div>
+            @endforeach
             <div class="mb-4 col-md-6">
                 <x-form.select
                     name="monitoring_method"
@@ -303,9 +330,13 @@
     </div>
 </div>
 
+@include('dashboard.external-activities._attachment_modal')
+@include('dashboard.external-activities._attachment_delete_modal')
+
 @push('scripts')
 <script src="{{ asset('js/org-cascade.js') }}"></script>
 <script src="{{ asset('js/autogrow-textarea.js') }}"></script>
+<script src="{{ asset('js/activity-attachment-ui.js') }}"></script>
 <script>
     document.addEventListener('DOMContentLoaded', function () {
         if (typeof window.initOrgCascade === 'function') {
@@ -318,5 +349,69 @@
             });
         }
     });
+</script>
+<script>
+    (function () {
+        const referenceCodeInput = document.getElementById('reference_code');
+        const referenceCodeFeedback = document.getElementById('reference-code-feedback');
+        const checkReferenceCodeUrl = @json($checkReferenceCodeUrl);
+        const exceptActivityId = @json($isEditing ? $activity->id : null);
+        let referenceCodeAvailable = null;
+
+        async function checkReferenceCodeAvailability() {
+            if (!referenceCodeInput || !referenceCodeFeedback) {
+                return;
+            }
+
+            const value = referenceCodeInput.value.trim();
+
+            if (!value) {
+                referenceCodeFeedback.textContent = '';
+                referenceCodeFeedback.className = 'form-text';
+                referenceCodeInput.classList.remove('is-valid', 'is-invalid');
+                referenceCodeAvailable = null;
+                return;
+            }
+
+            referenceCodeFeedback.textContent = 'جاري التحقق...';
+            referenceCodeFeedback.className = 'form-text text-muted';
+            referenceCodeInput.classList.remove('is-valid', 'is-invalid');
+
+            const params = new URLSearchParams({
+                reference_code: value,
+                source_type: 'external',
+            });
+            if (exceptActivityId) {
+                params.set('except_id', String(exceptActivityId));
+            }
+
+            try {
+                const response = await fetch(`${checkReferenceCodeUrl}?${params.toString()}`, {
+                    headers: { 'Accept': 'application/json' },
+                });
+
+                if (!response.ok) {
+                    throw new Error('check failed');
+                }
+
+                const data = await response.json();
+                referenceCodeAvailable = Boolean(data.valid && data.available);
+                referenceCodeInput.classList.toggle('is-valid', referenceCodeAvailable);
+                referenceCodeInput.classList.toggle('is-invalid', !referenceCodeAvailable);
+
+                let message = data.message || '';
+                if (!data.available && data.suggested) {
+                    message += ` — اقتراح: ${data.suggested}`;
+                }
+                referenceCodeFeedback.textContent = message;
+                referenceCodeFeedback.className = referenceCodeAvailable ? 'form-text text-success' : 'form-text text-danger';
+            } catch (error) {
+                referenceCodeFeedback.textContent = 'تعذّر التحقق من الرمز.';
+                referenceCodeFeedback.className = 'form-text text-muted';
+            }
+        }
+
+        referenceCodeInput?.addEventListener('blur', checkReferenceCodeAvailability);
+    })();
 </script>
 @endpush
