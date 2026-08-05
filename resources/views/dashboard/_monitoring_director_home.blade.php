@@ -35,7 +35,7 @@
         </div>
         <div class="enhanced-card-body">
             <div class="raqib-home-table-container">
-                <table class="table enhanced-sticky raqib-dt home-dt table-striped table-hover mb-0 w-100">
+                <table class="table home-dt table-striped table-hover mb-0 w-100">
                     <thead>
                         <tr>
                             <th>الرمز</th>
@@ -81,7 +81,7 @@
         </div>
         <div class="enhanced-card-body">
             <div class="raqib-home-table-container">
-                <table class="table enhanced-sticky raqib-dt home-dt table-striped table-hover mb-0 w-100">
+                <table class="table home-dt table-striped table-hover mb-0 w-100">
                     <thead>
                         <tr>
                             <th>النوع</th>
@@ -154,7 +154,7 @@
                     <div class="p-4 text-center text-muted">لا توجد مسارات تنفيذ حالياً.</div>
                 @else
                     <div class="raqib-home-table-container">
-                        <table class="table enhanced-sticky raqib-dt home-dt table-striped table-hover mb-0 w-100">
+                        <table class="table home-dt table-striped table-hover mb-0 w-100">
                             <thead>
                                 <tr>
                                     <th>المشروع</th>
@@ -208,7 +208,7 @@
                     <div class="p-4 text-center text-muted">لا توجد مشاريع نشطة في الرقابة.</div>
                 @else
                     <div class="raqib-home-table-container">
-                        <table class="table enhanced-sticky raqib-dt home-dt table-striped table-hover mb-0 w-100">
+                        <table class="table home-dt table-striped table-hover mb-0 w-100">
                             <thead>
                                 <tr>
                                     <th>المشروع</th>

@@ -1,57 +1,197 @@
 /**
- * Home dashboard DataTables — same visual language as projects/monitoring lists,
- * scoped to card-embedded tables (not full-viewport layout).
+ * Home dashboard tables — Raqib look without full-page datatable layout side effects.
+ * Scoped to .raqib-home-dt-card only (does NOT touch body / global tables).
  */
 
-.raqib-home-dt-card {
+:root {
+    --home-dt-primary: #1e2e4f;
+    --home-dt-secondary: #2d4373;
+    --home-dt-tertiary: #3b5998;
+    --home-dt-primary-rgb: 59, 89, 152;
+}
+
+/* Card shell */
+.raqib-home-dt-card.enhanced-card {
+    border: none;
+    border-radius: 16px;
+    box-shadow: 0 8px 24px rgba(30, 46, 79, 0.08);
     overflow: hidden;
+    background: #fff;
 }
 
 .raqib-home-dt-card .card-header {
-    background: linear-gradient(135deg, rgba(44, 62, 80, 0.06) 0%, rgba(52, 73, 94, 0.04) 100%);
+    background: linear-gradient(135deg, rgba(30, 46, 79, 0.04) 0%, rgba(59, 89, 152, 0.06) 100%);
     border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+    padding: 0.85rem 1.15rem;
 }
 
 .raqib-home-dt-card .enhanced-card-body {
     padding: 0;
+    background: #fff;
 }
 
 .raqib-home-dt-card .raqib-home-table-container {
     width: 100%;
-    overflow: hidden;
+    overflow-x: auto;
 }
 
+/* DataTables wrapper */
 .raqib-home-dt-card .dataTables_wrapper {
     width: 100%;
     padding: 0;
 }
 
-.raqib-home-dt-card .dataTables_wrapper .dataTables_length,
-.raqib-home-dt-card .dataTables_wrapper .dataTables_filter {
-    padding: 0.75rem 1rem 0.25rem;
+.raqib-home-dt-card .dataTables_wrapper .home-dt-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.85rem 1rem;
+    background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.06);
 }
 
-.raqib-home-dt-card .dataTables_wrapper .dataTables_info,
+.raqib-home-dt-card .dataTables_wrapper .home-dt-toolbar label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0;
+    font-weight: 600;
+    color: #2c3e50;
+    font-size: 0.875rem;
+}
+
+.raqib-home-dt-card .dataTables_wrapper .dataTables_length select,
+.raqib-home-dt-card .dataTables_wrapper .dataTables_filter input {
+    border: 2px solid #e9ecef;
+    border-radius: 10px;
+    padding: 0.4rem 0.65rem;
+    font-size: 0.875rem;
+    color: #2c3e50;
+    background: #fff;
+    min-height: 36px;
+}
+
+.raqib-home-dt-card .dataTables_wrapper .dataTables_filter input {
+    min-width: 180px;
+}
+
+.raqib-home-dt-card .dataTables_wrapper .dataTables_length select:focus,
+.raqib-home-dt-card .dataTables_wrapper .dataTables_filter input:focus {
+    border-color: var(--home-dt-primary);
+    box-shadow: 0 0 0 0.15rem rgba(var(--home-dt-primary-rgb), 0.15);
+    outline: none;
+}
+
+.raqib-home-dt-card .dataTables_wrapper .home-dt-footer {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    border-top: 1px solid rgba(0, 0, 0, 0.06);
+    background: #fafbfc;
+}
+
+.raqib-home-dt-card .dataTables_wrapper .dataTables_info {
+    padding: 0;
+    font-size: 0.875rem;
+    color: #6c757d;
+}
+
 .raqib-home-dt-card .dataTables_wrapper .dataTables_paginate {
-    padding: 0.35rem 1rem 0.85rem;
+    padding: 0;
 }
 
+.raqib-home-dt-card .dataTables_wrapper .dataTables_paginate .paginate_button {
+    margin: 0 2px;
+}
+
+.raqib-home-dt-card .dataTables_wrapper .dataTables_paginate .paginate_button a,
+.raqib-home-dt-card .dataTables_wrapper .dataTables_paginate .paginate_button.current {
+    border-radius: 8px !important;
+    border: 1px solid #dee2e6 !important;
+    padding: 0.35rem 0.75rem !important;
+    font-size: 0.875rem;
+}
+
+.raqib-home-dt-card .dataTables_wrapper .dataTables_paginate .paginate_button.current {
+    background: linear-gradient(135deg, var(--home-dt-primary) 0%, var(--home-dt-tertiary) 100%) !important;
+    color: #fff !important;
+    border-color: var(--home-dt-primary) !important;
+}
+
+.raqib-home-dt-card .dataTables_wrapper .dataTables_paginate .paginate_button:not(.disabled):not(.current) a:hover {
+    background: rgba(var(--home-dt-primary-rgb), 0.08) !important;
+    border-color: var(--home-dt-secondary) !important;
+    color: var(--home-dt-primary) !important;
+}
+
+/* Table — normal table layout (NOT display:block / fixed height) */
 .raqib-home-dt-card table.home-dt {
     width: 100% !important;
-    margin-bottom: 0 !important;
+    margin: 0 !important;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 0.875rem;
 }
 
-.raqib-home-dt-card table.home-dt.dataTable thead th {
+.raqib-home-dt-card table.home-dt thead th {
+    background: linear-gradient(135deg, var(--home-dt-primary) 0%, var(--home-dt-secondary) 50%, var(--home-dt-tertiary) 100%);
+    color: #fff !important;
+    font-weight: 700;
+    text-align: center;
+    padding: 0.75rem 0.65rem;
+    border: none;
     white-space: nowrap;
+    vertical-align: middle;
+    position: relative;
 }
 
-.raqib-home-dt-card .dataTables_scrollHead,
-.raqib-home-dt-card .dataTables_scrollBody {
-    border-bottom: none !important;
+.raqib-home-dt-card table.home-dt thead th:not(:last-child)::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 22%;
+    height: 56%;
+    width: 1px;
+    background: rgba(255, 255, 255, 0.28);
+}
+
+.raqib-home-dt-card table.home-dt tbody td {
+    padding: 0.65rem 0.75rem;
+    vertical-align: middle;
+    color: #2c3e50;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+    white-space: normal;
+}
+
+.raqib-home-dt-card table.home-dt tbody tr:hover {
+    background: rgba(var(--home-dt-primary-rgb), 0.04);
+}
+
+.raqib-home-dt-card table.home-dt tbody tr:nth-child(even) {
+    background: rgba(248, 249, 250, 0.85);
+}
+
+.raqib-home-dt-card table.home-dt tbody tr:nth-child(even):hover {
+    background: rgba(var(--home-dt-primary-rgb), 0.06);
+}
+
+.raqib-home-dt-card table.home-dt.dataTable.no-footer {
+    border-bottom: none;
 }
 
 .raqib-home-dt-card .dataTables_empty {
-    padding: 1.5rem !important;
+    padding: 1.25rem !important;
     text-align: center;
     color: #6c757d;
+}
+
+/* Hide DataTables sort icons on action columns */
+.raqib-home-dt-card table.home-dt th.no-sort::after,
+.raqib-home-dt-card table.home-dt th.no-sort::before {
+    display: none !important;
 }
