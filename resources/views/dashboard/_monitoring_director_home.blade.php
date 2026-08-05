@@ -35,7 +35,7 @@
         </div>
         <div class="card-body p-0">
             <div class="table-responsive">
-                <table class="table table-hover mb-0 align-middle">
+                <table class="table table-hover mb-0 align-middle home-dt">
                     <thead class="table-light">
                         <tr>
                             <th>الرمز</th>
@@ -44,7 +44,7 @@
                             <th>المراقب</th>
                             <th>تاريخ الإرسال</th>
                             <th>الحالة</th>
-                            <th class="text-end">إجراء</th>
+                            <th class="text-end no-sort">إجراء</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -81,15 +81,16 @@
         </div>
         <div class="card-body p-0">
             <div class="table-responsive">
-                <table class="table table-hover mb-0 align-middle">
+                <table class="table table-hover mb-0 align-middle home-dt">
                     <thead class="table-light">
                         <tr>
                             <th>النوع</th>
                             <th>الوصف</th>
                             <th>المنسق / المسؤول</th>
                             <th>المراقب</th>
+                            <th>تاريخ بدء التنفيذ</th>
                             <th>الحالة</th>
-                            <th class="text-end">إجراء</th>
+                            <th class="text-end no-sort">إجراء</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -103,6 +104,7 @@
                                 </td>
                                 <td class="small">{{ $execution->coordinatorDisplayName() }}</td>
                                 <td class="small">{{ $execution->monitorPerson?->name ?? '—' }}</td>
+                                <td class="small">{{ $execution->project?->execution_start_date?->format('Y-m-d') ?? '—' }}</td>
                                 <td>
                                     <span class="badge bg-label-{{ $statusBadgeClass($execution->workflow_status) }}">
                                         {{ $executionStatusLabels[$execution->workflow_status] ?? $execution->workflow_status }}
@@ -122,6 +124,7 @@
                                 </td>
                                 <td class="small">{{ $project->coordinator?->name ?? '—' }}</td>
                                 <td class="small">{{ $project->monitorPerson?->name ?? '—' }}</td>
+                                <td class="small">{{ $project->execution_start_date?->format('Y-m-d') ?? '—' }}</td>
                                 <td>
                                     <span class="badge bg-label-{{ $statusBadgeClass($project->workflow_status) }}">
                                         {{ $statusLabels[$project->workflow_status] ?? $project->workflow_status }}
@@ -151,7 +154,7 @@
                     <div class="p-4 text-center text-muted">لا توجد مسارات تنفيذ حالياً.</div>
                 @else
                     <div class="table-responsive">
-                        <table class="table table-hover mb-0 align-middle">
+                        <table class="table table-hover mb-0 align-middle home-dt">
                             <thead class="table-light">
                                 <tr>
                                     <th>المشروع</th>
@@ -159,12 +162,13 @@
                                     <th>مدير المشروع</th>
                                     <th>المنسق</th>
                                     <th>المراقب</th>
+                                    <th>تاريخ بدء التنفيذ</th>
                                     <th>الحالة</th>
-                                    <th class="text-end">إجراء</th>
+                                    <th class="text-end no-sort">إجراء</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                @foreach ($pipelineExecutions->take(15) as $execution)
+                                @foreach ($pipelineExecutions as $execution)
                                     <tr>
                                         <td>
                                             <strong>{{ $execution->project?->project_name ?: '—' }}</strong>
@@ -174,6 +178,7 @@
                                         <td class="small">{{ $execution->project?->projectManager?->name ?? '—' }}</td>
                                         <td class="small">{{ $execution->coordinatorDisplayName() }}</td>
                                         <td class="small">{{ $execution->monitorPerson?->name ?? '—' }}</td>
+                                        <td class="small">{{ $execution->project?->execution_start_date?->format('Y-m-d') ?? '—' }}</td>
                                         <td>
                                             <span class="badge bg-label-{{ $statusBadgeClass($execution->workflow_status) }}">
                                                 {{ $executionStatusLabels[$execution->workflow_status] ?? $execution->workflow_status }}
@@ -202,39 +207,62 @@
                 @if ($activeSingleProjects->isEmpty() && $executionTrackProjects->isEmpty())
                     <div class="p-4 text-center text-muted">لا توجد مشاريع نشطة في الرقابة.</div>
                 @else
-                    <div class="list-group list-group-flush">
-                        @foreach ($activeSingleProjects as $project)
-                            <div class="list-group-item d-flex justify-content-between align-items-start gap-2">
-                                <div class="flex-grow-1">
-                                    <div class="fw-semibold">{{ $project->project_name }}</div>
-                                    <div class="small text-muted">
-                                        {{ $project->project_number ?: '—' }}
-                                        · مدير المشروع: {{ $project->projectManager?->name ?? '—' }}
-                                    </div>
-                                    <span class="badge bg-label-{{ $statusBadgeClass($project->workflow_status) }} mt-1">
-                                        {{ $statusLabels[$project->workflow_status] ?? $project->workflow_status }}
-                                    </span>
-                                </div>
-                                <a href="{{ route('dashboard.projects.show', $project) }}" class="btn btn-sm btn-outline-primary shrink-0">متابعة</a>
-                            </div>
-                        @endforeach
-                        @foreach ($executionTrackProjects as $project)
-                            <div class="list-group-item d-flex justify-content-between align-items-start gap-2">
-                                <div class="flex-grow-1">
-                                    <div class="fw-semibold">{{ $project->project_name }}</div>
-                                    <div class="small text-muted">
-                                        {{ $project->project_number ?: '—' }}
-                                        · مدير المشروع: {{ $project->projectManager?->name ?? '—' }}
-                                        · {{ $project->active_executions_count ?? 0 }} مسار
-                                        @if (($project->pipeline_executions_count ?? 0) > 0)
-                                            · {{ $project->pipeline_executions_count }} في الرقابة
-                                        @endif
-                                    </div>
-                                    <span class="badge bg-label-info mt-1">مسارات متعددة</span>
-                                </div>
-                                <a href="{{ route('dashboard.projects.show', $project) }}" class="btn btn-sm btn-outline-primary shrink-0">متابعة</a>
-                            </div>
-                        @endforeach
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0 align-middle home-dt">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>المشروع</th>
+                                    <th>مدير المشروع</th>
+                                    <th>تاريخ بدء التنفيذ</th>
+                                    <th>المسارات</th>
+                                    <th>الحالة</th>
+                                    <th class="text-end no-sort">إجراء</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach ($activeSingleProjects as $project)
+                                    <tr>
+                                        <td>
+                                            <div class="fw-semibold">{{ $project->project_name }}</div>
+                                            <div class="small text-muted">{{ $project->project_number ?: '—' }}</div>
+                                        </td>
+                                        <td class="small">{{ $project->projectManager?->name ?? '—' }}</td>
+                                        <td class="small">{{ $project->execution_start_date?->format('Y-m-d') ?? '—' }}</td>
+                                        <td class="small">—</td>
+                                        <td>
+                                            <span class="badge bg-label-{{ $statusBadgeClass($project->workflow_status) }}">
+                                                {{ $statusLabels[$project->workflow_status] ?? $project->workflow_status }}
+                                            </span>
+                                        </td>
+                                        <td class="text-end">
+                                            <a href="{{ route('dashboard.projects.show', $project) }}" class="btn btn-sm btn-outline-primary">متابعة</a>
+                                        </td>
+                                    </tr>
+                                @endforeach
+                                @foreach ($executionTrackProjects as $project)
+                                    <tr>
+                                        <td>
+                                            <div class="fw-semibold">{{ $project->project_name }}</div>
+                                            <div class="small text-muted">{{ $project->project_number ?: '—' }}</div>
+                                        </td>
+                                        <td class="small">{{ $project->projectManager?->name ?? '—' }}</td>
+                                        <td class="small">{{ $project->execution_start_date?->format('Y-m-d') ?? '—' }}</td>
+                                        <td class="small">
+                                            {{ $project->active_executions_count ?? 0 }} مسار
+                                            @if (($project->pipeline_executions_count ?? 0) > 0)
+                                                <br><span class="text-muted">{{ $project->pipeline_executions_count }} في الرقابة</span>
+                                            @endif
+                                        </td>
+                                        <td>
+                                            <span class="badge bg-label-info">مسارات متعددة</span>
+                                        </td>
+                                        <td class="text-end">
+                                            <a href="{{ route('dashboard.projects.show', $project) }}" class="btn btn-sm btn-outline-primary">متابعة</a>
+                                        </td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
                     </div>
                 @endif
             </div>

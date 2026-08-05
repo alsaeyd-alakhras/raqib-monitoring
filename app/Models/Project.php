@@ -1447,6 +1447,22 @@ class Project extends Model
         return (bool) $this->uses_execution_tracks;
     }
 
+    public function isPassageCompleted(): bool
+    {
+        if (! $this->usesExecutionTracks()) {
+            return $this->workflow_status === 'passage_complete';
+        }
+
+        $active = match (true) {
+            $this->relationLoaded('activeExecutions') => $this->activeExecutions,
+            $this->relationLoaded('executions') => $this->executions->where('is_active', true)->values(),
+            default => $this->activeExecutions()->get(),
+        };
+
+        return $active->isNotEmpty()
+            && $active->every(fn (ProjectExecution $execution) => $execution->workflow_status === 'passage_complete');
+    }
+
     /**
      * يُنشئ/يُحدّث مسارات التنفيذ من execution_regions عند غيابها (إصلاح بيانات قديمة).
      */

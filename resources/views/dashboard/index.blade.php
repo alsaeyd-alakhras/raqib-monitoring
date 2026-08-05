@@ -15,6 +15,26 @@
         || auth()->user()?->super_admin;
 @endphp
 <x-front-layout>
+    @push('styles')
+        <link rel="stylesheet" href="{{ asset('css/datatable/jquery.dataTables.min.css') }}">
+        <link rel="stylesheet" href="{{ asset('css/datatable/dataTables.bootstrap4.css') }}">
+        <style>
+            .home-dt-wrapper .dataTables_wrapper .dataTables_filter,
+            .home-dt-wrapper .dataTables_wrapper .dataTables_length {
+                padding: 0.75rem 1rem 0;
+            }
+
+            .home-dt-wrapper .dataTables_wrapper .dataTables_info,
+            .home-dt-wrapper .dataTables_wrapper .dataTables_paginate {
+                padding: 0.5rem 1rem 0.75rem;
+            }
+
+            table.home-dt thead th {
+                white-space: nowrap;
+            }
+        </style>
+    @endpush
+
     @if (session('success'))
         <div class="alert alert-success">{{ session('success') }}</div>
     @endif
@@ -77,8 +97,8 @@
                     @if (($actionExecutions ?? collect())->isEmpty())
                         <div class="p-4 text-center text-muted">لا توجد مسارات تتطلب إجراءك حالياً.</div>
                     @else
-                        <div class="table-responsive">
-                            <table class="table table-hover mb-0 align-middle">
+                        <div class="table-responsive home-dt-wrapper">
+                            <table class="table table-hover mb-0 align-middle home-dt">
                                 <thead class="table-light">
                                     <tr>
                                         <th>المشروع</th>
@@ -87,8 +107,9 @@
                                             <th>المنسق</th>
                                         @endif
                                         <th>الجاهزية</th>
+                                        <th>تاريخ بدء التنفيذ</th>
                                         <th>الحالة</th>
-                                        <th></th>
+                                        <th class="no-sort"></th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -110,6 +131,7 @@
                                             <td>
                                                 {{ $execution->coordinator_readiness_pct !== null ? number_format($execution->coordinator_readiness_pct, 1) . '%' : '—' }}
                                             </td>
+                                            <td class="small">{{ $execution->project?->execution_start_date?->format('Y-m-d') ?? '—' }}</td>
                                             <td>
                                                 <span class="badge bg-label-{{ match($execution->workflow_status) {
                                                     'passage_complete' => 'success',
@@ -139,8 +161,8 @@
                         <a href="{{ route('dashboard.project-executions.index') }}" class="btn btn-sm btn-label-secondary">عرض الكل</a>
                     </div>
                     <div class="card-body p-0">
-                        <div class="table-responsive">
-                            <table class="table table-hover mb-0 align-middle">
+                        <div class="table-responsive home-dt-wrapper">
+                            <table class="table table-hover mb-0 align-middle home-dt">
                                 <thead class="table-light">
                                     <tr>
                                         <th>المشروع</th>
@@ -149,12 +171,13 @@
                                             <th>المنسق</th>
                                         @endif
                                         <th>الجاهزية</th>
+                                        <th>تاريخ بدء التنفيذ</th>
                                         <th>الحالة</th>
-                                        <th></th>
+                                        <th class="no-sort"></th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    @foreach ($visibleExecutions->take(10) as $execution)
+                                    @foreach ($visibleExecutions as $execution)
                                         <tr>
                                             <td>
                                                 <strong>{{ $execution->project?->project_number ?: '—' }}</strong>
@@ -165,6 +188,7 @@
                                                 <td class="small">{{ $execution->coordinatorDisplayName() }}</td>
                                             @endif
                                             <td>{{ $execution->coordinator_readiness_pct !== null ? number_format($execution->coordinator_readiness_pct, 1) . '%' : '—' }}</td>
+                                            <td class="small">{{ $execution->project?->execution_start_date?->format('Y-m-d') ?? '—' }}</td>
                                             <td>
                                                 <span class="badge bg-label-info">{{ $executionStatusLabels[$execution->workflow_status] ?? $execution->workflow_status }}</span>
                                             </td>
@@ -218,14 +242,15 @@
                     @if (($actionProjects ?? collect())->isEmpty())
                         <div class="p-4 text-center text-muted">لا توجد مشاريع تتطلب إجراءك حالياً.</div>
                     @else
-                        <div class="table-responsive">
-                            <table class="table table-hover mb-0">
+                        <div class="table-responsive home-dt-wrapper">
+                            <table class="table table-hover mb-0 home-dt">
                                 <thead class="table-light">
                                     <tr>
                                         <th>المشروع</th>
                                         <th>الحالة</th>
+                                        <th>تاريخ بدء التنفيذ</th>
                                         <th>الإجراء الحالي</th>
-                                        <th></th>
+                                        <th class="no-sort"></th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -239,6 +264,7 @@
                                         <tr>
                                             <td>{{ $project->project_name }}</td>
                                             <td>{{ $statusLabels[$project->workflow_status] ?? $project->workflow_status }}</td>
+                                            <td class="small">{{ $project->execution_start_date?->format('Y-m-d') ?? '—' }}</td>
                                             <td class="small">{{ $project->currentActionLabel() }}</td>
                                             <td class="text-end">
                                                 <a href="{{ $actionUrl }}" class="btn btn-sm btn-primary">متابعة</a>
@@ -273,4 +299,38 @@
             </div>
         </div>
     @endif
+
+    @push('scripts')
+        <script src="{{ asset('js/plugins/datatable/jquery.dataTables.min.js') }}"></script>
+        <script>
+            document.addEventListener('DOMContentLoaded', function () {
+                if (typeof $.fn.DataTable === 'undefined') {
+                    return;
+                }
+
+                const arabicFileJson = "{{ asset('files/Arabic.json') }}";
+
+                $('table.home-dt').each(function () {
+                    if ($.fn.DataTable.isDataTable(this)) {
+                        return;
+                    }
+
+                    $(this).DataTable({
+                        serverSide: false,
+                        ordering: true,
+                        order: [],
+                        searching: true,
+                        pageLength: 10,
+                        lengthMenu: [10, 25, 50, 100],
+                        scrollY: '420px',
+                        scrollCollapse: true,
+                        paging: true,
+                        autoWidth: false,
+                        language: { url: arabicFileJson },
+                        columnDefs: [{ targets: 'no-sort', orderable: false }],
+                    });
+                });
+            });
+        </script>
+    @endpush
 </x-front-layout>

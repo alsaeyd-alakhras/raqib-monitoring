@@ -46,7 +46,6 @@ class HomeController extends Controller
             $executionStats = $this->buildExecutionStats($visibleExecutions, $role);
             $actionExecutions = $visibleExecutions
                 ->filter(fn (ProjectExecution $execution) => $execution->needsActionFromPerson($person))
-                ->take(15)
                 ->values();
         }
 
@@ -56,12 +55,10 @@ class HomeController extends Controller
 
         $actionProjects = match (true) {
             ! $usesExecutionDashboard => $visibleProjects
-                ->filter(fn (Project $project) => $project->needsActionFromPerson($person))
-                ->take(10),
+                ->filter(fn (Project $project) => $project->needsActionFromPerson($person)),
             $user?->isMonitoringDirector() => $visibleProjects
                 ->filter(fn (Project $project) => ! $project->usesExecutionTracks()
-                    && $project->needsActionFromPerson($person))
-                ->take(10),
+                    && $project->needsActionFromPerson($person)),
             default => collect(),
         };
 
@@ -136,7 +133,6 @@ class HomeController extends Controller
             ->filter(fn (Project $project) => ! $project->usesExecutionTracks()
                 && in_array($project->workflow_status, self::MONITORING_PIPELINE_STATUSES, true))
             ->sortByDesc('updated_at')
-            ->take(15)
             ->values();
 
         $executionTrackProjects = Project::query()
@@ -151,7 +147,6 @@ class HomeController extends Controller
             ])
             ->with('projectManager')
             ->orderByDesc('updated_at')
-            ->take(12)
             ->get();
 
         return [
@@ -163,7 +158,6 @@ class HomeController extends Controller
                 ->with(['monitorPerson', 'center', 'department'])
                 ->orderByDesc('submitted_at')
                 ->orderByDesc('updated_at')
-                ->take(15)
                 ->get(),
             'pendingApprovalCount' => MonitoringActivity::query()
                 ->pendingDirectorApproval()

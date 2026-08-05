@@ -77,7 +77,7 @@
     @php
         $canCoordinator = $canViewCoordinatorColumnInList ?? true;
         $canMonitor = $canViewMonitorColumnInList ?? false;
-        $stickyColCount = 4;
+        $stickyColCount = 5;
 
         $scrollFields = [
             'project_name' => 'اسم المشروع',
@@ -95,6 +95,8 @@
         }
         $scrollFields['funder_name'] = 'الممول';
         $scrollFields['executions_summary'] = 'المسارات';
+        $scrollFields['created_at'] = 'تاريخ الإضافة';
+        $scrollFields['planned_start_date'] = 'تاريخ بداية التنفيذ المخطط';
         $scrollFields['workflow_status_label'] = 'الحالة';
         $scrollFields['current_action_label'] = 'الإجراء الحالي';
         if ($canCoordinator) {
@@ -110,9 +112,10 @@
                         <thead>
                             <tr>
                                 <th class="sticky-r1 col-index text-center">#</th>
-                                <th class="sticky-r2 col-icon text-center" title="عرض"><i class="fas fa-eye"></i></th>
-                                <th class="sticky-r3 col-icon text-center" title="تعديل"><i class="fas fa-edit"></i></th>
-                                <th class="sticky-r4 col-code text-center">
+                                <th class="sticky-r2 col-verify text-center" title="اكتمال المرور"><i class="fas fa-check-circle"></i></th>
+                                <th class="sticky-r3 col-icon text-center" title="عرض"><i class="fas fa-eye"></i></th>
+                                <th class="sticky-r4 col-icon text-center" title="تعديل"><i class="fas fa-edit"></i></th>
+                                <th class="sticky-r5 col-code text-center">
                                     <div class="d-flex align-items-center justify-content-center gap-1">
                                         <span>الرقم</span>
                                         <div class="enhanced-filter-dropdown d-flex align-items-center">
@@ -220,11 +223,19 @@
                     + '</span>';
             }
 
+            function buildCompletionHtml(isComplete) {
+                if (isComplete) {
+                    return '<span class="verify-icon ok" title="تم المرور"><i class="fas fa-check-circle"></i></span>';
+                }
+
+                return '<span class="verify-icon fail" title="لم يكتمل بعد"><i class="fas fa-times-circle"></i></span>';
+            }
+
             const fields = [
-                '#', 'view', 'edit', 'project_number', 'project_name', 'project_type', 'org_label', 'project_manager_name',
+                '#', 'completion', 'view', 'edit', 'project_number', 'project_name', 'project_type', 'org_label', 'project_manager_name',
                 ...(canCoordinator ? ['coordinator_name', 'coordinator_readiness_pct'] : []),
                 ...(canMonitor ? ['monitor_name', 'monitor_readiness_pct'] : []),
-                'funder_name', 'executions_summary', 'workflow_status_label', 'current_action_label',
+                'funder_name', 'executions_summary', 'created_at', 'planned_start_date', 'workflow_status_label', 'current_action_label',
                 ...(canCoordinator ? ['closure_docs_label'] : []),
                 'actions'
             ];
@@ -232,20 +243,26 @@
             const columnsTable = [
                 { data: 'DT_RowIndex', name: 'DT_RowIndex', orderable: false, className: 'sticky-r1 col-index text-center' },
                 {
-                    data: 'id', name: 'view', orderable: false, searchable: false, className: 'sticky-r2 col-icon',
+                    data: 'is_complete', name: 'is_complete', orderable: false, searchable: false, className: 'sticky-r2 col-verify text-center',
+                    render: function (data) {
+                        return buildCompletionHtml(data);
+                    }
+                },
+                {
+                    data: 'id', name: 'view', orderable: false, searchable: false, className: 'sticky-r3 col-icon',
                     render: function (data) {
                         if (!abilityView) return '';
                         return '<a href="' + urlShow.replace(':id', data) + '" class="action-btn btn-view" title="عرض"><i class="fas fa-eye"></i></a>';
                     }
                 },
                 {
-                    data: 'id', name: 'edit', orderable: false, searchable: false, className: 'sticky-r3 col-icon',
+                    data: 'id', name: 'edit', orderable: false, searchable: false, className: 'sticky-r4 col-icon',
                     render: function (data) {
                         if (!abilityEdit) return '';
                         return '<a href="' + urlEdit.replace(':id', data) + '" class="action-btn btn-edit" title="تعديل"><i class="fas fa-edit"></i></a>';
                     }
                 },
-                { data: 'project_number', name: 'project_number', orderable: false, className: 'sticky-r4 col-code',
+                { data: 'project_number', name: 'project_number', orderable: false, className: 'sticky-r5 col-code',
                     render: function (data) {
                         return renderTruncatedCode(data);
                     }
@@ -281,6 +298,8 @@
             columnsTable.push(
                 { data: 'funder_name', name: 'funder_name', orderable: false },
                 { data: 'executions_summary', name: 'executions_summary', orderable: false, className: 'text-center' },
+                { data: 'created_at', name: 'created_at', orderable: false, className: 'text-center' },
+                { data: 'planned_start_date', name: 'planned_start_date', orderable: false, className: 'text-center' },
                 { data: 'workflow_status_label', name: 'workflow_status_label', orderable: false },
                 { data: 'current_action_label', name: 'current_action_label', orderable: false }
             );

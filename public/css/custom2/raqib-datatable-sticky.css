@@ -226,11 +226,12 @@ table.raqib-dt thead th.col-verify i {
     opacity: 0.95;
 }
 
-/* Horizontal pin offsets — projects: # | view | edit | number */
+/* Horizontal pin offsets — projects: # | complete | view | edit | number */
 table.raqib-dt.projects-dt .sticky-r1 { right: 0 !important; }
 table.raqib-dt.projects-dt .sticky-r2 { right: var(--raqib-col-index-w) !important; }
-table.raqib-dt.projects-dt .sticky-r3 { right: calc(var(--raqib-col-index-w) + var(--raqib-col-icon-w)) !important; }
-table.raqib-dt.projects-dt .sticky-r4 { right: calc(var(--raqib-col-index-w) + 2 * var(--raqib-col-icon-w)) !important; }
+table.raqib-dt.projects-dt .sticky-r3 { right: calc(var(--raqib-col-index-w) + var(--raqib-col-verify-w)) !important; }
+table.raqib-dt.projects-dt .sticky-r4 { right: calc(var(--raqib-col-index-w) + var(--raqib-col-verify-w) + var(--raqib-col-icon-w)) !important; }
+table.raqib-dt.projects-dt .sticky-r5 { right: calc(var(--raqib-col-index-w) + var(--raqib-col-verify-w) + 2 * var(--raqib-col-icon-w)) !important; }
 
 /* monitoring: # | verify | view | edit | code */
 table.raqib-dt.monitoring-dt .sticky-r1 { right: 0 !important; }

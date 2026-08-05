@@ -102,6 +102,9 @@ class ProjectController extends Controller
                     'closure_docs_complete' => $closureDocs['complete'],
                     'closure_docs_label' => $closureDocs['label'],
                     'needs_my_action' => $needsMyAction,
+                    'created_at' => $project->created_at?->format('Y-m-d') ?? '-',
+                    'planned_start_date' => $project->planned_start_date?->format('Y-m-d') ?? '-',
+                    'is_complete' => $project->isPassageCompleted(),
                 ];
             })->values();
 
