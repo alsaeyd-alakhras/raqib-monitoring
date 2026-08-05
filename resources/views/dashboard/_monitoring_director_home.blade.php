@@ -24,7 +24,7 @@
 @endphp
 
 @if ($pendingApprovalActivities->isNotEmpty())
-    <div class="card mb-4 border-warning border-2">
+    <div class="card mb-4 border-warning border-2 shadow-lg enhanced-card raqib-home-dt-card">
         <div class="card-header bg-label-warning d-flex justify-content-between align-items-center flex-wrap gap-2">
             <h5 class="mb-0">
                 <i class="fa-solid fa-clipboard-check me-2"></i>
@@ -33,10 +33,10 @@
             </h5>
             <a href="{{ route('dashboard.monitoring-activities.index', ['pending_my_approval' => 1]) }}" class="btn btn-sm btn-warning">عرض الكل</a>
         </div>
-        <div class="card-body p-0">
-            <div class="table-responsive">
-                <table class="table table-hover mb-0 align-middle home-dt">
-                    <thead class="table-light">
+        <div class="enhanced-card-body">
+            <div class="raqib-home-table-container">
+                <table class="table enhanced-sticky raqib-dt home-dt table-striped table-hover mb-0 w-100">
+                    <thead>
                         <tr>
                             <th>الرمز</th>
                             <th>المصدر</th>
@@ -75,14 +75,14 @@
 @endif
 
 @if (($actionExecutions ?? collect())->isNotEmpty() || ($actionProjects ?? collect())->isNotEmpty())
-    <div class="card mb-4 border-warning border-2">
+    <div class="card mb-4 border-warning border-2 shadow-lg enhanced-card raqib-home-dt-card">
         <div class="card-header bg-label-warning d-flex justify-content-between align-items-center flex-wrap gap-2">
             <h5 class="mb-0"><i class="fa-solid fa-bell me-2"></i>يتطلب إجراءك الآن — مشاريع ومسارات</h5>
         </div>
-        <div class="card-body p-0">
-            <div class="table-responsive">
-                <table class="table table-hover mb-0 align-middle home-dt">
-                    <thead class="table-light">
+        <div class="enhanced-card-body">
+            <div class="raqib-home-table-container">
+                <table class="table enhanced-sticky raqib-dt home-dt table-striped table-hover mb-0 w-100">
+                    <thead>
                         <tr>
                             <th>النوع</th>
                             <th>الوصف</th>
@@ -144,18 +144,18 @@
 
 <div class="row g-4 mb-4">
     <div class="col-lg-7">
-        <div class="card h-100">
+        <div class="card h-100 shadow-lg enhanced-card raqib-home-dt-card">
             <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
                 <h5 class="mb-0"><i class="fa-solid fa-route me-2"></i>مسارات التنفيذ</h5>
                 <a href="{{ route('dashboard.project-executions.index') }}" class="btn btn-sm btn-label-primary">كل المسارات</a>
             </div>
-            <div class="card-body p-0">
+            <div class="enhanced-card-body">
                 @if ($pipelineExecutions->isEmpty())
                     <div class="p-4 text-center text-muted">لا توجد مسارات تنفيذ حالياً.</div>
                 @else
-                    <div class="table-responsive">
-                        <table class="table table-hover mb-0 align-middle home-dt">
-                            <thead class="table-light">
+                    <div class="raqib-home-table-container">
+                        <table class="table enhanced-sticky raqib-dt home-dt table-striped table-hover mb-0 w-100">
+                            <thead>
                                 <tr>
                                     <th>المشروع</th>
                                     <th>المنطقة</th>
@@ -198,18 +198,18 @@
     </div>
 
     <div class="col-lg-5">
-        <div class="card h-100">
+        <div class="card h-100 shadow-lg enhanced-card raqib-home-dt-card">
             <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
                 <h5 class="mb-0"><i class="fa-solid fa-diagram-project me-2"></i>المشاريع النشطة</h5>
                 <a href="{{ route('dashboard.projects.index') }}" class="btn btn-sm btn-label-secondary">كل المشاريع</a>
             </div>
-            <div class="card-body p-0">
+            <div class="enhanced-card-body">
                 @if ($activeSingleProjects->isEmpty() && $executionTrackProjects->isEmpty())
                     <div class="p-4 text-center text-muted">لا توجد مشاريع نشطة في الرقابة.</div>
                 @else
-                    <div class="table-responsive">
-                        <table class="table table-hover mb-0 align-middle home-dt">
-                            <thead class="table-light">
+                    <div class="raqib-home-table-container">
+                        <table class="table enhanced-sticky raqib-dt home-dt table-striped table-hover mb-0 w-100">
+                            <thead>
                                 <tr>
                                     <th>المشروع</th>
                                     <th>مدير المشروع</th>

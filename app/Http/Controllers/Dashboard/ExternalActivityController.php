@@ -169,7 +169,7 @@ class ExternalActivityController extends Controller
         $this->guardExternalActivity($activity);
         $this->guardStatus($activity, ['in_progress']);
 
-        if (! $activity->isAssignedMonitor(auth()->user()) && ! auth()->user()?->super_admin) {
+        if (! $activity->canSubmitExternal(auth()->user())) {
             abort(403, 'هذا النشاط غير مُسنَد إليك.');
         }
 

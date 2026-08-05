@@ -474,7 +474,9 @@ class ProjectController extends Controller
             ? 'تم تصحيح بيانات التخصيص وبدء مسارات التنفيذ.'
             : 'تم حفظ بيانات التخصيص وبدء مسارات التنفيذ للمناطق.';
 
-        return back()->with('success', $message);
+        return redirect()
+            ->route('dashboard.projects.show', $project)
+            ->with('success', $message);
     }
 
     public function submitToCoordinator(Project $project): RedirectResponse

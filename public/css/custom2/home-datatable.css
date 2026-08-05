@@ -1,0 +1,57 @@
+/**
+ * Home dashboard DataTables — same visual language as projects/monitoring lists,
+ * scoped to card-embedded tables (not full-viewport layout).
+ */
+
+.raqib-home-dt-card {
+    overflow: hidden;
+}
+
+.raqib-home-dt-card .card-header {
+    background: linear-gradient(135deg, rgba(44, 62, 80, 0.06) 0%, rgba(52, 73, 94, 0.04) 100%);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.raqib-home-dt-card .enhanced-card-body {
+    padding: 0;
+}
+
+.raqib-home-dt-card .raqib-home-table-container {
+    width: 100%;
+    overflow: hidden;
+}
+
+.raqib-home-dt-card .dataTables_wrapper {
+    width: 100%;
+    padding: 0;
+}
+
+.raqib-home-dt-card .dataTables_wrapper .dataTables_length,
+.raqib-home-dt-card .dataTables_wrapper .dataTables_filter {
+    padding: 0.75rem 1rem 0.25rem;
+}
+
+.raqib-home-dt-card .dataTables_wrapper .dataTables_info,
+.raqib-home-dt-card .dataTables_wrapper .dataTables_paginate {
+    padding: 0.35rem 1rem 0.85rem;
+}
+
+.raqib-home-dt-card table.home-dt {
+    width: 100% !important;
+    margin-bottom: 0 !important;
+}
+
+.raqib-home-dt-card table.home-dt.dataTable thead th {
+    white-space: nowrap;
+}
+
+.raqib-home-dt-card .dataTables_scrollHead,
+.raqib-home-dt-card .dataTables_scrollBody {
+    border-bottom: none !important;
+}
+
+.raqib-home-dt-card .dataTables_empty {
+    padding: 1.5rem !important;
+    text-align: center;
+    color: #6c757d;
+}

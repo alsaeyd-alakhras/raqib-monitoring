@@ -216,7 +216,7 @@ class MonitoringActivityController extends Controller
 
     public function show(MonitoringActivity $monitoring_activity): View|RedirectResponse
     {
-        $this->authorize('view', MonitoringActivity::class);
+        $this->authorizeActivityView($monitoring_activity);
 
         if ($workflowUrl = $monitoring_activity->workflowContextUrl()) {
             return redirect($workflowUrl);
@@ -227,7 +227,7 @@ class MonitoringActivityController extends Controller
 
     public function exportPdf(MonitoringActivity $monitoring_activity)
     {
-        $this->authorize('view', MonitoringActivity::class);
+        $this->authorizeActivityView($monitoring_activity);
 
         $pdf = PDF::loadView(
             'reports.monitoring-activities.pdf',
@@ -241,7 +241,7 @@ class MonitoringActivityController extends Controller
 
     public function exportExcel(MonitoringActivity $monitoring_activity)
     {
-        $this->authorize('view', MonitoringActivity::class);
+        $this->authorizeActivityView($monitoring_activity);
 
         $monitoring_activity->load([
             'center', 'department', 'section', 'monitorPerson', 'responsiblePerson',
@@ -868,5 +868,16 @@ class MonitoringActivityController extends Controller
         }
 
         return $user->person?->role !== 'monitor';
+    }
+
+    private function authorizeActivityView(MonitoringActivity $activity): void
+    {
+        $user = auth()->user();
+
+        if ($activity->isExternal() && $activity->canViewExternal($user)) {
+            return;
+        }
+
+        $this->authorize('view', MonitoringActivity::class);
     }
 }

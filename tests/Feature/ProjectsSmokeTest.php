@@ -2031,6 +2031,11 @@ class ProjectsSmokeTest extends TestCase
             ->post(route('dashboard.projects.fill-secretariat', $project), $this->secretariatFillData($seq))
             ->assertRedirect(route('dashboard.projects.show', $project));
 
+        $this->actingAs($secretariatUser);
+        $this->get(route('dashboard.projects.show', $project->fresh()))
+            ->assertOk()
+            ->assertSee('P-' . $seq, false);
+
         $project->refresh();
         $this->assertSame('P-' . $seq, $project->project_number);
         $this->assertProjectAfterSecretariat($project);

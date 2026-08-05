@@ -146,6 +146,7 @@ class SimpleDemoUsersSeeder extends Seeder
                     'projects.fill_monitor',
                     'monitoringactivities.view',
                     'monitoringactivities.update',
+                    'monitoringactivities.create_external',
                 ],
             ],
             [

@@ -737,7 +737,8 @@ class Project extends Model
                 ? $query->whereHas('projectManager', fn (Builder $q) => $q->where('department_id', $person->department_id))
                     ->where(function (Builder $q) {
                         $q->where('workflow_status', 'pending_secretariat')
-                            ->orWhereNotNull('secretariat_submitted_at');
+                            ->orWhereNotNull('secretariat_submitted_at')
+                            ->orWhereNotNull('secretariat_filled_at');
                     })
                 : $query->whereRaw('1 = 0'),
             'monitoring_director', 'general_management', 'admin' => $query,
@@ -806,7 +807,8 @@ class Project extends Model
         }
 
         return $this->workflow_status === 'pending_secretariat'
-            || filled($this->secretariat_submitted_at);
+            || filled($this->secretariat_submitted_at)
+            || filled($this->secretariat_filled_at);
     }
 
     /** هل اكتملت مرحلة سكرتاريا المشاريع (رقم ومرفق التخصيص)؟ */

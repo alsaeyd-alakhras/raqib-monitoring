@@ -13,27 +13,10 @@
     $showCoordinatorColumn = ! in_array($role, ['coordinator'], true);
     $showMonitorColumn = in_array($role, ['monitor', 'monitoring_director', 'general_management', 'admin', 'super_admin'], true)
         || auth()->user()?->super_admin;
+    $isProjectSecretariat = $role === 'project_secretariat';
 @endphp
 <x-front-layout>
-    @push('styles')
-        <link rel="stylesheet" href="{{ asset('css/datatable/jquery.dataTables.min.css') }}">
-        <link rel="stylesheet" href="{{ asset('css/datatable/dataTables.bootstrap4.css') }}">
-        <style>
-            .home-dt-wrapper .dataTables_wrapper .dataTables_filter,
-            .home-dt-wrapper .dataTables_wrapper .dataTables_length {
-                padding: 0.75rem 1rem 0;
-            }
-
-            .home-dt-wrapper .dataTables_wrapper .dataTables_info,
-            .home-dt-wrapper .dataTables_wrapper .dataTables_paginate {
-                padding: 0.5rem 1rem 0.75rem;
-            }
-
-            table.home-dt thead th {
-                white-space: nowrap;
-            }
-        </style>
-    @endpush
+    @include('dashboard.partials._home_datatable_assets')
 
     @if (session('success'))
         <div class="alert alert-success">{{ session('success') }}</div>
@@ -88,18 +71,18 @@
 
     @can('view', 'App\Models\ProjectExecution')
         @if (($usesExecutionDashboard ?? false) && ! ($isMonitoringDirector ?? false))
-            <div class="card mb-4">
+            <div class="card mb-4 shadow-lg enhanced-card raqib-home-dt-card">
                 <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
                     <h5 class="mb-0">يتطلب إجراءك — المسارات</h5>
                     <a href="{{ route('dashboard.project-executions.index') }}" class="btn btn-sm btn-label-secondary">كل المسارات</a>
                 </div>
-                <div class="card-body p-0">
+                <div class="enhanced-card-body">
                     @if (($actionExecutions ?? collect())->isEmpty())
                         <div class="p-4 text-center text-muted">لا توجد مسارات تتطلب إجراءك حالياً.</div>
                     @else
-                        <div class="table-responsive home-dt-wrapper">
-                            <table class="table table-hover mb-0 align-middle home-dt">
-                                <thead class="table-light">
+                        <div class="raqib-home-table-container">
+                            <table class="table enhanced-sticky raqib-dt home-dt table-striped table-hover mb-0 w-100">
+                                <thead>
                                     <tr>
                                         <th>المشروع</th>
                                         <th>المنطقة</th>
@@ -155,15 +138,15 @@
             </div>
 
             @if (($visibleExecutions ?? collect())->isNotEmpty())
-                <div class="card mb-4">
+                <div class="card mb-4 shadow-lg enhanced-card raqib-home-dt-card">
                     <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
                         <h5 class="mb-0">كل مساراتي</h5>
                         <a href="{{ route('dashboard.project-executions.index') }}" class="btn btn-sm btn-label-secondary">عرض الكل</a>
                     </div>
-                    <div class="card-body p-0">
-                        <div class="table-responsive home-dt-wrapper">
-                            <table class="table table-hover mb-0 align-middle home-dt">
-                                <thead class="table-light">
+                    <div class="enhanced-card-body">
+                        <div class="raqib-home-table-container">
+                            <table class="table enhanced-sticky raqib-dt home-dt table-striped table-hover mb-0 w-100">
+                                <thead>
                                     <tr>
                                         <th>المشروع</th>
                                         <th>المنطقة</th>
@@ -233,24 +216,28 @@
 
     @can('view', 'App\Models\Project')
         @if (! ($isMonitoringDirector ?? false) && (! ($usesExecutionDashboard ?? false) || ($actionProjects ?? collect())->isNotEmpty()))
-            <div class="card mb-4">
+            <div class="card mb-4 shadow-lg enhanced-card raqib-home-dt-card">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <h5 class="mb-0">يتطلب إجراءك — المشاريع</h5>
                     <a href="{{ route('dashboard.projects.index') }}" class="btn btn-sm btn-label-secondary">كل المشاريع</a>
                 </div>
-                <div class="card-body p-0">
+                <div class="enhanced-card-body">
                     @if (($actionProjects ?? collect())->isEmpty())
                         <div class="p-4 text-center text-muted">لا توجد مشاريع تتطلب إجراءك حالياً.</div>
                     @else
-                        <div class="table-responsive home-dt-wrapper">
-                            <table class="table table-hover mb-0 home-dt">
-                                <thead class="table-light">
+                        <div class="raqib-home-table-container">
+                            <table class="table enhanced-sticky raqib-dt home-dt table-striped table-hover mb-0 w-100">
+                                <thead>
                                     <tr>
                                         <th>المشروع</th>
+                                        @if ($isProjectSecretariat)
+                                            <th>مدير المشروع</th>
+                                            <th>موازنة المشروع</th>
+                                        @endif
                                         <th>الحالة</th>
                                         <th>تاريخ بدء التنفيذ</th>
                                         <th>الإجراء الحالي</th>
-                                        <th class="no-sort"></th>
+                                        <th class="no-sort text-end">إجراء</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -262,7 +249,25 @@
                                             };
                                         @endphp
                                         <tr>
-                                            <td>{{ $project->project_name }}</td>
+                                            <td>
+                                                <strong>{{ $project->project_name }}</strong>
+                                                @if ($project->project_number)
+                                                    <br><span class="text-muted small">{{ $project->project_number }}</span>
+                                                @endif
+                                            </td>
+                                            @if ($isProjectSecretariat)
+                                                <td class="small">{{ $project->projectManager?->name ?? '—' }}</td>
+                                                <td class="small">
+                                                    @if ($project->project_budget !== null)
+                                                        {{ number_format((float) $project->project_budget, 2) }}
+                                                        @if ($project->currency?->code)
+                                                            <span class="text-muted">{{ $project->currency->code }}</span>
+                                                        @endif
+                                                    @else
+                                                        —
+                                                    @endif
+                                                </td>
+                                            @endif
                                             <td>{{ $statusLabels[$project->workflow_status] ?? $project->workflow_status }}</td>
                                             <td class="small">{{ $project->execution_start_date?->format('Y-m-d') ?? '—' }}</td>
                                             <td class="small">{{ $project->currentActionLabel() }}</td>
@@ -299,38 +304,4 @@
             </div>
         </div>
     @endif
-
-    @push('scripts')
-        <script src="{{ asset('js/plugins/datatable/jquery.dataTables.min.js') }}"></script>
-        <script>
-            document.addEventListener('DOMContentLoaded', function () {
-                if (typeof $.fn.DataTable === 'undefined') {
-                    return;
-                }
-
-                const arabicFileJson = "{{ asset('files/Arabic.json') }}";
-
-                $('table.home-dt').each(function () {
-                    if ($.fn.DataTable.isDataTable(this)) {
-                        return;
-                    }
-
-                    $(this).DataTable({
-                        serverSide: false,
-                        ordering: true,
-                        order: [],
-                        searching: true,
-                        pageLength: 10,
-                        lengthMenu: [10, 25, 50, 100],
-                        scrollY: '420px',
-                        scrollCollapse: true,
-                        paging: true,
-                        autoWidth: false,
-                        language: { url: arabicFileJson },
-                        columnDefs: [{ targets: 'no-sort', orderable: false }],
-                    });
-                });
-            });
-        </script>
-    @endpush
 </x-front-layout>

@@ -24,7 +24,7 @@ class HomeController extends Controller
         $person = $user?->person;
         $role = $person?->role ?? ($user?->super_admin ? 'super_admin' : 'guest');
 
-        $projectsQuery = Project::query()->visibleToUser($user)->with('projectManager');
+        $projectsQuery = Project::query()->visibleToUser($user)->with(['projectManager', 'currency']);
         $visibleProjects = (clone $projectsQuery)->get();
 
         $executionDashboardRoles = ['coordinator', 'monitor', 'section_manager', 'department_manager', 'monitoring_director'];

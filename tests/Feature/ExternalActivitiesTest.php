@@ -107,6 +107,10 @@ class ExternalActivitiesTest extends TestCase
         $this->post(route('dashboard.external-activities.submit', $activity))
             ->assertRedirect(route('dashboard.monitoring-activities.show', $activity));
 
+        $this->get(route('dashboard.monitoring-activities.show', $activity))
+            ->assertOk()
+            ->assertSee($updatedSubject, false);
+
         $activity->refresh();
         $this->assertSame('pending_confirmation', $activity->workflow_status);
         $this->assertNotNull($activity->submitted_at);

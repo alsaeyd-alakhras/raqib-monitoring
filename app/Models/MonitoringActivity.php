@@ -204,6 +204,49 @@ class MonitoringActivity extends Model
         return $personId && (int) $this->monitor_person_id === (int) $personId;
     }
 
+    public function isExternalCreator(?User $user): bool
+    {
+        return $user && (int) $this->created_by === (int) $user->id;
+    }
+
+    public function canSubmitExternal(?User $user): bool
+    {
+        if (! $this->isExternal() || ! $user) {
+            return false;
+        }
+
+        if ($user->super_admin) {
+            return true;
+        }
+
+        if ($this->isAssignedMonitor($user)) {
+            return true;
+        }
+
+        return $user->can('create_external', self::class) && $this->isExternalCreator($user);
+    }
+
+    public function canViewExternal(?User $user): bool
+    {
+        if (! $this->isExternal() || ! $user) {
+            return false;
+        }
+
+        if ($user->super_admin || $user->isMonitoringDirector()) {
+            return true;
+        }
+
+        if ($user->can('approve_external', self::class) || $user->can('view', self::class)) {
+            return true;
+        }
+
+        if (! $user->can('create_external', self::class)) {
+            return false;
+        }
+
+        return $this->isAssignedMonitor($user) || $this->isExternalCreator($user);
+    }
+
     public function canMonitorSubmit(): bool
     {
         if ($this->activity_role === 'primary') {
