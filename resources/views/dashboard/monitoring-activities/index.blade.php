@@ -46,6 +46,31 @@
             #monitoring-activities-table tbody tr.table-row-needs-approval:hover > td {
                 background-color: #ffefb8 !important;
             }
+
+            #monitoring-activities-table tbody tr.table-row-needs-monitor-action > td {
+                background-color: #fff8e6 !important;
+            }
+
+            #monitoring-activities-table tbody tr.table-row-needs-monitor-action:hover > td {
+                background-color: #ffefb8 !important;
+            }
+
+            #monitoring-activities-table tbody tr.table-row-returned-to-monitor > td {
+                background-color: #fff1e6 !important;
+                box-shadow: inset 4px 0 0 #f97316;
+            }
+
+            #monitoring-activities-table tbody tr.table-row-returned-to-monitor:hover > td {
+                background-color: #ffe8d6 !important;
+            }
+
+            #monitoring-activities-table tbody tr.table-row-my-pending > td {
+                background-color: #eff6ff !important;
+            }
+
+            #monitoring-activities-table tbody tr.table-row-my-pending:hover > td {
+                background-color: #dbeafe !important;
+            }
         </style>
     @endpush
 
@@ -84,6 +109,16 @@
                     <i class="fa-solid fa-clock"></i> خارجي بانتظار اعتمادي
                     @if (($pendingApprovalCount ?? 0) > 0)
                         <span class="badge bg-warning text-dark ms-1">{{ $pendingApprovalCount }}</span>
+                    @endif
+                </button>
+            </div>
+        @endif
+        @if ($canFilterNeedsMyAction ?? false)
+            <div class="mx-2 nav-item">
+                <button type="button" class="btn btn-outline-warning" id="filterNeedsMyAction" title="أنشطة تتطلب إجرائي">
+                    <i class="fa-solid fa-user-check"></i> يتطلب إجرائي
+                    @if (($needsMyActionCount ?? 0) > 0)
+                        <span class="badge bg-warning text-dark ms-1">{{ $needsMyActionCount }}</span>
                     @endif
                 </button>
             </div>
@@ -238,6 +273,7 @@
             const canClosureDocs = {{ $canClosureDocs ? 'true' : 'false' }};
             const urlParams = new URLSearchParams(window.location.search);
             let pendingMyApproval = urlParams.get('pending_my_approval') === '1';
+            let needsMyAction = urlParams.get('needs_my_action') === '1';
 
             function setPendingApprovalFilter(active) {
                 pendingMyApproval = active;
@@ -250,19 +286,44 @@
                 btn.classList.toggle('btn-outline-warning', !active);
             }
 
+            function setNeedsMyActionFilter(active) {
+                needsMyAction = active;
+                const btn = document.getElementById('filterNeedsMyAction');
+                if (!btn) {
+                    return;
+                }
+                btn.classList.toggle('active', active);
+                btn.classList.toggle('btn-warning', active);
+                btn.classList.toggle('btn-outline-warning', !active);
+            }
+
             if (pendingMyApproval) {
                 setPendingApprovalFilter(true);
+            }
+
+            if (needsMyAction) {
+                setNeedsMyActionFilter(true);
             }
 
             function extraAjaxDataFn(d) {
                 if (pendingMyApproval) {
                     d.pending_my_approval = 1;
                 }
+                if (needsMyAction) {
+                    d.needs_my_action = 1;
+                }
             }
 
             function rowCallbackFn(row, data) {
                 if (data.needs_director_approval) {
                     $(row).addClass('table-row-needs-approval');
+                }
+                if (data.was_returned_to_monitor) {
+                    $(row).addClass('table-row-returned-to-monitor');
+                } else if (data.needs_monitor_action) {
+                    $(row).addClass('table-row-needs-monitor-action');
+                } else if (data.is_assigned_to_me && data.workflow_status_key === 'pending_confirmation') {
+                    $(row).addClass('table-row-my-pending');
                 }
             }
 
@@ -277,7 +338,7 @@
                 return '<span class="badge bg-label-' + variant + '">' + (label || '—') + '</span>';
             }
 
-            function renderWorkflowBadge(label, key) {
+            function renderWorkflowBadge(label, key, row) {
                 const variant = {
                     completed: 'success',
                     pending_confirmation: 'warning',
@@ -286,7 +347,15 @@
                     pending_monitor: 'secondary',
                 }[key] || 'secondary';
 
-                return '<span class="badge bg-label-' + variant + '">' + (label || '—') + '</span>';
+                let html = '<span class="badge bg-label-' + variant + '">' + (label || '—') + '</span>';
+
+                if (row?.was_returned_to_monitor) {
+                    html += ' <span class="badge bg-label-danger ms-1">مرجع للتعديل</span>';
+                } else if (row?.needs_monitor_action) {
+                    html += ' <span class="badge bg-label-warning ms-1">يتطلب إجراءك</span>';
+                }
+
+                return html;
             }
 
             function renderClosureDocsIndicator(row) {
@@ -371,7 +440,7 @@
                 {
                     data: 'workflow_status_label', name: 'workflow_status_label', orderable: false,
                     render: function (data, type, row) {
-                        return renderWorkflowBadge(data, row.workflow_status_key);
+                        return renderWorkflowBadge(data, row.workflow_status_key, row);
                     }
                 }
             ];
@@ -416,6 +485,13 @@
 
             document.getElementById('filterPendingApproval')?.addEventListener('click', function () {
                 setPendingApprovalFilter(!pendingMyApproval);
+                if (typeof table !== 'undefined') {
+                    table.ajax.reload();
+                }
+            });
+
+            document.getElementById('filterNeedsMyAction')?.addEventListener('click', function () {
+                setNeedsMyActionFilter(!needsMyAction);
                 if (typeof table !== 'undefined') {
                     table.ajax.reload();
                 }

@@ -37,7 +37,7 @@
                         </style>
                         @foreach($users as $user)
                         <tr  id="user-{{$user->id}}">
-                            <td style="width: 10px">{{ $loop->iteration - 1 }}</td>
+                            <td style="width: 10px">{{ ($users->firstItem() ?? 1) + $loop->index }}</td>
                             <td class="d-flex align-items-center">
                                 <div class="avatar avatar-{{ $user->last_activity >= now()->subMinutes(5) ? 'online' : 'offline' }}">
                                     <img src="{{$user->avatar_url}}" alt="" class="rounded-circle">
@@ -86,6 +86,7 @@
                     </tbody>
                 </table>
             </div>
+            @include('dashboard.partials._per_page_select', ['defaultPerPage' => 20])
             <div>
                 {{ $users->links() }}
             </div>

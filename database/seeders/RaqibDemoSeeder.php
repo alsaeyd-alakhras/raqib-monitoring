@@ -17,6 +17,7 @@ class RaqibDemoSeeder extends Seeder
             ExcelOrganizationalSeeder::class,
             ExcelFundersSeeder::class,
             SimpleDemoUsersSeeder::class,
+            DemoMonitorActivitiesSeeder::class,
             SuperAdminSeeder::class,
         ]);
     }

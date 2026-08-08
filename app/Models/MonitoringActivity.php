@@ -555,6 +555,59 @@ class MonitoringActivity extends Model
         return (string) ($row['original_name'] ?? $row['name'] ?? 'مرفق');
     }
 
+    /** @param  array<string, mixed>  $row */
+    public function attachmentRowUrl(array $row): ?string
+    {
+        if (($row['type'] ?? '') === 'url') {
+            return $row['url'] ?? null;
+        }
+
+        $path = $row['path'] ?? null;
+
+        return $path ? asset('storage/' . ltrim($path, '/')) : null;
+    }
+
+    /** @param  array<string, mixed>  $row */
+    public function attachmentIsImage(array $row): bool
+    {
+        $extensions = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
+
+        if (($row['type'] ?? '') === 'url') {
+            $path = parse_url((string) ($row['url'] ?? ''), PHP_URL_PATH) ?? '';
+            $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+
+            return in_array($ext, $extensions, true);
+        }
+
+        $name = (string) ($row['original_name'] ?? $row['path'] ?? '');
+        $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+
+        return in_array($ext, $extensions, true);
+    }
+
+    public function scopeAssignedToMonitor(Builder $query, int $personId): Builder
+    {
+        return $query->where('monitor_person_id', $personId);
+    }
+
+    public function needsActionFromMonitor(?User $user): bool
+    {
+        if (! $this->isAssignedMonitor($user)) {
+            return false;
+        }
+
+        if ($this->workflow_status !== 'in_progress') {
+            return false;
+        }
+
+        return $this->isExternal() || $this->activity_role === 'secondary';
+    }
+
+    public function wasReturnedToMonitor(): bool
+    {
+        return $this->workflow_status === 'in_progress' && $this->rejected_at !== null;
+    }
+
     /** @param  list<array<string, mixed>>  $attachments */
     public function syncAttachments(array $attachments): void
     {

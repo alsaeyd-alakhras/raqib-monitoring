@@ -1,5 +1,5 @@
 /**
- * Project financial fields: net amount and ILS execution amount auto-calc with manual override.
+ * Project financial fields: admin expense % ↔ amount sync, net amount and ILS execution amount auto-calc.
  */
 (function () {
     'use strict';
@@ -33,6 +33,7 @@
 
     function initProjectFinancialFields(config) {
         const budgetInput = document.querySelector('[name="project_budget"]');
+        const pctInput = document.getElementById('admin_expense_pct');
         const revenueInput = document.querySelector('[name="revenue_amount"]');
         const netInput = document.querySelector('[name="net_amount"]');
         const currencySelect = document.querySelector('[name="currency_id"]');
@@ -49,6 +50,8 @@
             execution: false,
             exchange: false,
         };
+        let lastSource = 'amount';
+        let syncing = false;
 
         function markManual(input, key) {
             input?.addEventListener('input', () => {
@@ -72,6 +75,28 @@
             }
         }
 
+        function updatePctFromRevenue(budget, revenue) {
+            if (!pctInput) {
+                return;
+            }
+
+            if (budget === null || budget <= 0) {
+                pctInput.value = '';
+                return;
+            }
+
+            const revenueValue = revenue ?? 0;
+            pctInput.value = formatNumber((revenueValue / budget) * 100, 2);
+        }
+
+        function updateRevenueFromPct(budget, pct) {
+            if (!revenueInput || budget === null || budget <= 0 || pct === null) {
+                return;
+            }
+
+            revenueInput.value = formatNumber((budget * pct) / 100, 2);
+        }
+
         function recalculateDerived() {
             const budget = parseNumber(budgetInput.value) ?? 0;
             const revenue = parseNumber(revenueInput?.value) ?? 0;
@@ -88,17 +113,76 @@
             }
         }
 
-        budgetInput.addEventListener('input', () => {
-            manual.net = false;
-            manual.execution = false;
-            recalculateDerived();
-        });
+        function syncFromPct() {
+            if (syncing || !pctInput) {
+                return;
+            }
 
-        revenueInput?.addEventListener('input', () => {
+            syncing = true;
+            lastSource = 'pct';
+
+            const budget = parseNumber(budgetInput.value);
+            const pct = parseNumber(pctInput.value);
+
+            if (budget !== null && budget > 0 && pct !== null) {
+                updateRevenueFromPct(budget, pct);
+            }
+
             manual.net = false;
             manual.execution = false;
             recalculateDerived();
-        });
+            syncing = false;
+        }
+
+        function syncFromRevenue() {
+            if (syncing) {
+                return;
+            }
+
+            syncing = true;
+            lastSource = 'amount';
+
+            const budget = parseNumber(budgetInput.value);
+            const revenue = parseNumber(revenueInput?.value);
+
+            updatePctFromRevenue(budget, revenue);
+            manual.net = false;
+            manual.execution = false;
+            recalculateDerived();
+            syncing = false;
+        }
+
+        function syncFromBudget() {
+            if (syncing) {
+                return;
+            }
+
+            syncing = true;
+
+            const budget = parseNumber(budgetInput.value);
+
+            if (lastSource === 'pct' && pctInput) {
+                const pct = parseNumber(pctInput.value);
+
+                if (budget !== null && budget > 0 && pct !== null) {
+                    updateRevenueFromPct(budget, pct);
+                }
+            } else {
+                const revenue = parseNumber(revenueInput?.value);
+                updatePctFromRevenue(budget, revenue);
+            }
+
+            manual.net = false;
+            manual.execution = false;
+            recalculateDerived();
+            syncing = false;
+        }
+
+        budgetInput.addEventListener('input', syncFromBudget);
+
+        pctInput?.addEventListener('input', syncFromPct);
+
+        revenueInput?.addEventListener('input', syncFromRevenue);
 
         exchangeInput.addEventListener('input', () => {
             if (!manual.exchange) {
@@ -116,7 +200,12 @@
         });
 
         applyExchangeRateFromCurrency();
-        recalculateDerived();
+
+        if (pctInput && pctInput.value !== '') {
+            lastSource = 'pct';
+        }
+
+        syncFromBudget();
     }
 
     window.initProjectFinancialFields = initProjectFinancialFields;

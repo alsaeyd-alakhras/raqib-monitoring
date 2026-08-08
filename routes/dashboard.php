@@ -87,6 +87,9 @@ Route::group([
     Route::get('sections/by-department/{department}', [SectionController::class, 'byDepartment'])->name('sections.by-department');
     Route::get('sections/for-project/{department}', [SectionController::class, 'forProject'])->name('sections.for-project');
 
+    Route::get('funders-filters/{column}', [FunderController::class, 'getFilterOptions'])
+        ->name('funders.filters');
+
     Route::resources([
         'centers' => CenterController::class,
         'departments' => DepartmentController::class,

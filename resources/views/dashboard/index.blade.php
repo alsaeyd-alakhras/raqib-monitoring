@@ -33,6 +33,16 @@
             </p>
         </div>
         <div class="d-flex gap-2 flex-wrap">
+            @if ($role === 'monitor')
+                <a href="{{ route('dashboard.monitoring-activities.index') }}" class="btn btn-primary">
+                    <i class="fa-solid fa-list-check me-1"></i> النشاطات الرقابية
+                </a>
+                @can('create_external', 'App\Models\MonitoringActivity')
+                    <a href="{{ route('dashboard.external-activities.create') }}" class="btn btn-success">
+                        <i class="fa-solid fa-globe me-1"></i> نشاط خارجي جديد
+                    </a>
+                @endcan
+            @endif
             @can('create', 'App\Models\Project')
                 <a href="{{ route('dashboard.projects.create') }}" class="btn btn-success">
                     <i class="fa-solid fa-plus me-1"></i> مشروع جديد
@@ -69,8 +79,12 @@
         @include('dashboard._monitoring_director_home')
     @endif
 
+    @if ($role === 'monitor' && ($monitorHome ?? null))
+        @include('dashboard._monitor_home')
+    @endif
+
     @can('view', 'App\Models\ProjectExecution')
-        @if (($usesExecutionDashboard ?? false) && ! ($isMonitoringDirector ?? false))
+        @if (($usesExecutionDashboard ?? false) && ! ($isMonitoringDirector ?? false) && $role !== 'monitor')
             <div class="card mb-4 shadow-lg enhanced-card raqib-home-dt-card">
                 <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
                     <h5 class="mb-0">يتطلب إجراءك — المسارات</h5>
@@ -189,7 +203,7 @@
         @endif
     @endcan
 
-    @if ($monitoringStats)
+    @if ($monitoringStats && $role !== 'monitor')
         <div class="card mb-4 {{ ($isMonitoringDirector ?? false) && ($monitoringStats['pending_confirmation'] ?? 0) > 0 ? 'border-warning border-2' : '' }}">
             <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
                 <h5 class="mb-0">النشاطات الرقابية</h5>
@@ -215,7 +229,7 @@
     @endif
 
     @can('view', 'App\Models\Project')
-        @if (! ($isMonitoringDirector ?? false) && (! ($usesExecutionDashboard ?? false) || ($actionProjects ?? collect())->isNotEmpty()))
+        @if ($role !== 'monitor' && ! ($isMonitoringDirector ?? false) && (! ($usesExecutionDashboard ?? false) || ($actionProjects ?? collect())->isNotEmpty()))
             <div class="card mb-4 shadow-lg enhanced-card raqib-home-dt-card">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <h5 class="mb-0">يتطلب إجراءك — المشاريع</h5>

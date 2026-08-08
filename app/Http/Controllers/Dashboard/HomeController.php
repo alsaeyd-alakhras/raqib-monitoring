@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\MonitoringActivity;
 use App\Models\Project;
 use App\Models\ProjectExecution;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\View\View;
 
@@ -59,6 +60,9 @@ class HomeController extends Controller
             $user?->isMonitoringDirector() => $visibleProjects
                 ->filter(fn (Project $project) => ! $project->usesExecutionTracks()
                     && $project->needsActionFromPerson($person)),
+            $role === 'monitor' => $visibleProjects
+                ->filter(fn (Project $project) => ! $project->usesExecutionTracks()
+                    && $project->needsActionFromPerson($person)),
             default => collect(),
         };
 
@@ -82,6 +86,20 @@ class HomeController extends Controller
 
         $isMonitoringDirector = $user?->isMonitoringDirector() ?? false;
 
+        $monitorHome = null;
+        if ($role === 'monitor' && ! $user?->super_admin && $person) {
+            if ($visibleExecutions->isEmpty()) {
+                $visibleExecutions = ProjectExecution::query()
+                    ->where('is_active', true)
+                    ->visibleToUser($user)
+                    ->with(['project.projectManager', 'coordinator', 'monitorPerson'])
+                    ->orderByDesc('updated_at')
+                    ->get();
+            }
+
+            $monitorHome = $this->buildMonitorHomeData($user, $person, $visibleProjects, $visibleExecutions);
+        }
+
         $monitoringDirectorHome = $isMonitoringDirector
             ? $this->buildMonitoringDirectorHomeData($user, $visibleProjects, $visibleExecutions)
             : null;
@@ -97,6 +115,7 @@ class HomeController extends Controller
             'usesExecutionDashboard' => $usesExecutionDashboard,
             'monitoringStats' => $monitoringStats,
             'monitoringDirectorHome' => $monitoringDirectorHome,
+            'monitorHome' => $monitorHome,
             'statusLabels' => Project::workflowStatusLabels(),
             'executionStatusLabels' => ProjectExecution::workflowStatusLabels(),
         ]);
@@ -162,6 +181,89 @@ class HomeController extends Controller
             'pendingApprovalCount' => MonitoringActivity::query()
                 ->pendingDirectorApproval()
                 ->count(),
+        ];
+    }
+
+    /**
+     * @param  Collection<int, Project>  $visibleProjects
+     * @param  Collection<int, ProjectExecution>  $visibleExecutions
+     * @return array{
+     *     actionActivities: Collection<int, MonitoringActivity>,
+     *     returnedActivities: Collection<int, MonitoringActivity>,
+     *     myCreatedActivities: Collection<int, MonitoringActivity>,
+     *     pendingDirectorActivities: Collection<int, MonitoringActivity>,
+     *     actionProjects: Collection<int, Project>,
+     *     actionExecutions: Collection<int, ProjectExecution>,
+     *     myExecutions: Collection<int, ProjectExecution>,
+     *     myProjects: Collection<int, Project>
+     * }
+     */
+    private function buildMonitorHomeData(
+        ?\App\Models\User $user,
+        ?\App\Models\Person $person,
+        Collection $visibleProjects,
+        Collection $visibleExecutions,
+    ): array {
+        $personId = (int) $person->id;
+        $userId = (int) $user->id;
+
+        $assignedQuery = MonitoringActivity::query()
+            ->assignedToMonitor($personId)
+            ->with(['monitorPerson', 'center', 'department']);
+
+        $actionActivities = (clone $assignedQuery)
+            ->where('workflow_status', 'in_progress')
+            ->where(function (Builder $query) {
+                $query->where('source_type', 'external')
+                    ->orWhere('activity_role', 'secondary');
+            })
+            ->orderByDesc('updated_at')
+            ->get();
+
+        $returnedActivities = (clone $assignedQuery)
+            ->where('workflow_status', 'in_progress')
+            ->whereNotNull('rejected_at')
+            ->orderByDesc('rejected_at')
+            ->get();
+
+        $myCreatedActivities = MonitoringActivity::query()
+            ->where('source_type', 'external')
+            ->where('created_by', $userId)
+            ->with(['monitorPerson', 'center', 'department'])
+            ->orderByDesc('updated_at')
+            ->limit(10)
+            ->get();
+
+        $pendingDirectorActivities = (clone $assignedQuery)
+            ->where('workflow_status', 'pending_confirmation')
+            ->orderByDesc('submitted_at')
+            ->orderByDesc('updated_at')
+            ->get();
+
+        $actionProjects = $visibleProjects
+            ->filter(fn (Project $project) => ! $project->usesExecutionTracks()
+                && $project->needsActionFromPerson($person))
+            ->values();
+
+        $actionExecutions = $visibleExecutions
+            ->filter(fn (ProjectExecution $execution) => $execution->needsActionFromPerson($person))
+            ->values();
+
+        $myProjects = $visibleProjects
+            ->filter(fn (Project $project) => ! $project->usesExecutionTracks()
+                && (int) $project->monitor_person_id === $personId)
+            ->sortByDesc('updated_at')
+            ->values();
+
+        return [
+            'actionActivities' => $actionActivities,
+            'returnedActivities' => $returnedActivities,
+            'myCreatedActivities' => $myCreatedActivities,
+            'pendingDirectorActivities' => $pendingDirectorActivities,
+            'actionProjects' => $actionProjects,
+            'actionExecutions' => $actionExecutions,
+            'myExecutions' => $visibleExecutions,
+            'myProjects' => $myProjects,
         ];
     }
 

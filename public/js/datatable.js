@@ -126,7 +126,7 @@ $(document).ready(function () {
         serverSide: true,
         responsive: true,
         paging: true,
-        pageLength: $('#advanced-pagination').length ? $('#advanced-pagination').val() : 15,
+        pageLength: $('#advanced-pagination').length ? parseInt($('#advanced-pagination').val(), 10) || 15 : 15,
         searching: true,
         info: true,
         lengthChange: true,
@@ -148,6 +148,9 @@ $(document).ready(function () {
         },
         ajax: {
             url: urlIndex,
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+            },
             data: function (d) {
                 d.from_date = $('#from_date').val();
                 d.to_date = $('#to_date').val();
@@ -206,6 +209,7 @@ $(document).ready(function () {
         },
         initComplete: function () {
             syncRaqibStickyHeaders(this.api());
+            updatePaginationButtons();
         },
     });
 
@@ -214,7 +218,7 @@ $(document).ready(function () {
     }
 
     $(document).on('change', '#advanced-pagination', function () {
-        table.page.len($(this).val()).draw();
+        table.page.len(parseInt($(this).val(), 10) || 15).draw();
     });
 
     if ($('#year').length) {

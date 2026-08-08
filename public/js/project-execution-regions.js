@@ -160,7 +160,7 @@
                         <select
                             name="execution_regions[${index}][coordinator_id]"
                             id="execution_regions_${index}_coordinator_id"
-                            class="form-select region-coordinator-select"
+                            class="form-select select2-searchable region-coordinator-select"
                             ${mode === 'person' ? '' : 'disabled'}
                         >
                             ${coordinatorOptions(coordinatorId)}

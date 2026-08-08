@@ -51,6 +51,19 @@ class MonitoringActivityController extends Controller
             if ($request->boolean('pending_my_approval')) {
                 $query->external()->where('workflow_status', 'pending_confirmation');
             }
+            if ($request->boolean('needs_my_action')) {
+                $personId = Person::where('user_id', auth()->id())->value('id');
+                if ($personId) {
+                    $query->assignedToMonitor((int) $personId)
+                        ->where('workflow_status', 'in_progress')
+                        ->where(function (Builder $inner) {
+                            $inner->where('source_type', 'external')
+                                ->orWhere('activity_role', 'secondary');
+                        });
+                } else {
+                    $query->whereRaw('1 = 0');
+                }
+            }
             if ($request->column_filters) {
                 $this->applyColumnFilters($query, $request->column_filters);
             }
@@ -69,6 +82,9 @@ class MonitoringActivityController extends Controller
                 $canEdit = $this->canEditActivityInList($activity, $user);
                 $canApproveExternal = $user?->can('approve_external', MonitoringActivity::class) ?? false;
                 $needsDirectorApproval = $canApproveExternal && $activity->canDirectorReview();
+                $needsMonitorAction = $activity->needsActionFromMonitor($user);
+                $wasReturnedToMonitor = $activity->wasReturnedToMonitor() && $activity->isAssignedMonitor($user);
+                $isAssignedToMe = $activity->isAssignedMonitor($user);
                 $editUrl = $activity->isExternal()
                     ? route('dashboard.external-activities.edit', $activity)
                     : route('dashboard.monitoring-activities.edit', $activity);
@@ -94,6 +110,9 @@ class MonitoringActivityController extends Controller
                     'show_url' => $showUrl,
                     'can_edit' => $canEdit,
                     'needs_director_approval' => $needsDirectorApproval,
+                    'needs_monitor_action' => $needsMonitorAction,
+                    'was_returned_to_monitor' => $wasReturnedToMonitor,
+                    'is_assigned_to_me' => $isAssignedToMe,
                     'submitted_at_label' => $activity->submitted_at?->format('Y-m-d H:i') ?? '-',
                     'closure_docs_attached' => $closureDocs['attached'],
                     'closure_docs_total' => $closureDocs['total'],
@@ -114,12 +133,30 @@ class MonitoringActivityController extends Controller
             ? MonitoringActivity::query()->pendingDirectorApproval()->count()
             : 0;
 
+        $canFilterNeedsMyAction = auth()->user()?->person?->role === 'monitor';
+        $needsMyActionCount = 0;
+        if ($canFilterNeedsMyAction) {
+            $personId = Person::where('user_id', auth()->id())->value('id');
+            if ($personId) {
+                $needsMyActionCount = MonitoringActivity::query()
+                    ->assignedToMonitor((int) $personId)
+                    ->where('workflow_status', 'in_progress')
+                    ->where(function (Builder $query) {
+                        $query->where('source_type', 'external')
+                            ->orWhere('activity_role', 'secondary');
+                    })
+                    ->count();
+            }
+        }
+
         return view('dashboard.monitoring-activities.index', [
             'sourceTypes' => MonitoringActivity::sourceTypeLabels(),
             'workflowStatusLabels' => MonitoringActivity::workflowStatusLabels(),
             'canViewClosureDocsColumnInList' => $this->userCanViewClosureDocsColumnInList(),
             'canFilterPendingApproval' => $canFilterPendingApproval,
             'pendingApprovalCount' => $pendingApprovalCount,
+            'canFilterNeedsMyAction' => $canFilterNeedsMyAction,
+            'needsMyActionCount' => $needsMyActionCount,
         ]);
     }
 

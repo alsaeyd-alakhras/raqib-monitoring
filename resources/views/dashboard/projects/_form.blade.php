@@ -284,6 +284,29 @@
                                 <div class="invalid-feedback d-block">{{ $message }}</div>
                             @enderror
                         </div>
+                        @php
+                            $adminExpensePct = '';
+                            $budgetForPct = old('project_budget', $project->project_budget ?? '');
+                            $revenueForPct = old('revenue_amount', $project->revenue_amount ?? '');
+                            if (is_numeric($budgetForPct) && (float) $budgetForPct > 0 && is_numeric($revenueForPct)) {
+                                $adminExpensePct = number_format(((float) $revenueForPct / (float) $budgetForPct) * 100, 2, '.', '');
+                            }
+                        @endphp
+                        <div class="mb-4 col-md-3">
+                            <label class="form-label" for="admin_expense_pct">نسبة المصاريف الإدارية (%)</label>
+                            <input
+                                type="number"
+                                id="admin_expense_pct"
+                                class="form-control project-financial-ltr @error('revenue_amount') is-invalid @enderror"
+                                step="0.01"
+                                min="0"
+                                max="100"
+                                value="{{ $adminExpensePct }}"
+                                dir="ltr"
+                                inputmode="decimal"
+                            >
+                            <div class="form-text">من موازنة المشروع — تُحدَّث المصاريف الإدارية تلقائياً</div>
+                        </div>
                         <div class="mb-4 col-md-3">
                             <x-form.input
                                 type="number"

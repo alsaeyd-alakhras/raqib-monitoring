@@ -225,22 +225,7 @@
                 <tr>
                     <th scope="row">المرفقات</th>
                     <td>
-                        <div class="d-flex flex-wrap gap-1">
-                            @foreach ($activity->attachmentsList() as $row)
-                                @php
-                                    $isExternal = ($row['type'] ?? '') === 'url';
-                                    $url = $isExternal
-                                        ? ($row['url'] ?? null)
-                                        : (! empty($row['path']) ? asset('storage/' . ltrim($row['path'], '/')) : null);
-                                    $label = $activity->attachmentRowLabel($row);
-                                @endphp
-                                @if ($url)
-                                    <a href="{{ $url }}" target="_blank" rel="noopener" class="badge bg-label-primary text-decoration-none">
-                                        <i class="ti {{ $isExternal ? 'ti-external-link' : 'ti-paperclip' }} me-1"></i>{{ $label }}
-                                    </a>
-                                @endif
-                            @endforeach
-                        </div>
+                        @include('dashboard.external-activities._attachments_display', ['activity' => $activity])
                     </td>
                 </tr>
             @endif

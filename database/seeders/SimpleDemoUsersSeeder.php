@@ -312,7 +312,9 @@ class SimpleDemoUsersSeeder extends Seeder
 
         RoleUser::where('user_id', $user->id)->delete();
 
-        $abilities = app(RoleAbilitiesService::class)->forRole($data['role'] ?? null);
+        $abilities = ! empty($data['abilities'])
+            ? array_values(array_unique($data['abilities']))
+            : app(RoleAbilitiesService::class)->forRole($data['role'] ?? null);
 
         foreach ($abilities as $ability) {
             RoleUser::create([

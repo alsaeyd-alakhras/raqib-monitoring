@@ -24,16 +24,21 @@ class ExternalActivitiesTest extends TestCase
 
     private function monitorUser(): User
     {
-        $user = User::where('username', 'demo_monitor')->first()
-            ?? User::whereHas('person', fn ($q) => $q->where('role', 'monitor'))->first();
+        $user = User::whereHas('person', fn ($q) => $q->where('role', 'monitor'))->first()
+            ?? User::whereIn('username', ['monitor1', 'demo_monitor'])->first();
 
         $this->assertNotNull($user, 'Monitor user required — run demo seeders');
+
+        if ($user->person && $user->person->role !== 'monitor') {
+            $user->person->update(['role' => 'monitor']);
+            $user = $user->fresh(['person']);
+        }
 
         if ($user->person && empty($user->person->phone)) {
             $user->person->update(['phone' => '0500000001']);
         }
 
-        return $user->fresh();
+        return $user->fresh(['person']);
     }
 
     private function directorUser(): User
@@ -410,5 +415,96 @@ class ExternalActivitiesTest extends TestCase
             ->assertOk()
             ->assertSee('مدير المشروع')
             ->assertSee($execution->project->projectManager->name);
+    }
+
+    public function test_external_activity_show_displays_image_inline(): void
+    {
+        Storage::fake('public');
+
+        $monitorUser = $this->monitorUser();
+        ['center' => $center, 'department' => $department] = $this->orgDefaults();
+        $payload = $this->externalPayload($center, $department);
+
+        $this->actingAs($monitorUser);
+        $this->post(route('dashboard.external-activities.store'), $payload + [
+            'action' => 'save',
+            'activity_attachments' => [
+                UploadedFile::fake()->image('field-photo.jpg'),
+            ],
+        ])->assertRedirect();
+
+        $activity = MonitoringActivity::where('subject', $payload['subject'])->firstOrFail();
+        $attachment = $activity->attachmentsList()[0] ?? null;
+        $this->assertNotNull($attachment);
+        $this->assertTrue($activity->attachmentIsImage($attachment));
+
+        $imageUrl = $activity->attachmentRowUrl($attachment);
+        $this->assertNotNull($imageUrl);
+
+        $this->get(route('dashboard.monitoring-activities.show', $activity))
+            ->assertOk()
+            ->assertSee('<img', false)
+            ->assertSee($imageUrl, false);
+
+        $activity->delete();
+    }
+
+    public function test_returned_external_activity_has_monitor_action_flags(): void
+    {
+        $monitorUser = $this->monitorUser();
+        ['center' => $center, 'department' => $department] = $this->orgDefaults();
+        $payload = $this->externalPayload($center, $department);
+
+        $this->actingAs($monitorUser);
+        $this->post(route('dashboard.external-activities.store'), $payload + ['action' => 'save']);
+
+        $activity = MonitoringActivity::where('subject', $payload['subject'])->firstOrFail();
+        $this->post(route('dashboard.external-activities.submit', $activity));
+
+        $director = $this->directorUser();
+        $this->actingAs($director);
+        $this->post(route('dashboard.external-activities.return', $activity), [
+            'rejection_reason' => 'يرجى إرفاق صورة أوضح',
+            'gap_owner' => 'monitor',
+        ]);
+
+        $activity->refresh();
+        $this->assertTrue($activity->wasReturnedToMonitor());
+        $this->assertTrue($activity->needsActionFromMonitor($monitorUser));
+
+        $this->actingAs($monitorUser);
+        $response = $this->withHeaders([
+            'X-Requested-With' => 'XMLHttpRequest',
+            'Accept' => 'application/json',
+        ])->get(route('dashboard.monitoring-activities.index'));
+
+        $response->assertOk();
+        $rows = collect($response->json('data'));
+        $row = $rows->firstWhere('id', $activity->id);
+        $this->assertNotNull($row);
+        $this->assertTrue($row['needs_monitor_action']);
+        $this->assertTrue($row['was_returned_to_monitor']);
+
+        $activity->delete();
+    }
+
+    public function test_monitor_home_shows_assigned_work_sections(): void
+    {
+        $monitorUser = $this->monitorUser();
+        ['center' => $center, 'department' => $department] = $this->orgDefaults();
+        $payload = $this->externalPayload($center, $department);
+
+        $this->actingAs($monitorUser);
+        $this->post(route('dashboard.external-activities.store'), $payload + ['action' => 'save']);
+
+        $activity = MonitoringActivity::where('subject', $payload['subject'])->firstOrFail();
+
+        $this->get(route('dashboard.home'))
+            ->assertOk()
+            ->assertSee('يتطلب إجراءك الآن', false)
+            ->assertSee('أنشطة أضفتها', false)
+            ->assertSee($activity->reference_code, false);
+
+        $activity->delete();
     }
 }
