@@ -220,13 +220,15 @@
                     <div class="invalid-feedback">{{ $message }}</div>
                 @enderror
             </div>
-            <div class="mb-4 col-md-4">
+            <div class="mb-4 col-md-4 {{ (string) $fieldProblemValue === '1' ? '' : 'd-none' }}" id="closure-date-wrap">
                 <x-form.input
                     type="date"
                     name="closure_date"
+                    id="closure_date"
                     label="تاريخ الإغلاق"
                     :value="$closureDateValue"
                 />
+                <div class="form-text">يُفضّل تحديد تاريخ إغلاق المشكلة عند وجود مشكلة ميدانية.</div>
             </div>
             <div class="mb-4 col-md-12">
                 <x-form.textarea
@@ -412,6 +414,29 @@
         }
 
         referenceCodeInput?.addEventListener('blur', checkReferenceCodeAvailability);
+    })();
+</script>
+<script>
+    (function () {
+        const fieldProblemSelect = document.getElementById('field_problem');
+        const closureDateWrap = document.getElementById('closure-date-wrap');
+        const closureDateInput = document.getElementById('closure_date');
+
+        function syncClosureDateVisibility() {
+            if (!fieldProblemSelect || !closureDateWrap) {
+                return;
+            }
+
+            const hasProblem = fieldProblemSelect.value === '1';
+            closureDateWrap.classList.toggle('d-none', !hasProblem);
+
+            if (!hasProblem && closureDateInput) {
+                closureDateInput.value = '';
+            }
+        }
+
+        fieldProblemSelect?.addEventListener('change', syncClosureDateVisibility);
+        syncClosureDateVisibility();
     })();
 </script>
 @endpush

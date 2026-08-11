@@ -150,6 +150,7 @@
             'kpi_value' => 'KPI',
             'kpi_rating' => 'التصنيف',
             'workflow_status_label' => 'الحالة',
+            'problem_closure_status_label' => 'حالة الإغلاق',
         ];
         if ($canClosureDocs) {
             $scrollFields['closure_docs_label'] = 'مستندات الإغلاق';
@@ -375,11 +376,21 @@
                     + '</span>';
             }
 
+            function renderProblemClosureBadge(label, key) {
+                const variant = {
+                    complete: 'success',
+                    in_follow_up: 'warning',
+                    closed: 'info',
+                }[key] || 'secondary';
+
+                return '<span class="badge bg-label-' + variant + '">' + (label || '—') + '</span>';
+            }
+
             const fields = [
                 '#', 'verification', 'view', 'edit', 'reference_code',
                 'activity_date', 'source_type_label', 'activity_type', 'org_label',
                 'responsible_name', 'monitor_name', 'subject',
-                'kpi_value', 'kpi_rating', 'workflow_status_label',
+                'kpi_value', 'kpi_rating', 'workflow_status_label', 'problem_closure_status_label',
                 ...(canClosureDocs ? ['closure_docs_label'] : []),
                 'actions'
             ];
@@ -441,6 +452,12 @@
                     data: 'workflow_status_label', name: 'workflow_status_label', orderable: false,
                     render: function (data, type, row) {
                         return renderWorkflowBadge(data, row.workflow_status_key, row);
+                    }
+                },
+                {
+                    data: 'problem_closure_status_label', name: 'problem_closure_status_label', orderable: false, className: 'text-center',
+                    render: function (data, type, row) {
+                        return renderProblemClosureBadge(data, row.problem_closure_status_key);
                     }
                 }
             ];

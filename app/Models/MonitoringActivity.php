@@ -309,6 +309,30 @@ class MonitoringActivity extends Model
         return self::workflowStatusLabels()[$this->workflow_status] ?? $this->workflow_status;
     }
 
+    /** @return array<string, string> */
+    public static function problemClosureStatusLabels(): array
+    {
+        return [
+            'complete' => 'مكتمل',
+            'in_follow_up' => 'قيد المتابعة',
+            'closed' => 'تم الإغلاق',
+        ];
+    }
+
+    public function problemClosureStatusKey(): string
+    {
+        if (! $this->field_problem) {
+            return 'complete';
+        }
+
+        return $this->closure_date ? 'closed' : 'in_follow_up';
+    }
+
+    public function problemClosureStatusLabel(): string
+    {
+        return self::problemClosureStatusLabels()[$this->problemClosureStatusKey()] ?? '—';
+    }
+
     public function getDayNameAttribute(): ?string
     {
         return $this->activity_date?->locale('ar')->dayName;

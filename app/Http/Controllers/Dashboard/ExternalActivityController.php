@@ -300,6 +300,10 @@ class ExternalActivityController extends Controller
     {
         unset($validated['positive_notes_text'], $validated['negative_notes_text'], $validated['recommendations_text']);
 
+        if (empty($validated['field_problem'])) {
+            $validated['closure_date'] = null;
+        }
+
         return $validated + [
             'positive_notes' => $this->linesToArray($request->input('positive_notes_text')),
             'negative_notes' => $this->linesToArray($request->input('negative_notes_text')),

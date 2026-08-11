@@ -221,6 +221,10 @@
                 <th scope="row">تاريخ الإغلاق</th>
                 <td class="{{ $activity->closure_date ? '' : 'text-empty' }}">{{ $activity->closure_date?->format('Y-m-d') ?? '—' }}</td>
             </tr>
+            <tr>
+                <th scope="row">حالة الإغلاق</th>
+                <td>{{ $activity->problemClosureStatusLabel() }}</td>
+            </tr>
             @if ($activity->hasAttachments())
                 <tr>
                     <th scope="row">المرفقات</th>

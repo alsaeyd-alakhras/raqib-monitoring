@@ -459,6 +459,9 @@ class ProjectExecutionsSmokeTest extends ProjectsSmokeTest
             ->assertOk()
             ->assertSee('مسارات التنفيذ')
             ->assertSee('المشاريع النشطة')
+            ->assertSee('home-panel-active-projects', false)
+            ->assertSee('home-panel-pipeline-executions', false)
+            ->assertSee('raqib-home-panel-toggle', false)
             ->assertSee($execution->region_name)
             ->assertSee($name);
 

@@ -118,6 +118,8 @@ class MonitoringActivityController extends Controller
                     'closure_docs_total' => $closureDocs['total'],
                     'closure_docs_complete' => $closureDocs['complete'],
                     'closure_docs_label' => $closureDocs['label'],
+                    'problem_closure_status_label' => $activity->problemClosureStatusLabel(),
+                    'problem_closure_status_key' => $activity->problemClosureStatusKey(),
                     'is_verified' => $activity->is_verified,
                     'verification_issues' => $activity->verificationIssues(),
                 ];
@@ -203,6 +205,7 @@ class MonitoringActivityController extends Controller
 
                 return $activity->project->closureAttachmentSummary()['label'];
             })->unique()->values()->toArray(),
+            'problem_closure_status_label' => array_values(MonitoringActivity::problemClosureStatusLabels()),
             'reference_code' => $rows->pluck('reference_code')->filter()->unique()->values()->toArray(),
             default => [],
         };
@@ -694,6 +697,24 @@ class MonitoringActivityController extends Controller
                     $query->where('source_type', 'project')->whereHas('project', function ($projectQuery) use ($filteredValues) {
                         Project::applyClosureDocsLabelScope($projectQuery, $filteredValues);
                     });
+                    break;
+                case 'problem_closure_status_label':
+                    $labelToKey = array_flip(MonitoringActivity::problemClosureStatusLabels());
+                    $keys = array_values(array_filter(array_map(fn ($v) => $labelToKey[$v] ?? null, $filteredValues)));
+                    if ($keys !== []) {
+                        $query->where(function ($statusQuery) use ($keys) {
+                            foreach ($keys as $key) {
+                                $statusQuery->orWhere(function ($sub) use ($key) {
+                                    match ($key) {
+                                        'complete' => $sub->where('field_problem', false),
+                                        'in_follow_up' => $sub->where('field_problem', true)->whereNull('closure_date'),
+                                        'closed' => $sub->where('field_problem', true)->whereNotNull('closure_date'),
+                                        default => null,
+                                    };
+                                });
+                            }
+                        });
+                    }
                     break;
                 default:
                     $query->whereIn($fieldName, $filteredValues);

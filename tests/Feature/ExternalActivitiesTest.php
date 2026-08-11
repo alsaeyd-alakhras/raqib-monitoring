@@ -488,6 +488,105 @@ class ExternalActivitiesTest extends TestCase
         $activity->delete();
     }
 
+    public function test_problem_closure_status_labels(): void
+    {
+        $monitorUser = $this->monitorUser();
+        ['center' => $center, 'department' => $department] = $this->orgDefaults();
+
+        $this->actingAs($monitorUser);
+
+        $completePayload = $this->externalPayload($center, $department);
+        $this->post(route('dashboard.external-activities.store'), $completePayload + ['action' => 'save'])
+            ->assertRedirect();
+        $completeActivity = MonitoringActivity::where('subject', $completePayload['subject'])->firstOrFail();
+        $this->assertSame('complete', $completeActivity->problemClosureStatusKey());
+        $this->assertSame('مكتمل', $completeActivity->problemClosureStatusLabel());
+
+        $followUpPayload = array_merge($this->externalPayload($center, $department), [
+            'field_problem' => 1,
+            'deduction_value' => -10,
+        ]);
+        $this->post(route('dashboard.external-activities.store'), $followUpPayload + ['action' => 'save'])
+            ->assertRedirect();
+        $followUpActivity = MonitoringActivity::where('subject', $followUpPayload['subject'])->firstOrFail();
+        $this->assertSame('in_follow_up', $followUpActivity->problemClosureStatusKey());
+        $this->assertSame('قيد المتابعة', $followUpActivity->problemClosureStatusLabel());
+
+        $closedPayload = array_merge($this->externalPayload($center, $department), [
+            'field_problem' => 1,
+            'deduction_value' => -10,
+            'closure_date' => '2026-08-20',
+        ]);
+        $this->post(route('dashboard.external-activities.store'), $closedPayload + ['action' => 'save'])
+            ->assertRedirect();
+        $closedActivity = MonitoringActivity::where('subject', $closedPayload['subject'])->firstOrFail();
+        $this->assertSame('closed', $closedActivity->problemClosureStatusKey());
+        $this->assertSame('تم الإغلاق', $closedActivity->problemClosureStatusLabel());
+
+        $completeActivity->delete();
+        $followUpActivity->delete();
+        $closedActivity->delete();
+    }
+
+    public function test_external_activity_clears_closure_date_when_no_field_problem(): void
+    {
+        $monitorUser = $this->monitorUser();
+        ['center' => $center, 'department' => $department] = $this->orgDefaults();
+        $payload = array_merge($this->externalPayload($center, $department), [
+            'field_problem' => 1,
+            'deduction_value' => -10,
+            'closure_date' => '2026-08-15',
+        ]);
+
+        $this->actingAs($monitorUser);
+        $this->post(route('dashboard.external-activities.store'), $payload + ['action' => 'save'])
+            ->assertRedirect();
+
+        $activity = MonitoringActivity::where('subject', $payload['subject'])->firstOrFail();
+        $this->assertSame('2026-08-15', $activity->closure_date?->format('Y-m-d'));
+
+        $this->putExternal($activity, array_merge($payload, [
+            'field_problem' => 0,
+            'deduction_value' => 0,
+            'action' => 'save',
+        ]))->assertRedirect();
+
+        $activity->refresh();
+        $this->assertNull($activity->closure_date);
+        $this->assertSame('complete', $activity->problemClosureStatusKey());
+
+        $activity->delete();
+    }
+
+    public function test_monitoring_activities_index_includes_problem_closure_status(): void
+    {
+        $monitorUser = $this->monitorUser();
+        ['center' => $center, 'department' => $department] = $this->orgDefaults();
+        $payload = array_merge($this->externalPayload($center, $department), [
+            'field_problem' => 1,
+            'deduction_value' => -10,
+        ]);
+
+        $this->actingAs($monitorUser);
+        $this->post(route('dashboard.external-activities.store'), $payload + ['action' => 'save'])
+            ->assertRedirect();
+
+        $activity = MonitoringActivity::where('subject', $payload['subject'])->firstOrFail();
+
+        $response = $this->withHeaders([
+            'X-Requested-With' => 'XMLHttpRequest',
+            'Accept' => 'application/json',
+        ])->get(route('dashboard.monitoring-activities.index'));
+
+        $response->assertOk();
+        $row = collect($response->json('data'))->firstWhere('id', $activity->id);
+        $this->assertNotNull($row);
+        $this->assertSame('قيد المتابعة', $row['problem_closure_status_label']);
+        $this->assertSame('in_follow_up', $row['problem_closure_status_key']);
+
+        $activity->delete();
+    }
+
     public function test_monitor_home_shows_assigned_work_sections(): void
     {
         $monitorUser = $this->monitorUser();

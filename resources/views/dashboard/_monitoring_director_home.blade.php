@@ -24,18 +24,32 @@
 @endphp
 
 @if ($pendingApprovalActivities->isNotEmpty())
-    <div class="card mb-4 border-warning border-2 shadow-lg enhanced-card raqib-home-dt-card">
+    <div class="card mb-4 border-warning border-2 shadow-lg enhanced-card raqib-home-dt-card raqib-home-collapsible-card" data-home-panel="pending_approval">
         <div class="card-header bg-label-warning d-flex justify-content-between align-items-center flex-wrap gap-2">
-            <h5 class="mb-0">
-                <i class="fa-solid fa-clipboard-check me-2"></i>
-                أنشطة خارجية بانتظار اعتمادك
-                <span class="badge bg-warning text-dark ms-2">{{ $pendingApprovalCount }}</span>
-            </h5>
+            <div class="d-flex align-items-center gap-2">
+                <button
+                    type="button"
+                    class="btn btn-sm btn-icon btn-text-secondary raqib-home-panel-toggle"
+                    data-bs-toggle="collapse"
+                    data-bs-target="#home-panel-pending-approval"
+                    aria-expanded="true"
+                    aria-controls="home-panel-pending-approval"
+                    title="طيّ / فتح"
+                >
+                    <i class="fa-solid fa-chevron-down raqib-home-panel-chevron"></i>
+                </button>
+                <h5 class="mb-0">
+                    <i class="fa-solid fa-clipboard-check me-2"></i>
+                    أنشطة خارجية بانتظار اعتمادك
+                    <span class="badge bg-warning text-dark ms-2">{{ $pendingApprovalCount }}</span>
+                </h5>
+            </div>
             <a href="{{ route('dashboard.monitoring-activities.index', ['pending_my_approval' => 1]) }}" class="btn btn-sm btn-warning">عرض الكل</a>
         </div>
-        <div class="enhanced-card-body">
-            <div class="raqib-home-table-container">
-                <table class="table home-dt table-striped table-hover mb-0 w-100">
+        <div class="collapse show" id="home-panel-pending-approval">
+            <div class="enhanced-card-body">
+                <div class="raqib-home-table-container">
+                    <table class="table home-dt table-striped table-hover mb-0 w-100" data-home-panel-table="pending_approval">
                     <thead>
                         <tr>
                             <th>الرمز</th>
@@ -71,17 +85,32 @@
                 </table>
             </div>
         </div>
+        </div>
     </div>
 @endif
 
 @if (($actionExecutions ?? collect())->isNotEmpty() || ($actionProjects ?? collect())->isNotEmpty())
-    <div class="card mb-4 border-warning border-2 shadow-lg enhanced-card raqib-home-dt-card">
+    <div class="card mb-4 border-warning border-2 shadow-lg enhanced-card raqib-home-dt-card raqib-home-collapsible-card" data-home-panel="action_items">
         <div class="card-header bg-label-warning d-flex justify-content-between align-items-center flex-wrap gap-2">
-            <h5 class="mb-0"><i class="fa-solid fa-bell me-2"></i>يتطلب إجراءك الآن — مشاريع ومسارات</h5>
+            <div class="d-flex align-items-center gap-2">
+                <button
+                    type="button"
+                    class="btn btn-sm btn-icon btn-text-secondary raqib-home-panel-toggle"
+                    data-bs-toggle="collapse"
+                    data-bs-target="#home-panel-action-items"
+                    aria-expanded="true"
+                    aria-controls="home-panel-action-items"
+                    title="طيّ / فتح"
+                >
+                    <i class="fa-solid fa-chevron-down raqib-home-panel-chevron"></i>
+                </button>
+                <h5 class="mb-0"><i class="fa-solid fa-bell me-2"></i>يتطلب إجراءك الآن — مشاريع ومسارات</h5>
+            </div>
         </div>
-        <div class="enhanced-card-body">
-            <div class="raqib-home-table-container">
-                <table class="table home-dt table-striped table-hover mb-0 w-100">
+        <div class="collapse show" id="home-panel-action-items">
+            <div class="enhanced-card-body">
+                <div class="raqib-home-table-container">
+                    <table class="table home-dt table-striped table-hover mb-0 w-100" data-home-panel-table="action_items">
                     <thead>
                         <tr>
                             <th>النوع</th>
@@ -139,132 +168,163 @@
                 </table>
             </div>
         </div>
+        </div>
     </div>
 @endif
 
 <div class="row g-4 mb-4">
-    <div class="col-lg-7">
-        <div class="card h-100 shadow-lg enhanced-card raqib-home-dt-card">
+    <div class="col-12">
+        <div class="card shadow-lg enhanced-card raqib-home-dt-card raqib-home-collapsible-card" data-home-panel="active_projects">
             <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
-                <h5 class="mb-0"><i class="fa-solid fa-route me-2"></i>مسارات التنفيذ</h5>
-                <a href="{{ route('dashboard.project-executions.index') }}" class="btn btn-sm btn-label-primary">كل المسارات</a>
+                <div class="d-flex align-items-center gap-2">
+                    <button
+                        type="button"
+                        class="btn btn-sm btn-icon btn-text-secondary raqib-home-panel-toggle"
+                        data-bs-toggle="collapse"
+                        data-bs-target="#home-panel-active-projects"
+                        aria-expanded="true"
+                        aria-controls="home-panel-active-projects"
+                        title="طيّ / فتح"
+                    >
+                        <i class="fa-solid fa-chevron-down raqib-home-panel-chevron"></i>
+                    </button>
+                    <h5 class="mb-0"><i class="fa-solid fa-diagram-project me-2"></i>المشاريع النشطة</h5>
+                </div>
+                <a href="{{ route('dashboard.projects.index') }}" class="btn btn-sm btn-label-secondary">كل المشاريع</a>
             </div>
-            <div class="enhanced-card-body">
-                @if ($pipelineExecutions->isEmpty())
-                    <div class="p-4 text-center text-muted">لا توجد مسارات تنفيذ حالياً.</div>
-                @else
-                    <div class="raqib-home-table-container">
-                        <table class="table home-dt table-striped table-hover mb-0 w-100">
-                            <thead>
-                                <tr>
-                                    <th>المشروع</th>
-                                    <th>المنطقة</th>
-                                    <th>مدير المشروع</th>
-                                    <th>المنسق</th>
-                                    <th>المراقب</th>
-                                    <th>تاريخ بدء التنفيذ</th>
-                                    <th>الحالة</th>
-                                    <th class="text-end no-sort">إجراء</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @foreach ($pipelineExecutions as $execution)
+            <div class="collapse show" id="home-panel-active-projects">
+                <div class="enhanced-card-body">
+                    @if ($activeSingleProjects->isEmpty() && $executionTrackProjects->isEmpty())
+                        <div class="p-4 text-center text-muted">لا توجد مشاريع نشطة في الرقابة.</div>
+                    @else
+                        <div class="raqib-home-table-container">
+                            <table class="table home-dt table-striped table-hover mb-0 w-100" data-home-panel-table="active_projects">
+                                <thead>
                                     <tr>
-                                        <td>
-                                            <strong>{{ $execution->project?->project_name ?: '—' }}</strong>
-                                            <br><span class="text-muted small">{{ $execution->project?->project_number ?: '—' }}</span>
-                                        </td>
-                                        <td>{{ $execution->region_name }}</td>
-                                        <td class="small">{{ $execution->project?->projectManager?->name ?? '—' }}</td>
-                                        <td class="small">{{ $execution->coordinatorDisplayName() }}</td>
-                                        <td class="small">{{ $execution->monitorPerson?->name ?? '—' }}</td>
-                                        <td class="small">{{ $execution->project?->execution_start_date?->format('Y-m-d') ?? '—' }}</td>
-                                        <td>
-                                            <span class="badge bg-label-{{ $statusBadgeClass($execution->workflow_status) }}">
-                                                {{ $executionStatusLabels[$execution->workflow_status] ?? $execution->workflow_status }}
-                                            </span>
-                                        </td>
-                                        <td class="text-end">
-                                            <a href="{{ route('dashboard.projects.executions.show', [$execution->project, $execution]) }}" class="btn btn-sm btn-primary">متابعة</a>
-                                        </td>
+                                        <th>المشروع</th>
+                                        <th>مدير المشروع</th>
+                                        <th>تاريخ بدء التنفيذ</th>
+                                        <th>المسارات</th>
+                                        <th>الحالة</th>
+                                        <th class="text-end no-sort">إجراء</th>
                                     </tr>
-                                @endforeach
-                            </tbody>
-                        </table>
-                    </div>
-                @endif
+                                </thead>
+                                <tbody>
+                                    @foreach ($activeSingleProjects as $project)
+                                        <tr>
+                                            <td>
+                                                <div class="fw-semibold">{{ $project->project_name }}</div>
+                                                <div class="small text-muted">{{ $project->project_number ?: '—' }}</div>
+                                            </td>
+                                            <td class="small">{{ $project->projectManager?->name ?? '—' }}</td>
+                                            <td class="small">{{ $project->execution_start_date?->format('Y-m-d') ?? '—' }}</td>
+                                            <td class="small">—</td>
+                                            <td>
+                                                <span class="badge bg-label-{{ $statusBadgeClass($project->workflow_status) }}">
+                                                    {{ $statusLabels[$project->workflow_status] ?? $project->workflow_status }}
+                                                </span>
+                                            </td>
+                                            <td class="text-end">
+                                                <a href="{{ route('dashboard.projects.show', $project) }}" class="btn btn-sm btn-outline-primary">متابعة</a>
+                                            </td>
+                                        </tr>
+                                    @endforeach
+                                    @foreach ($executionTrackProjects as $project)
+                                        <tr>
+                                            <td>
+                                                <div class="fw-semibold">{{ $project->project_name }}</div>
+                                                <div class="small text-muted">{{ $project->project_number ?: '—' }}</div>
+                                            </td>
+                                            <td class="small">{{ $project->projectManager?->name ?? '—' }}</td>
+                                            <td class="small">{{ $project->execution_start_date?->format('Y-m-d') ?? '—' }}</td>
+                                            <td class="small">
+                                                {{ $project->active_executions_count ?? 0 }} مسار
+                                                @if (($project->pipeline_executions_count ?? 0) > 0)
+                                                    <br><span class="text-muted">{{ $project->pipeline_executions_count }} في الرقابة</span>
+                                                @endif
+                                            </td>
+                                            <td>
+                                                <span class="badge bg-label-info">مسارات متعددة</span>
+                                            </td>
+                                            <td class="text-end">
+                                                <a href="{{ route('dashboard.projects.show', $project) }}" class="btn btn-sm btn-outline-primary">متابعة</a>
+                                            </td>
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        </div>
+                    @endif
+                </div>
             </div>
         </div>
     </div>
 
-    <div class="col-lg-5">
-        <div class="card h-100 shadow-lg enhanced-card raqib-home-dt-card">
+    <div class="col-12">
+        <div class="card shadow-lg enhanced-card raqib-home-dt-card raqib-home-collapsible-card" data-home-panel="pipeline_executions">
             <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
-                <h5 class="mb-0"><i class="fa-solid fa-diagram-project me-2"></i>المشاريع النشطة</h5>
-                <a href="{{ route('dashboard.projects.index') }}" class="btn btn-sm btn-label-secondary">كل المشاريع</a>
+                <div class="d-flex align-items-center gap-2">
+                    <button
+                        type="button"
+                        class="btn btn-sm btn-icon btn-text-secondary raqib-home-panel-toggle"
+                        data-bs-toggle="collapse"
+                        data-bs-target="#home-panel-pipeline-executions"
+                        aria-expanded="true"
+                        aria-controls="home-panel-pipeline-executions"
+                        title="طيّ / فتح"
+                    >
+                        <i class="fa-solid fa-chevron-down raqib-home-panel-chevron"></i>
+                    </button>
+                    <h5 class="mb-0"><i class="fa-solid fa-route me-2"></i>مسارات التنفيذ</h5>
+                </div>
+                <a href="{{ route('dashboard.project-executions.index') }}" class="btn btn-sm btn-label-primary">كل المسارات</a>
             </div>
-            <div class="enhanced-card-body">
-                @if ($activeSingleProjects->isEmpty() && $executionTrackProjects->isEmpty())
-                    <div class="p-4 text-center text-muted">لا توجد مشاريع نشطة في الرقابة.</div>
-                @else
-                    <div class="raqib-home-table-container">
-                        <table class="table home-dt table-striped table-hover mb-0 w-100">
-                            <thead>
-                                <tr>
-                                    <th>المشروع</th>
-                                    <th>مدير المشروع</th>
-                                    <th>تاريخ بدء التنفيذ</th>
-                                    <th>المسارات</th>
-                                    <th>الحالة</th>
-                                    <th class="text-end no-sort">إجراء</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @foreach ($activeSingleProjects as $project)
+            <div class="collapse show" id="home-panel-pipeline-executions">
+                <div class="enhanced-card-body">
+                    @if ($pipelineExecutions->isEmpty())
+                        <div class="p-4 text-center text-muted">لا توجد مسارات تنفيذ حالياً.</div>
+                    @else
+                        <div class="raqib-home-table-container">
+                            <table class="table home-dt table-striped table-hover mb-0 w-100" data-home-panel-table="pipeline_executions">
+                                <thead>
                                     <tr>
-                                        <td>
-                                            <div class="fw-semibold">{{ $project->project_name }}</div>
-                                            <div class="small text-muted">{{ $project->project_number ?: '—' }}</div>
-                                        </td>
-                                        <td class="small">{{ $project->projectManager?->name ?? '—' }}</td>
-                                        <td class="small">{{ $project->execution_start_date?->format('Y-m-d') ?? '—' }}</td>
-                                        <td class="small">—</td>
-                                        <td>
-                                            <span class="badge bg-label-{{ $statusBadgeClass($project->workflow_status) }}">
-                                                {{ $statusLabels[$project->workflow_status] ?? $project->workflow_status }}
-                                            </span>
-                                        </td>
-                                        <td class="text-end">
-                                            <a href="{{ route('dashboard.projects.show', $project) }}" class="btn btn-sm btn-outline-primary">متابعة</a>
-                                        </td>
+                                        <th>المشروع</th>
+                                        <th>المنطقة</th>
+                                        <th>مدير المشروع</th>
+                                        <th>المنسق</th>
+                                        <th>المراقب</th>
+                                        <th>تاريخ بدء التنفيذ</th>
+                                        <th>الحالة</th>
+                                        <th class="text-end no-sort">إجراء</th>
                                     </tr>
-                                @endforeach
-                                @foreach ($executionTrackProjects as $project)
-                                    <tr>
-                                        <td>
-                                            <div class="fw-semibold">{{ $project->project_name }}</div>
-                                            <div class="small text-muted">{{ $project->project_number ?: '—' }}</div>
-                                        </td>
-                                        <td class="small">{{ $project->projectManager?->name ?? '—' }}</td>
-                                        <td class="small">{{ $project->execution_start_date?->format('Y-m-d') ?? '—' }}</td>
-                                        <td class="small">
-                                            {{ $project->active_executions_count ?? 0 }} مسار
-                                            @if (($project->pipeline_executions_count ?? 0) > 0)
-                                                <br><span class="text-muted">{{ $project->pipeline_executions_count }} في الرقابة</span>
-                                            @endif
-                                        </td>
-                                        <td>
-                                            <span class="badge bg-label-info">مسارات متعددة</span>
-                                        </td>
-                                        <td class="text-end">
-                                            <a href="{{ route('dashboard.projects.show', $project) }}" class="btn btn-sm btn-outline-primary">متابعة</a>
-                                        </td>
-                                    </tr>
-                                @endforeach
-                            </tbody>
-                        </table>
-                    </div>
-                @endif
+                                </thead>
+                                <tbody>
+                                    @foreach ($pipelineExecutions as $execution)
+                                        <tr>
+                                            <td>
+                                                <strong>{{ $execution->project?->project_name ?: '—' }}</strong>
+                                                <br><span class="text-muted small">{{ $execution->project?->project_number ?: '—' }}</span>
+                                            </td>
+                                            <td>{{ $execution->region_name }}</td>
+                                            <td class="small">{{ $execution->project?->projectManager?->name ?? '—' }}</td>
+                                            <td class="small">{{ $execution->coordinatorDisplayName() }}</td>
+                                            <td class="small">{{ $execution->monitorPerson?->name ?? '—' }}</td>
+                                            <td class="small">{{ $execution->project?->execution_start_date?->format('Y-m-d') ?? '—' }}</td>
+                                            <td>
+                                                <span class="badge bg-label-{{ $statusBadgeClass($execution->workflow_status) }}">
+                                                    {{ $executionStatusLabels[$execution->workflow_status] ?? $execution->workflow_status }}
+                                                </span>
+                                            </td>
+                                            <td class="text-end">
+                                                <a href="{{ route('dashboard.projects.executions.show', [$execution->project, $execution]) }}" class="btn btn-sm btn-primary">متابعة</a>
+                                            </td>
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        </div>
+                    @endif
+                </div>
             </div>
         </div>
     </div>
