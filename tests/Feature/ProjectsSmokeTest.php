@@ -1047,11 +1047,15 @@ class ProjectsSmokeTest extends TestCase
 
         $this->post(route('dashboard.projects.executions.fill-coordinator', [$project, $execution]), [
             'fill_on_behalf' => '1',
+            'recipient_name' => 'أحمد المستلم',
+            'recipient_phone' => '0599123456',
             'checklist' => $this->fullChecklist(),
         ])->assertRedirect();
 
         $execution->refresh();
         $this->assertSame($user->id, $execution->coordinator_filled_by);
+        $this->assertSame('أحمد المستلم', $execution->recipient_name);
+        $this->assertSame('0599123456', $execution->recipient_phone);
 
         ProjectChecklistValue::where('project_id', $project->id)->delete();
         $project->executions()->delete();

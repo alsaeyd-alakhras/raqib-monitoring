@@ -214,6 +214,18 @@
                     <td>{!! nl2br(e($executionPath->implementation_mechanism)) !!}</td>
                 </tr>
                 @endif
+                @if (filled($executionPath->recipient_name) && ! ($canManageCoordinatorColumn ?? false))
+                <tr>
+                    <th scope="row">اسم المستلم</th>
+                    <td>{{ $executionPath->recipient_name }}</td>
+                </tr>
+                @endif
+                @if (filled($executionPath->recipient_phone) && ! ($canManageCoordinatorColumn ?? false))
+                <tr>
+                    <th scope="row">رقم الجوال</th>
+                    <td>{{ $executionPath->recipient_phone }}</td>
+                </tr>
+                @endif
             </tbody>
         </table>
     @else

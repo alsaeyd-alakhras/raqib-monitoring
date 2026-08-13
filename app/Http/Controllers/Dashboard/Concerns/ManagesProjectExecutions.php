@@ -127,6 +127,10 @@ trait ManagesProjectExecutions
 
         $validated = $request->validate([
             'implementation_mechanism' => ['nullable', 'string'],
+            'recipient_name' => ['nullable', 'string', 'max:255'],
+            'recipient_phone' => ['nullable', 'string', 'max:20', 'regex:/^\d+$/'],
+        ], [
+            'recipient_phone.regex' => 'رقم الجوال يجب أن يحتوي أرقاماً فقط.',
         ]);
 
         $this->saveExecutionChecklistValues($request, $project, $execution, 'coordinator_value');
@@ -134,6 +138,8 @@ trait ManagesProjectExecutions
 
         $execution->update([
             'implementation_mechanism' => $validated['implementation_mechanism'] ?? null,
+            'recipient_name' => $validated['recipient_name'] ?? null,
+            'recipient_phone' => $validated['recipient_phone'] ?? null,
             'updated_by' => auth()->id(),
         ]);
 

@@ -171,6 +171,10 @@
                             'implementationMechanism' => $execution->implementation_mechanism,
                             'fieldId' => 'execution_implementation_mechanism',
                         ])
+                        @include('dashboard.projects._recipient_fields', [
+                            'recipientName' => $execution->recipient_name,
+                            'recipientPhone' => $execution->recipient_phone,
+                        ])
                         @include('dashboard.projects._checklist_edit', [
                             'groups' => $groups,
                             'values' => $values,

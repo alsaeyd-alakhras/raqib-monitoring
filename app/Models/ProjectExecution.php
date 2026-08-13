@@ -26,6 +26,8 @@ class ProjectExecution extends Model
         'coordinator_external_name',
         'nomination_responsibility',
         'implementation_mechanism',
+        'recipient_name',
+        'recipient_phone',
         'monitor_person_id',
         'monitoring_date',
         'monitoring_method',
