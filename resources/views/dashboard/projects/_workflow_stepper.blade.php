@@ -1,7 +1,7 @@
 @php
     $workflowSteps = [
         'draft',
-        'pending_secretariat',
+        ...(\App\Models\Project::secretariatEnabled() ? ['pending_secretariat'] : []),
         'pending_coordinator',
         'pending_section_manager',
         'pending_dept_manager',

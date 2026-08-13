@@ -368,16 +368,18 @@ class HomeController extends Controller
         return match ($role) {
             'project_manager' => [
                 'label' => 'مشاريعي',
-                'cards' => [
+                'cards' => array_values(array_filter([
                     ['title' => 'إجمالي مشاريعي', 'value' => $base['total'], 'class' => 'primary'],
                     ['title' => 'مسودات', 'value' => $base['draft'], 'class' => 'secondary'],
-                    ['title' => 'عند السكرتاريا', 'value' => $base['secretariat'], 'class' => 'info'],
+                    Project::secretariatEnabled()
+                        ? ['title' => 'عند السكرتاريا', 'value' => $base['secretariat'], 'class' => 'info']
+                        : null,
                     ['title' => 'بانتظار المنسق', 'value' => $base['coordinator'], 'class' => 'info'],
                     ['title' => 'بانتظار مراجعتي', 'value' => $base['pending_pm'], 'class' => 'warning'],
                     ['title' => 'قيد المراقبة', 'value' => $base['monitoring'], 'class' => 'warning'],
                     ['title' => 'مكتملة', 'value' => $base['complete'], 'class' => 'success'],
                     ['title' => 'مرفوضة نهائياً', 'value' => $base['rejected'], 'class' => 'danger'],
-                ],
+                ])),
             ],
             'coordinator' => [
                 'label' => 'مشاريعي كمنسق',
@@ -426,13 +428,21 @@ class HomeController extends Controller
                     ['title' => 'مكتملة', 'value' => $base['complete'], 'class' => 'success'],
                 ],
             ],
-            'project_secretariat' => [
+            'project_secretariat' => Project::secretariatEnabled() ? [
                 'label' => 'سكرتاريا الدائرة',
                 'cards' => [
                     ['title' => 'بانتظار تعبئتي', 'value' => $base['secretariat'], 'class' => 'warning'],
                     ['title' => 'بانتظار المنسق', 'value' => $base['coordinator'], 'class' => 'info'],
                     ['title' => 'قيد الدورة', 'value' => $base['pending_pm'] + $base['pending_section'] + $base['pending_dept'] + $base['pending_monitoring'] + $base['monitoring'], 'class' => 'primary'],
                     ['title' => 'مكتملة', 'value' => $base['complete'], 'class' => 'success'],
+                ],
+            ] : [
+                'label' => 'نظرة عامة',
+                'cards' => [
+                    ['title' => 'إجمالي المشاريع', 'value' => $base['total'], 'class' => 'primary'],
+                    ['title' => 'مسودات', 'value' => $base['draft'], 'class' => 'secondary'],
+                    ['title' => 'مكتملة', 'value' => $base['complete'], 'class' => 'success'],
+                    ['title' => 'مرفوضة', 'value' => $base['rejected'], 'class' => 'danger'],
                 ],
             ],
             'general_management' => [

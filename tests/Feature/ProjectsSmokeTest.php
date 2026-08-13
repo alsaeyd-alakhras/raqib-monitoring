@@ -398,16 +398,45 @@ class ProjectsSmokeTest extends TestCase
         ];
     }
 
+    private function skipIfSecretariatDisabled(): void
+    {
+        if (! Project::secretariatEnabled()) {
+            $this->markTestSkipped('Secretariat workflow is disabled.');
+        }
+    }
+
+    protected function assignProjectAllocation(Project $project, ?int $seq = null): void
+    {
+        $seq ??= $this->nextProjectNumberSeq() + random_int(10000, 99999);
+        $projectNumber = Project::formatFromSequence($seq);
+        $path = 'projects/' . $projectNumber . '/allocation.jpg';
+
+        Storage::disk('public')->put($path, 'fake-image');
+
+        $project->update([
+            'project_number' => $projectNumber,
+            'allocation_image_path' => $path,
+        ]);
+    }
+
     protected function advanceProjectThroughSecretariat(Project $project, ?int $seq = null): void
     {
         $seq ??= $this->nextProjectNumberSeq();
 
-        $this->post(route('dashboard.projects.submit-to-secretariat', $project))->assertRedirect();
-        $project->refresh();
-        $this->assertSame('pending_secretariat', $project->workflow_status);
+        if (Project::secretariatEnabled()) {
+            $this->post(route('dashboard.projects.submit-to-secretariat', $project))->assertRedirect();
+            $project->refresh();
+            $this->assertSame('pending_secretariat', $project->workflow_status);
 
-        $this->post(route('dashboard.projects.fill-secretariat', $project), $this->secretariatFillData($seq))
-            ->assertRedirect();
+            $this->post(route('dashboard.projects.fill-secretariat', $project), $this->secretariatFillData($seq))
+                ->assertRedirect();
+        } else {
+            $this->assignProjectAllocation($project, $seq);
+
+            $this->post(route('dashboard.projects.submit-and-start-executions', $project))
+                ->assertRedirect();
+        }
+
         $project->refresh();
         $this->assertTrue($project->uses_execution_tracks);
         $this->assertSame('executions_in_progress', $project->workflow_status);
@@ -956,6 +985,8 @@ class ProjectsSmokeTest extends TestCase
 
     public function test_project_number_unique_on_secretariat_fill(): void
     {
+        $this->skipIfSecretariatDisabled();
+
         $user = User::first();
         $user->super_admin = 1;
         $this->actingAs($user);
@@ -2000,6 +2031,42 @@ class ProjectsSmokeTest extends TestCase
 
     public function test_secretariat_fill_stores_allocation_under_project_number(): void
     {
+        if (! Project::secretariatEnabled()) {
+            Storage::fake('public');
+
+            $user = User::first();
+            $user->super_admin = 1;
+            $this->actingAs($user);
+
+            $projectName = 'مشروع تخصيص مدير المشروع ' . uniqid();
+            $coordinator = Person::withRole('coordinator')->firstOrFail();
+            $seq = $this->nextProjectNumberSeq() + random_int(70000, 79999);
+
+            $this->post('/projects', $this->sampleProjectPostData([
+                'project_name' => $projectName,
+                'coordinator_mode' => 'person',
+                'coordinator_id' => $coordinator->id,
+            ]))->assertRedirect();
+
+            $project = Project::where('project_name', $projectName)->firstOrFail();
+            $this->assertNull($project->project_number);
+
+            $this->assignProjectAllocation($project, $seq);
+            $this->post(route('dashboard.projects.submit-and-start-executions', $project))
+                ->assertRedirect(route('dashboard.projects.show', $project));
+
+            $project->refresh();
+            $this->assertSame('P-' . $seq, $project->project_number);
+            $this->assertProjectAfterSecretariat($project);
+            $this->assertStringStartsWith('projects/P-' . $seq . '/', (string) $project->allocation_image_path);
+            Storage::disk('public')->assertExists($project->allocation_image_path);
+
+            ProjectChecklistValue::where('project_id', $project->id)->delete();
+            $project->delete();
+
+            return;
+        }
+
         Storage::fake('public');
 
         $user = User::first();
@@ -2049,6 +2116,8 @@ class ProjectsSmokeTest extends TestCase
 
     public function test_demo_sec_sees_demo_pm_project_after_submit_to_secretariat(): void
     {
+        $this->skipIfSecretariatDisabled();
+
         $pmUser = User::where('username', 'demo_pm')->first();
         $secUser = User::where('username', 'demo_sec')->first();
 
@@ -2273,6 +2342,8 @@ class ProjectsSmokeTest extends TestCase
 
     public function test_secretariat_rbac_only_fill_secretariat_can_submit(): void
     {
+        $this->skipIfSecretariatDisabled();
+
         Storage::fake('public');
 
         $secretariatUser = User::where('username', 'sec_hana')->first();
@@ -2766,6 +2837,8 @@ class ProjectsSmokeTest extends TestCase
 
     public function test_secretariat_scoped_to_project_manager_department(): void
     {
+        $this->skipIfSecretariatDisabled();
+
         Storage::fake('public');
 
         $departments = Department::orderBy('id')->take(2)->get();
@@ -2812,6 +2885,8 @@ class ProjectsSmokeTest extends TestCase
 
     public function test_secretariat_fill_self_coordinator_sends_to_coordinator(): void
     {
+        $this->skipIfSecretariatDisabled();
+
         Storage::fake('public');
 
         $secretariatUser = User::where('username', 'sec_hana')->first();
@@ -2893,9 +2968,16 @@ class ProjectsSmokeTest extends TestCase
             $project = Project::where('project_name', $name)->firstOrFail();
             $this->assertNull($project->coordinator_filled_at);
 
-            $this->post(route('dashboard.projects.submit-to-secretariat', $project))->assertRedirect();
-            $project->refresh();
-            $this->assertSame('pending_secretariat', $project->workflow_status);
+            if (Project::secretariatEnabled()) {
+                $this->post(route('dashboard.projects.submit-to-secretariat', $project))->assertRedirect();
+                $project->refresh();
+                $this->assertSame('pending_secretariat', $project->workflow_status);
+            } else {
+                $this->assignProjectAllocation($project);
+                $this->post(route('dashboard.projects.submit-and-start-executions', $project))->assertRedirect();
+                $project->refresh();
+                $this->assertSame('executions_in_progress', $project->workflow_status);
+            }
 
             $project->executions()->delete();
             $project->delete();
@@ -2914,8 +2996,6 @@ class ProjectsSmokeTest extends TestCase
             'projects.update',
         ]);
 
-        $secretariatUser = $this->secretariatUserForDepartment((int) $pm->department_id);
-
         try {
             $this->actingAs($pmUser);
             $name = 'self تعبئة بعد سكرتاريا ' . uniqid();
@@ -2931,12 +3011,7 @@ class ProjectsSmokeTest extends TestCase
             ]))->assertRedirect();
 
             $project = Project::where('project_name', $name)->firstOrFail();
-            $this->post(route('dashboard.projects.submit-to-secretariat', $project))->assertRedirect();
-
-            $this->actingAs($secretariatUser);
-            $seq = $this->nextProjectNumberSeq() + random_int(88200, 88299);
-            $this->post(route('dashboard.projects.fill-secretariat', $project), $this->secretariatFillData($seq))
-                ->assertRedirect();
+            $this->advanceProjectThroughSecretariat($project);
 
             $project->refresh();
             $execution = $this->primaryExecution($project);
@@ -3093,6 +3168,9 @@ class ProjectsSmokeTest extends TestCase
         $this->alignPersonToSection($pm, $section);
 
         $seq = $this->nextProjectNumberSeq() + random_int(88000, 88999);
+        $projectNumber = Project::formatFromSequence($seq);
+        $allocationPath = 'projects/' . $projectNumber . '/allocation.jpg';
+        Storage::disk('public')->put($allocationPath, 'fake');
 
         try {
             $project = Project::create(array_merge($this->sampleProjectFields(), [
@@ -3102,7 +3180,8 @@ class ProjectsSmokeTest extends TestCase
                 'section_id' => $section->id,
                 'department_id' => $section->department_id,
                 'workflow_status' => 'pending_section_manager',
-                'project_number' => Project::formatFromSequence($seq),
+                'project_number' => $projectNumber,
+                'allocation_image_path' => $allocationPath,
                 'secretariat_submitted_at' => now()->subDay(),
                 'secretariat_filled_at' => now()->subDay(),
                 'created_by' => User::first()->id,
@@ -3156,6 +3235,9 @@ class ProjectsSmokeTest extends TestCase
         $this->alignPersonToSection($pm, $section);
 
         $seq = $this->nextProjectNumberSeq() + random_int(89000, 89999);
+        $projectNumber = Project::formatFromSequence($seq);
+        $allocationPath = 'projects/' . $projectNumber . '/allocation.jpg';
+        Storage::disk('public')->put($allocationPath, 'fake');
 
         try {
             $project = Project::create(array_merge($this->sampleProjectFields(), [
@@ -3165,7 +3247,8 @@ class ProjectsSmokeTest extends TestCase
                 'section_id' => $section->id,
                 'department_id' => $section->department_id,
                 'workflow_status' => 'pending_section_manager',
-                'project_number' => Project::formatFromSequence($seq),
+                'project_number' => $projectNumber,
+                'allocation_image_path' => $allocationPath,
                 'secretariat_submitted_at' => now()->subDay(),
                 'secretariat_filled_at' => now()->subDay(),
                 'coordinator_filled_at' => now()->subDay(),
@@ -3204,6 +3287,8 @@ class ProjectsSmokeTest extends TestCase
 
     public function test_return_secretariat_correction_sends_self_coordinator_to_coordinator(): void
     {
+        $this->skipIfSecretariatDisabled();
+
         Storage::fake('public');
 
         $section = Section::firstOrFail();

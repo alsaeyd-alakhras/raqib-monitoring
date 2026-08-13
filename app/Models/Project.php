@@ -13,6 +13,23 @@ class Project extends Model
 {
     use HasFactory;
 
+    public static function secretariatEnabled(): bool
+    {
+        return (bool) config('raqib.projects.secretariat_enabled', false);
+    }
+
+    /** @param array<string, string> $options */
+    public static function filterSecretariatRejectOptions(array $options): array
+    {
+        if (static::secretariatEnabled()) {
+            return $options;
+        }
+
+        unset($options['return_secretariat'], $options['project_secretariat']);
+
+        return $options;
+    }
+
     protected $fillable = [
         'project_name',
         'project_number',
@@ -814,6 +831,10 @@ class Project extends Model
     /** هل اكتملت مرحلة سكرتاريا المشاريع (رقم ومرفق التخصيص)؟ */
     public function hasCompletedSecretariatPhase(): bool
     {
+        if (! static::secretariatEnabled()) {
+            return filled($this->project_number) && filled($this->allocation_image_path);
+        }
+
         return filled($this->secretariat_filled_at) && filled($this->project_number);
     }
 
@@ -983,7 +1004,7 @@ class Project extends Model
         ];
 
         if ($superAdmin || ! $person) {
-            return $all;
+            return static::filterSecretariatRejectOptions($all);
         }
 
         $allowedKeys = match ($person->role) {
@@ -993,7 +1014,7 @@ class Project extends Model
             default => array_keys($all),
         };
 
-        return array_intersect_key($all, array_flip($allowedKeys));
+        return static::filterSecretariatRejectOptions(array_intersect_key($all, array_flip($allowedKeys)));
     }
 
     public static function returnTargetLabel(?string $key): string
@@ -1231,7 +1252,7 @@ class Project extends Model
         $labels = self::gapOwnerLabels();
 
         if ($superAdmin || ! $person) {
-            return $labels;
+            return static::filterSecretariatRejectOptions($labels);
         }
 
         $allowedKeys = match ($person->role) {
@@ -1242,7 +1263,7 @@ class Project extends Model
             default => array_keys($labels),
         };
 
-        return array_intersect_key($labels, array_flip($allowedKeys));
+        return static::filterSecretariatRejectOptions(array_intersect_key($labels, array_flip($allowedKeys)));
     }
 
     public function currentActionLabel(): string
@@ -1251,7 +1272,9 @@ class Project extends Model
 
         return match ($this->workflow_status) {
             'draft' => 'مدير المشروع: ' . ($this->projectManager?->name ?? '—'),
-            'pending_secretariat' => 'سكرتاريا الدائرة — تعبئة رقم ومرفق التخصيص',
+            'pending_secretariat' => static::secretariatEnabled()
+                ? 'سكرتاريا الدائرة — تعبئة رقم ومرفق التخصيص'
+                : 'مدير المشروع — تعبئة رقم ومرفق التخصيص',
             'pending_coordinator', 'coordinator_filling' => 'المنسق: ' . $this->coordinatorDisplayName(),
             'pending_project_manager' => 'مدير المشروع: ' . ($this->projectManager?->name ?? '—') . ' — مراجعة وإرسال',
             'pending_section_manager' => 'مدير القسم: ' . $this->approverSectionManagerLabel(),
@@ -1274,7 +1297,8 @@ class Project extends Model
         return match ($person->role) {
             'project_manager' => (int) $this->project_manager_id === (int) $person->id
                 && in_array($this->workflow_status, ['draft', 'pending_secretariat', 'pending_coordinator', 'coordinator_filling', 'pending_project_manager'], true),
-            'project_secretariat' => $this->workflow_status === 'pending_secretariat'
+            'project_secretariat' => static::secretariatEnabled()
+                && $this->workflow_status === 'pending_secretariat'
                 && $this->visibleToProjectSecretariat($person),
             'coordinator' => (int) $this->coordinator_id === (int) $person->id
                 && (

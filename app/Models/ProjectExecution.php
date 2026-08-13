@@ -506,7 +506,7 @@ class ProjectExecution extends Model
         ];
 
         if ($superAdmin || ! $person) {
-            return $all;
+            return Project::filterSecretariatRejectOptions($all);
         }
 
         $allowedKeys = match ($person->role) {
@@ -516,7 +516,7 @@ class ProjectExecution extends Model
             default => array_keys($all),
         };
 
-        return array_intersect_key($all, array_flip($allowedKeys));
+        return Project::filterSecretariatRejectOptions(array_intersect_key($all, array_flip($allowedKeys)));
     }
 
     public static function gapOwnerOptionsForRejector(?Person $person, bool $superAdmin = false): array

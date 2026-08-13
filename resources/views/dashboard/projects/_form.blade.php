@@ -197,6 +197,31 @@
     </div>
 </div>
 
+@if (! \App\Models\Project::secretariatEnabled())
+    @php
+        $allocationFieldsLocked = isset($project)
+            && $project->exists
+            && (
+                $project->uses_execution_tracks
+                || ! in_array($project->workflow_status, ['draft', 'pending_secretariat'], true)
+            );
+    @endphp
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5 class="mb-0">بيانات التخصيص</h5>
+        </div>
+        <div class="card-body">
+            @if ($allocationFieldsLocked)
+                <p class="text-muted small mb-3">بيانات التخصيص — للعرض فقط بعد بدء مسارات التنفيذ.</p>
+            @endif
+            @include('dashboard.projects._allocation_fields', [
+                'project' => $project ?? null,
+                'allocationFieldsLocked' => $allocationFieldsLocked,
+            ])
+        </div>
+    </div>
+@endif
+
 <div class="card mb-4">
     <div class="card-header">
         <h5 class="mb-0">ثانياً — بيانات التنفيذ</h5>

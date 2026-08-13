@@ -119,14 +119,14 @@ class DemoProjectsSeeder extends Seeder
                 'name' => '[تجربة] مسودة — مدير مشروع',
                 'project_status' => 'draft',
                 'tracks' => false,
-                'note' => 'pm_ahmad — إنشاء/تعديل/إرسال للسكرتاريا',
+                'note' => 'pm_ahmad — تعبئة التخصيص وبدء مسارات التنفيذ',
             ],
             [
                 'number' => self::DEMO_PREFIX . '02',
-                'name' => '[تجربة] بانتظار السكرتاريا',
-                'project_status' => 'pending_secretariat',
+                'name' => '[تجربة] مسودة — بانتظار بدء المسارات',
+                'project_status' => 'draft',
                 'tracks' => false,
-                'note' => 'sec_hana — تعبئة الرقم والصورة',
+                'note' => 'pm_ahmad — أكمل التخصيص ثم «بدء مسارات التنفيذ»',
             ],
             [
                 'number' => self::DEMO_PREFIX . '03',

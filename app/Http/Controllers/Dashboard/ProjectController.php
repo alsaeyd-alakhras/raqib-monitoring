@@ -219,8 +219,10 @@ class ProjectController extends Controller
         $this->authorize('create', Project::class);
 
         $validated = $this->validateProject($request);
-        unset($validated['project_number_seq'], $validated['allocation_image']);
-        $validated['project_number'] = null;
+        $validated = $this->mergeAllocationFromRequest($request, $validated);
+        if (Project::secretariatEnabled()) {
+            $validated['project_number'] = null;
+        }
         $validated['workflow_status'] = 'draft';
         $validated['created_by'] = auth()->id();
         $validated['updated_by'] = auth()->id();
@@ -343,8 +345,10 @@ class ProjectController extends Controller
         $previousExternalName = $project->coordinator_external_name;
 
         $validated = $this->validateProject($request, $project);
-        unset($validated['project_number_seq'], $validated['allocation_image']);
-        $validated['project_number'] = $project->project_number;
+        $validated = $this->mergeAllocationFromRequest($request, $validated, $project);
+        if (Project::secretariatEnabled()) {
+            $validated['project_number'] = $project->project_number;
+        }
         $validated['updated_by'] = auth()->id();
 
         $project->update($validated);
@@ -411,6 +415,12 @@ class ProjectController extends Controller
 
     public function submitToSecretariat(Project $project): RedirectResponse
     {
+        if (! Project::secretariatEnabled()) {
+            return back()->withErrors([
+                'secretariat' => 'مرحلة سكرتاريا الدائرة معلّقة حالياً — استخدم «بدء مسارات التنفيذ».',
+            ]);
+        }
+
         $this->authorize('update', Project::class);
         $this->guardStatus($project, ['draft']);
 
@@ -437,6 +447,12 @@ class ProjectController extends Controller
 
     public function fillSecretariat(Request $request, Project $project): RedirectResponse
     {
+        if (! Project::secretariatEnabled()) {
+            return back()->withErrors([
+                'secretariat' => 'مرحلة سكرتاريا الدائرة معلّقة حالياً.',
+            ]);
+        }
+
         $this->authorize('fill_secretariat', Project::class);
         $this->guardStatus($project, ['pending_secretariat']);
         $this->authorizeSecretariatForProject($project);
@@ -477,6 +493,46 @@ class ProjectController extends Controller
         return redirect()
             ->route('dashboard.projects.show', $project)
             ->with('success', $message);
+    }
+
+    public function submitAndStartExecutions(Project $project): RedirectResponse
+    {
+        if (Project::secretariatEnabled()) {
+            abort(404);
+        }
+
+        $this->authorize('update', Project::class);
+        $this->ensureProjectVisible($project);
+        $this->guardStatus($project, ['draft', 'pending_secretariat']);
+
+        if (! auth()->user()?->super_admin) {
+            $this->ensureProjectManagerActor($project);
+        }
+
+        if (! $project->hasCoordinatorAssignment()) {
+            return back()->withErrors(['execution_regions' => 'يجب تحديد منسق لكل منطقة تنفيذ قبل بدء المسارات.']);
+        }
+
+        if (! $project->hasCompletedSecretariatPhase()) {
+            return back()->withErrors([
+                'allocation' => 'يجب تعبئة رقم التخصيص ومرفق التخصيص قبل بدء مسارات التنفيذ.',
+            ]);
+        }
+
+        $project->update([
+            'uses_execution_tracks' => true,
+            'workflow_status' => 'executions_in_progress',
+            'updated_by' => auth()->id(),
+        ]);
+
+        app(ProjectExecutionSpawner::class)->syncFromRegions($project, (int) auth()->id());
+        app(ProjectAggregateStatusService::class)->refresh($project);
+
+        $this->clearProjectReturnNotice($project);
+
+        return redirect()
+            ->route('dashboard.projects.show', $project)
+            ->with('success', 'تم بدء مسارات التنفيذ للمناطق.');
     }
 
     public function submitToCoordinator(Project $project): RedirectResponse
@@ -1822,6 +1878,7 @@ class ProjectController extends Controller
             'showCoordinatorFillOnDraft' => $this->canFillCoordinatorOnDraft($project),
             'canShowSecretariatForm' => $canShowSecretariatForm,
             'canSubmitToSecretariat' => $this->canSubmitToSecretariat($project),
+            'canSubmitAndStartExecutions' => $this->canSubmitAndStartExecutions($project),
             'canSubmitToCoordinatorFromDraft' => $this->canSubmitToCoordinatorFromDraft($project),
             'canSubmitToProjectManager' => $this->canSubmitToProjectManager($project),
             'canSubmitToSectionManager' => $this->canSubmitToSectionManager($project),
@@ -2088,6 +2145,10 @@ class ProjectController extends Controller
 
     private function canSubmitToSecretariat(Project $project): bool
     {
+        if (! Project::secretariatEnabled()) {
+            return false;
+        }
+
         if ($project->workflow_status !== 'draft') {
             return false;
         }
@@ -2115,6 +2176,37 @@ class ProjectController extends Controller
         }
 
         return true;
+    }
+
+    private function canSubmitAndStartExecutions(Project $project): bool
+    {
+        if (Project::secretariatEnabled()) {
+            return false;
+        }
+
+        if (! in_array($project->workflow_status, ['draft', 'pending_secretariat'], true)) {
+            return false;
+        }
+
+        $user = auth()->user();
+
+        if (! $user?->can('update', Project::class)) {
+            return false;
+        }
+
+        if (! $user->super_admin) {
+            $personId = $user->person?->id;
+
+            if (! $personId || (int) $personId !== (int) $project->project_manager_id) {
+                return false;
+            }
+        }
+
+        if (! $project->hasCoordinatorAssignment()) {
+            return false;
+        }
+
+        return $project->hasCompletedSecretariatPhase();
     }
 
     private function canSubmitToCoordinatorFromDraft(Project $project): bool
@@ -2462,6 +2554,71 @@ class ProjectController extends Controller
         return $validated;
     }
 
+    private function canEditAllocationFields(?Project $project): bool
+    {
+        if (Project::secretariatEnabled()) {
+            return false;
+        }
+
+        if (! $project || ! $project->exists) {
+            return true;
+        }
+
+        if ($project->uses_execution_tracks) {
+            return false;
+        }
+
+        return in_array($project->workflow_status, ['draft', 'pending_secretariat'], true);
+    }
+
+    private function mergeAllocationFromRequest(Request $request, array $validated, ?Project $project = null): array
+    {
+        if (Project::secretariatEnabled()) {
+            unset($validated['project_number_seq'], $validated['allocation_image']);
+
+            return $validated;
+        }
+
+        if (! $this->canEditAllocationFields($project)) {
+            unset($validated['project_number_seq'], $validated['allocation_image']);
+
+            if ($project) {
+                $validated['project_number'] = $project->project_number;
+            }
+
+            return $validated;
+        }
+
+        $projectNumber = $this->resolveProjectNumberFromValidated($validated, $project);
+
+        if ($projectNumber) {
+            if ($project && $project->project_number && $project->project_number !== $projectNumber) {
+                $relocatedPath = $project->relocateStorageToProjectNumber($projectNumber);
+                if ($relocatedPath !== null) {
+                    $validated['allocation_image_path'] = $relocatedPath;
+                }
+            }
+
+            $validated['project_number'] = $projectNumber;
+        } elseif (! $project) {
+            $validated['project_number'] = null;
+        } else {
+            $validated['project_number'] = $project->project_number;
+        }
+
+        unset($validated['project_number_seq']);
+
+        $validated = $this->mergeAllocationImageUpload(
+            $request,
+            $validated,
+            $project,
+            $validated['project_number'] ?? null
+        );
+        unset($validated['allocation_image']);
+
+        return $validated;
+    }
+
     /** @return list<array{name: string, beneficiaries: int|null, execution_site: string|null, coordinator_mode: string, coordinator_id: int|null, coordinator_external_name: string|null, nomination_responsibility: string|null}> */
     private function normalizeExecutionRegions(int $zones, mixed $rawRegions, ?int $projectManagerId = null): array
     {
@@ -2612,6 +2769,16 @@ class ProjectController extends Controller
             'execution_amount_ils' => ['nullable', 'numeric', 'min:0'],
         ];
 
+        if (! Project::secretariatEnabled()) {
+            $rules['project_number_seq'] = ['nullable', 'integer', 'min:1'];
+            $rules['allocation_image'] = [
+                'nullable',
+                'file',
+                'mimes:' . implode(',', self::ALLOCATION_ATTACHMENT_MIMES),
+                'max:10240',
+            ];
+        }
+
         return $rules;
     }
 
@@ -2708,10 +2875,10 @@ class ProjectController extends Controller
             $beneficiariesTotal = 0;
             $hasBeneficiaries = false;
 
-            if ($request->filled('project_number_seq') && $project === null) {
+            if ($request->filled('project_number_seq') && ! Project::secretariatEnabled()) {
                 $fullNumber = Project::formatFromSequence((int) $request->input('project_number_seq'));
 
-                if (! Project::isProjectNumberAvailable($fullNumber)) {
+                if (! Project::isProjectNumberAvailable($fullNumber, $project?->id)) {
                     $validator->errors()->add(
                         'project_number_seq',
                         'رقم المشروع مستخدم مسبقاً، اختر رقماً آخر.'

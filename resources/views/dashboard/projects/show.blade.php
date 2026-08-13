@@ -110,13 +110,17 @@
                 </div>
             @endif
 
-            @if ($project->workflow_status === 'pending_secretariat')
+            @if ($project->workflow_status === 'pending_secretariat' && \App\Models\Project::secretariatEnabled())
                 <div class="alert alert-info py-2 mb-3">
                     @if ($project->hasCompletedSecretariatPhase())
                         تصحيح رقم ومرفق التخصيص — سكرتاريا الدائرة. بعد الحفظ تُستأنف مسارات التنفيذ.
                     @else
                         المشروع بانتظار سكرتاريا الدائرة لتعبئة رقم التخصيص ومرفق التخصيص قبل بدء مسارات التنفيذ.
                     @endif
+                </div>
+            @elseif (in_array($project->workflow_status, ['draft', 'pending_secretariat'], true) && ! \App\Models\Project::secretariatEnabled() && ! $project->hasCompletedSecretariatPhase())
+                <div class="alert alert-info py-2 mb-3">
+                    أكمل <strong>رقم التخصيص</strong> و<strong>مرفق التخصيص</strong> من صفحة تعديل المشروع ثم ابدأ مسارات التنفيذ.
                 </div>
             @endif
 
@@ -142,6 +146,11 @@
                     @csrf
                     <button type="submit" class="btn btn-primary">إرسال لسكرتاريا الدائرة</button>
                 </form>
+            @elseif (($canSubmitAndStartExecutions ?? false))
+                <form action="{{ route('dashboard.projects.submit-and-start-executions', $project) }}" method="post" class="d-inline">
+                    @csrf
+                    <button type="submit" class="btn btn-primary">بدء مسارات التنفيذ</button>
+                </form>
             @elseif ($project->workflow_status === 'draft' && ($canSubmitToCoordinatorFromDraft ?? false))
                 <form action="{{ route('dashboard.projects.submit-to-coordinator', $project) }}" method="post" class="d-inline">
                     @csrf
@@ -149,7 +158,7 @@
                 </form>
             @endif
 
-            @if ($project->workflow_status === 'pending_secretariat' && auth()->user()?->can('fill_secretariat', 'App\Models\Project') && ($canShowSecretariatForm ?? true))
+            @if (\App\Models\Project::secretariatEnabled() && $project->workflow_status === 'pending_secretariat' && auth()->user()?->can('fill_secretariat', 'App\Models\Project') && ($canShowSecretariatForm ?? true))
                 @include('dashboard.projects._secretariat_form')
             @endif
 

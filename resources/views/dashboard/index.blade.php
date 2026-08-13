@@ -13,7 +13,7 @@
     $showCoordinatorColumn = ! in_array($role, ['coordinator'], true);
     $showMonitorColumn = in_array($role, ['monitor', 'monitoring_director', 'general_management', 'admin', 'super_admin'], true)
         || auth()->user()?->super_admin;
-    $isProjectSecretariat = $role === 'project_secretariat';
+    $isProjectSecretariat = $role === 'project_secretariat' && \App\Models\Project::secretariatEnabled();
 @endphp
 <x-front-layout>
     @include('dashboard.partials._home_datatable_assets')
