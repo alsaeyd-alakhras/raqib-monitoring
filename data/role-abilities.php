@@ -15,7 +15,8 @@ return [
     ],
     'project_secretariat' => [
         'projects.view',
-        'projects.fill_secretariat',
+        'projects.create',
+        'projects.update',
     ],
     'coordinator' => [
         'projects.view',

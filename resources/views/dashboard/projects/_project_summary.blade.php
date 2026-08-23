@@ -236,6 +236,15 @@
                 <th scope="row">مدير المشروع</th>
                 <td>{{ $project->projectManager?->name ?? '—' }}</td>
             </tr>
+            @if ($project->isSecretariatEntry())
+                <tr>
+                    <th scope="row">مدخل المشروع</th>
+                    <td>
+                        {{ $project->createdByUser?->name ?? '—' }}
+                        <span class="badge bg-label-secondary">سكرتاريا الدائرة</span>
+                    </td>
+                </tr>
+            @endif
             <tr>
                 <th scope="row">دائرة مدير المشروع</th>
                 <td class="{{ ($projectManagerDepartmentName ?? null) ? '' : 'text-empty' }}">

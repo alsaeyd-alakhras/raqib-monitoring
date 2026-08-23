@@ -15,6 +15,11 @@ return [
     'promote_coordinators_report_path' => 'logs/promote-coordinators-report.json',
 
     'projects' => [
-        'secretariat_enabled' => env('RAQIB_PROJECTS_SECRETARIAT_ENABLED', false),
+        // Enables secretariat as project entry creator (not a workflow stage).
+        // Set RAQIB_PROJECTS_SECRETARIAT_ENTRY_ENABLED=false to disable explicitly.
+        'secretariat_entry_enabled' => filter_var(
+            env('RAQIB_PROJECTS_SECRETARIAT_ENTRY_ENABLED', env('RAQIB_PROJECTS_SECRETARIAT_ENABLED', true)),
+            FILTER_VALIDATE_BOOLEAN
+        ),
     ],
 ];

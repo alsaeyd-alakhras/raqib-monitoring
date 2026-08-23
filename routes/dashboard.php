@@ -146,8 +146,7 @@ Route::group([
 
     Route::prefix('projects/{project}')->name('projects.')->group(function () {
         Route::post('fill-pm-fields', [ProjectController::class, 'fillPmFields'])->name('fill-pm-fields');
-        Route::post('submit-to-secretariat', [ProjectController::class, 'submitToSecretariat'])->name('submit-to-secretariat');
-        Route::post('fill-secretariat', [ProjectController::class, 'fillSecretariat'])->name('fill-secretariat');
+        Route::post('submit-handed-to-pm', [ProjectController::class, 'submitHandedToProjectManager'])->name('submit-handed-to-pm');
         Route::post('submit-and-start-executions', [ProjectController::class, 'submitAndStartExecutions'])->name('submit-and-start-executions');
         Route::post('sync-regions', [ProjectController::class, 'syncRegions'])->name('sync-regions');
         Route::post('submit-to-coordinator', [ProjectController::class, 'submitToCoordinator'])->name('submit-to-coordinator');

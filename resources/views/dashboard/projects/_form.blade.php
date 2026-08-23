@@ -1,7 +1,12 @@
 @php
     $isEditing = isset($project) && $project->exists;
     $lockTeamFields = (bool) ($lockTeamFieldsForMonitoringDirector ?? false);
-    $lockedManagerId = $lockProjectManager ? $currentPerson->id : ($isEditing ? $project->project_manager_id : old('project_manager_id'));
+    $defaultPmId = $defaultProjectManagerId ?? null;
+    $lockedManagerId = old('project_manager_id', $isEditing ? ($project->project_manager_id ?? '') : ($defaultPmId ?? ''));
+    $lockProjectManagerField = ($lockProjectManager ?? false) || ($lockTeamFields && $isEditing);
+    $displayProjectManagerName = $isEditing
+        ? ($project->projectManager?->name ?? '—')
+        : ($currentPerson?->name ?? '—');
     $projectTypeOptions = collect($projectTypes)->mapWithKeys(fn ($label) => [$label => $label])->all();
 @endphp
 
@@ -67,21 +72,17 @@
                 />
             </div>
             <div class="mb-4 col-md-4">
-                @if ($lockProjectManager)
+                @if ($lockProjectManagerField)
                     <label class="form-label">مدير المشروع</label>
-                    <input type="text" class="form-control" value="{{ $currentPerson->name }}" readonly>
-                    <input type="hidden" name="project_manager_id" value="{{ $currentPerson->id }}">
-                @elseif ($lockTeamFields && $isEditing)
-                    <label class="form-label">مدير المشروع</label>
-                    <input type="text" class="form-control" value="{{ $project->projectManager?->name ?? '—' }}" readonly>
-                    <input type="hidden" name="project_manager_id" value="{{ $project->project_manager_id }}">
+                    <input type="text" class="form-control" value="{{ $displayProjectManagerName }}" readonly>
+                    <input type="hidden" name="project_manager_id" value="{{ $lockedManagerId }}">
                 @else
                     <x-form.select
                         name="project_manager_id"
                         id="project-manager-id"
                         label="مدير المشروع"
                         :optionsId="$projectManagers"
-                        :value="$project->project_manager_id ?? ''"
+                        :value="$lockedManagerId ?? ''"
                         searchable
                         required
                     />
@@ -197,30 +198,28 @@
     </div>
 </div>
 
-@if (! \App\Models\Project::secretariatEnabled())
-    @php
-        $allocationFieldsLocked = isset($project)
-            && $project->exists
-            && (
-                $project->uses_execution_tracks
-                || ! in_array($project->workflow_status, ['draft', 'pending_secretariat'], true)
-            );
-    @endphp
-    <div class="card mb-4">
-        <div class="card-header">
-            <h5 class="mb-0">بيانات التخصيص</h5>
-        </div>
-        <div class="card-body">
-            @if ($allocationFieldsLocked)
-                <p class="text-muted small mb-3">بيانات التخصيص — للعرض فقط بعد بدء مسارات التنفيذ.</p>
-            @endif
-            @include('dashboard.projects._allocation_fields', [
-                'project' => $project ?? null,
-                'allocationFieldsLocked' => $allocationFieldsLocked,
-            ])
-        </div>
+@php
+    $allocationFieldsLocked = isset($project)
+        && $project->exists
+        && (
+            $project->uses_execution_tracks
+            || $project->workflow_status !== 'draft'
+        );
+@endphp
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="mb-0">بيانات التخصيص</h5>
     </div>
-@endif
+    <div class="card-body">
+        @if ($allocationFieldsLocked)
+            <p class="text-muted small mb-3">بيانات التخصيص — للعرض فقط بعد بدء مسارات التنفيذ.</p>
+        @endif
+        @include('dashboard.projects._allocation_fields', [
+            'project' => $project ?? null,
+            'allocationFieldsLocked' => $allocationFieldsLocked,
+        ])
+    </div>
+</div>
 
 <div class="card mb-4">
     <div class="card-header">
@@ -472,10 +471,11 @@ document.addEventListener('DOMContentLoaded', function () {
         window.initProjectExecutionRegions({
             offices: @json($associationOffices ?? []),
             savedRegions: @json(old('execution_regions', isset($project) ? ($project->execution_regions ?? []) : [])),
-            coordinators: @json(($coordinators ?? collect())->map(fn ($person) => ['id' => $person->id, 'name' => $person->name])->values()),
-            projectManagerId: @json($lockedManagerId ?? null),
+            coordinators: @json($coordinatorCandidates ?? ($coordinators ?? collect())->map(fn ($person) => ['id' => $person->id, 'name' => $person->name])->values()),
+            projectManagerId: @json($lockedManagerId ?: null),
             lockTeamFields: @json($lockTeamFields ?? false),
-            defaultCoordinatorMode: @json($lockProjectManager ?? false ? 'self' : 'person'),
+            defaultCoordinatorMode: @json(($defaultProjectManagerId ?? null) && ($currentPerson?->role ?? '') === 'project_manager' ? 'self' : 'person'),
+            selfCoordinatorHint: @json($selfCoordinatorHint ?? ''),
         });
     }
 

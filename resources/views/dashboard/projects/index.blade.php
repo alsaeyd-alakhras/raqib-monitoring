@@ -55,13 +55,13 @@
                 <a class="btn btn-label-secondary" href="{{ route('dashboard.checklist-admin.index') }}">إدارة قائمة التحقق</a>
             </div>
         @endcan
-        @can('create', 'App\Models\Project')
+        @if(\App\Models\Project::userCanCreate())
             <div class="mx-2 nav-item">
                 <a href="{{ route('dashboard.projects.create') }}" class="m-0 text-white btn btn-success">
                     <i class="fa-solid fa-plus"></i> إضافة
                 </a>
             </div>
-        @endcan
+        @endif
         <div class="mx-2 nav-item">
             <button class="p-2 border-0 btn btn-outline-danger rounded-pill d-none" type="button" id="filterBtnClear" title="إزالة التصفية">
                 <i class="fa-solid fa-eraser"></i>

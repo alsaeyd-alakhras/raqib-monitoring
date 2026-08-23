@@ -270,7 +270,10 @@ class ProjectExecution extends Model
         }
 
         return match ($person->role) {
-            'project_manager' => $query->whereHas('project', fn (Builder $q) => $q->where('project_manager_id', $person->id)),
+            'project_manager' => $query->where(function (Builder $q) use ($person) {
+                $q->whereHas('project', fn (Builder $inner) => $inner->where('project_manager_id', $person->id))
+                    ->orWhere('coordinator_id', $person->id);
+            }),
             'section_manager' => $person->section_id
                 ? $query->whereHas('project.projectManager', fn (Builder $q) => $q->where('section_id', $person->section_id))
                 : $query->whereRaw('1 = 0'),
@@ -299,7 +302,8 @@ class ProjectExecution extends Model
         $this->loadMissing('project.projectManager');
 
         return match ($person->role) {
-            'project_manager' => (int) $this->project?->project_manager_id === (int) $person->id,
+            'project_manager' => (int) $this->project?->project_manager_id === (int) $person->id
+                || (int) $this->coordinator_id === (int) $person->id,
             'section_manager' => $person->section_id
                 && (int) $this->project?->projectManager?->section_id === (int) $person->section_id,
             'department_manager' => $person->department_id
@@ -376,6 +380,7 @@ class ProjectExecution extends Model
 
         return match ($person->role) {
             'coordinator' => (int) $this->coordinator_id === (int) $person->id,
+            'project_manager' => (int) $this->coordinator_id === (int) $person->id,
             'section_manager' => $this->approvableBySectionManager($person),
             'department_manager' => $this->approvableByDepartmentManager($person),
             'monitoring_director', 'general_management', 'admin' => true,
@@ -474,9 +479,14 @@ class ProjectExecution extends Model
         }
 
         return match ($person->role) {
-            'project_manager' => (int) $this->project?->project_manager_id === (int) $person->id
+            'project_manager' => (
+                (int) $this->project?->project_manager_id === (int) $person->id
                 && $this->isSelfCoordinator()
-                && in_array($this->workflow_status, ['pending_coordinator', 'coordinator_filling'], true),
+                && in_array($this->workflow_status, ['pending_coordinator', 'coordinator_filling'], true)
+            ) || (
+                (int) $this->coordinator_id === (int) $person->id
+                && in_array($this->workflow_status, ['pending_coordinator', 'coordinator_filling'], true)
+            ),
             'coordinator' => (int) $this->coordinator_id === (int) $person->id
                 && in_array($this->workflow_status, ['pending_coordinator', 'coordinator_filling'], true),
             'section_manager' => $this->workflow_status === 'pending_section_manager'

@@ -167,6 +167,7 @@ class ProjectController extends Controller
     public function create(): View
     {
         $this->authorize('create', Project::class);
+        $this->ensureSecretariatEntryAllowed();
 
         return view('dashboard.projects.create', $this->formData(new Project()) + ['project' => new Project()]);
     }
@@ -217,13 +218,12 @@ class ProjectController extends Controller
     public function store(Request $request): RedirectResponse
     {
         $this->authorize('create', Project::class);
+        $this->ensureSecretariatEntryAllowed();
 
         $validated = $this->validateProject($request);
         $validated = $this->mergeAllocationFromRequest($request, $validated);
-        if (Project::secretariatEnabled()) {
-            $validated['project_number'] = null;
-        }
         $validated['workflow_status'] = 'draft';
+        $validated['entry_channel'] = $this->resolveEntryChannel();
         $validated['created_by'] = auth()->id();
         $validated['updated_by'] = auth()->id();
 
@@ -245,7 +245,7 @@ class ProjectController extends Controller
             return redirect()->route('dashboard.projects.monitor-work', $project);
         }
 
-        $project->load(['center', 'department', 'section', 'funder', 'currency', 'procurementRep', 'projectManager.department', 'monitorPerson', 'primaryMonitoringActivity.passageCompletedByUser', 'createdByUser', 'secretariatSubmittedByUser', 'secretariatFilledByUser', 'rejectedByUser', 'coordinatorFilledByUser', 'coordinatorSubmittedByUser', 'submittedToProjectManagerByUser', 'submittedToSectionManagerByUser', 'sectionManagerApprovedByUser', 'deptManagerApprovedByUser', 'monitoringManagerReceivedByUser', 'monitorSubmittedByUser', 'rejections.rejectedByUser', 'rejections.returnTargetPerson']);
+        $project->load(['center', 'department', 'section', 'funder', 'currency', 'procurementRep', 'projectManager.department', 'monitorPerson', 'primaryMonitoringActivity.passageCompletedByUser', 'createdByUser', 'handedToPmByUser', 'secretariatSubmittedByUser', 'secretariatFilledByUser', 'rejectedByUser', 'coordinatorFilledByUser', 'coordinatorSubmittedByUser', 'submittedToProjectManagerByUser', 'submittedToSectionManagerByUser', 'sectionManagerApprovedByUser', 'deptManagerApprovedByUser', 'monitoringManagerReceivedByUser', 'monitorSubmittedByUser', 'rejections.rejectedByUser', 'rejections.returnTargetPerson']);
         $project->syncMonitoringWorkflowState();
         $project->refresh();
 
@@ -275,6 +275,9 @@ class ProjectController extends Controller
                 'canViewCoordinatorData' => $this->canViewCoordinatorData($project),
                 'showCoordinatorInSummary' => false,
                 'canEditPmFields' => $this->canEditPmFields($project),
+                'canEditProjectForm' => $this->canEditProjectForm($project),
+                'canSubmitHandedToProjectManager' => $this->canSubmitHandedToProjectManager($project),
+                'canSubmitAndStartExecutions' => $this->canSubmitAndStartExecutions($project),
                 'projectManagerDepartmentName' => $project->projectManagerDepartmentName(),
                 'approverDepartmentManager' => $project->approverDepartmentManager(),
                 'approverDepartmentManagerLabel' => $project->approverDepartmentManagerLabel(),
@@ -332,6 +335,7 @@ class ProjectController extends Controller
     {
         $this->authorize('update', Project::class);
         $this->ensureProjectVisible($project);
+        abort_unless($this->canEditProjectForm($project), 403, 'لا يمكن تعديل المشروع في حالته الحالية.');
 
         return view('dashboard.projects.edit', $this->formData($project) + ['project' => $project]);
     }
@@ -340,15 +344,13 @@ class ProjectController extends Controller
     {
         $this->authorize('update', Project::class);
         $this->ensureProjectVisible($project);
+        abort_unless($this->canEditProjectForm($project), 403, 'لا يمكن تعديل المشروع في حالته الحالية.');
 
         $previousCoordinatorId = $project->coordinator_id;
         $previousExternalName = $project->coordinator_external_name;
 
         $validated = $this->validateProject($request, $project);
         $validated = $this->mergeAllocationFromRequest($request, $validated, $project);
-        if (Project::secretariatEnabled()) {
-            $validated['project_number'] = $project->project_number;
-        }
         $validated['updated_by'] = auth()->id();
 
         $project->update($validated);
@@ -413,100 +415,48 @@ class ProjectController extends Controller
         return back()->with('success', 'تم حفظ بيانات مدير المشروع.');
     }
 
-    public function submitToSecretariat(Project $project): RedirectResponse
+    public function submitHandedToProjectManager(Project $project): RedirectResponse
     {
-        if (! Project::secretariatEnabled()) {
-            return back()->withErrors([
-                'secretariat' => 'مرحلة سكرتاريا الدائرة معلّقة حالياً — استخدم «بدء مسارات التنفيذ».',
-            ]);
+        if (! Project::secretariatEntryEnabled()) {
+            abort(404);
         }
 
         $this->authorize('update', Project::class);
+        $this->ensureProjectVisible($project);
         $this->guardStatus($project, ['draft']);
 
-        if ($project->hasCompletedSecretariatPhase()) {
-            return back()->withErrors([
-                'secretariat' => 'تم تعبئة التخصيص سابقاً — أرسل المشروع للمنسق أو لمدير القسم حسب الحالة.',
-            ]);
+        if (! $this->canSubmitHandedToProjectManager($project)) {
+            abort(403);
         }
 
         if (! $project->hasCoordinatorAssignment()) {
             return back()->withErrors(['execution_regions' => 'يجب تحديد منسق لكل منطقة تنفيذ قبل الإرسال.']);
         }
 
+        if (! $project->hasCompletedSecretariatPhase()) {
+            return back()->withErrors([
+                'allocation' => 'يجب تعبئة رقم التخصيص ومرفق التخصيص قبل الإرسال لمدير المشروع.',
+            ]);
+        }
+
         $project->update([
-            'workflow_status' => 'pending_secretariat',
-            'secretariat_submitted_at' => now(),
-            'secretariat_submitted_by' => auth()->id(),
+            'handed_to_pm_at' => now(),
+            'handed_to_pm_by' => auth()->id(),
             'updated_by' => auth()->id(),
         ]);
         $this->clearProjectReturnNotice($project);
 
-        return back()->with('success', 'تم إرسال المشروع لسكرتاريا الدائرة.');
-    }
-
-    public function fillSecretariat(Request $request, Project $project): RedirectResponse
-    {
-        if (! Project::secretariatEnabled()) {
-            return back()->withErrors([
-                'secretariat' => 'مرحلة سكرتاريا الدائرة معلّقة حالياً.',
-            ]);
-        }
-
-        $this->authorize('fill_secretariat', Project::class);
-        $this->guardStatus($project, ['pending_secretariat']);
-        $this->authorizeSecretariatForProject($project);
-
-        $validated = $this->validateSecretariatFill($request, $project);
-        $projectNumber = Project::formatFromSequence((int) $validated['project_number_seq']);
-
-        $relocatedPath = $project->relocateStorageToProjectNumber($projectNumber);
-        $payload = [
-            'project_number' => $projectNumber,
-            'secretariat_filled_at' => now(),
-            'secretariat_filled_by' => auth()->id(),
-            'updated_by' => auth()->id(),
-        ];
-
-        if ($relocatedPath !== null) {
-            $payload['allocation_image_path'] = $relocatedPath;
-        }
-
-        $payload = $this->mergeAllocationImageUpload($request, $payload, $project, $projectNumber);
-
-        $isSecretariatCorrection = $project->hasCompletedSecretariatPhase();
-
-        $payload['uses_execution_tracks'] = true;
-        $payload['workflow_status'] = 'executions_in_progress';
-
-        $project->update($payload);
-
-        app(ProjectExecutionSpawner::class)->syncFromRegions($project, (int) auth()->id());
-        app(ProjectAggregateStatusService::class)->refresh($project);
-
-        $this->clearProjectReturnNotice($project);
-
-        $message = $isSecretariatCorrection
-            ? 'تم تصحيح بيانات التخصيص وبدء مسارات التنفيذ.'
-            : 'تم حفظ بيانات التخصيص وبدء مسارات التنفيذ للمناطق.';
-
-        return redirect()
-            ->route('dashboard.projects.show', $project)
-            ->with('success', $message);
+        return back()->with('success', 'تم إرسال المشروع لمدير المشروع للمراجعة.');
     }
 
     public function submitAndStartExecutions(Project $project): RedirectResponse
     {
-        if (Project::secretariatEnabled()) {
-            abort(404);
-        }
-
         $this->authorize('update', Project::class);
         $this->ensureProjectVisible($project);
-        $this->guardStatus($project, ['draft', 'pending_secretariat']);
+        $this->guardStatus($project, ['draft']);
 
-        if (! auth()->user()?->super_admin) {
-            $this->ensureProjectManagerActor($project);
+        if (! $this->canSubmitAndStartExecutions($project)) {
+            abort(403);
         }
 
         if (! $project->hasCoordinatorAssignment()) {
@@ -1628,10 +1578,24 @@ class ProjectController extends Controller
     private function formData(?Project $project = null): array
     {
         $currentPerson = auth()->user()?->person;
+        $isSecretariat = $currentPerson?->role === 'project_secretariat';
         $lockProjectManager = $currentPerson?->role === 'project_manager';
+        $defaultProjectManagerId = $currentPerson?->role === 'project_manager'
+            ? $currentPerson->id
+            : null;
         $coordinatorMode = $project && $project->exists
             ? $project->coordinatorMode()
-            : old('coordinator_mode', $lockProjectManager ? 'self' : 'person');
+            : old('coordinator_mode', $defaultProjectManagerId && ! $isSecretariat ? 'self' : 'person');
+
+        $coordinatorCandidates = Person::whereIn('role', Project::coordinatorEligibleRoles())
+            ->orderBy('name')
+            ->get(['id', 'name', 'role'])
+            ->map(fn (Person $person) => [
+                'id' => $person->id,
+                'name' => $person->name . ' (' . (Person::roleLabels()[$person->role] ?? $person->role) . ')',
+                'role' => $person->role,
+            ])
+            ->values();
 
         $showCoordinatorChecklistInitially = in_array($coordinatorMode, ['self', 'external'], true)
             || ($coordinatorMode === 'person' && (
@@ -1645,7 +1609,8 @@ class ProjectController extends Controller
             'projectManagers' => Person::withRole('project_manager')->orderBy('name')->get(),
             'people' => Person::orderBy('name')->get(),
             'coordinators' => Person::withRole('coordinator')->orderBy('name')->get(),
-            'coordinatorUserMap' => Person::withRole('coordinator')->get()->mapWithKeys(
+            'coordinatorCandidates' => $coordinatorCandidates,
+            'coordinatorUserMap' => Person::whereIn('role', Project::coordinatorEligibleRoles())->get()->mapWithKeys(
                 fn (Person $person) => [(string) $person->id => (bool) $person->user_id]
             )->all(),
             'projectTypes' => $this->constantOptions('project_types'),
@@ -1656,6 +1621,7 @@ class ProjectController extends Controller
             'monitoringStages' => $this->constantOptions('monitoring_stages'),
             'currentPerson' => $currentPerson,
             'lockProjectManager' => $lockProjectManager,
+            'defaultProjectManagerId' => $defaultProjectManagerId,
             'nextProjectNumber' => Project::generateProjectNumber(),
             'nextProjectNumberSeq' => Project::sequenceFromProjectNumber(Project::generateProjectNumber()),
             'coordinatorMode' => $coordinatorMode,
@@ -1676,6 +1642,11 @@ class ProjectController extends Controller
                 'not_required' => 'غير مطلوب',
             ],
             'showCoordinatorChecklistInitially' => $showCoordinatorChecklistInitially,
+            'selfCoordinatorHint' => match ($currentPerson?->role ?? '') {
+                'project_secretariat' => 'بعد تسليم المشروع لمدير المشروع، يعبّئ مدير المشروع قائمة المنسق لهذا المسار.',
+                'project_manager' => 'أنت مدير المشروع والمنسق — ستعبّئ قائمة التحقق عند مرحلة المنسق.',
+                default => null,
+            },
             'selectedCenterId' => old('center_id', $project->center_id ?? ''),
             'selectedDepartmentId' => old('department_id', $project->department_id ?? ''),
             'selectedSectionId' => old('section_id', $project->section_id ?? ''),
@@ -1857,9 +1828,7 @@ class ProjectController extends Controller
         $isAssignedCoordinator = $personId && (int) $personId === (int) $project->coordinator_id;
         $canManageCoordinatorColumn = $this->currentUserCanManageCoordinatorColumn($project);
         $user = auth()->user();
-        $canShowSecretariatForm = $user?->super_admin
-            || ($user?->person?->role === 'project_secretariat'
-                && $project->visibleToProjectSecretariat($user->person));
+        $canShowSecretariatForm = false;
 
         return [
             'project' => $project,
@@ -1877,7 +1846,7 @@ class ProjectController extends Controller
             'monitoringStages' => $this->constantOptions('monitoring_stages'),
             'showCoordinatorFillOnDraft' => $this->canFillCoordinatorOnDraft($project),
             'canShowSecretariatForm' => $canShowSecretariatForm,
-            'canSubmitToSecretariat' => $this->canSubmitToSecretariat($project),
+            'canSubmitHandedToProjectManager' => $this->canSubmitHandedToProjectManager($project),
             'canSubmitAndStartExecutions' => $this->canSubmitAndStartExecutions($project),
             'canSubmitToCoordinatorFromDraft' => $this->canSubmitToCoordinatorFromDraft($project),
             'canSubmitToProjectManager' => $this->canSubmitToProjectManager($project),
@@ -2102,6 +2071,12 @@ class ProjectController extends Controller
             return;
         }
 
+        $personId = $user?->person?->id;
+
+        if ($personId && (int) $personId === (int) $project->coordinator_id) {
+            return;
+        }
+
         if ($this->userIsSelfCoordinatorProjectManager($project, $user)
             && in_array($project->workflow_status, ['pending_coordinator', 'coordinator_filling'], true)) {
             return;
@@ -2124,11 +2099,29 @@ class ProjectController extends Controller
 
     private function canEditPmFields(Project $project): bool
     {
+        return $this->canEditProjectForm($project);
+    }
+
+    private function canEditProjectForm(Project $project): bool
+    {
+        $user = auth()->user();
+
+        if ($user?->person?->role === 'monitoring_director' && $user->can('update', Project::class)) {
+            return in_array($project->workflow_status, [
+                'draft',
+                'pending_monitoring_manager',
+                'monitoring_in_progress',
+                'pending_monitoring_confirmation',
+            ], true);
+        }
+
         if ($project->workflow_status !== 'draft') {
             return false;
         }
 
-        $user = auth()->user();
+        if ($project->secretariatCanEdit()) {
+            return true;
+        }
 
         if (! $user?->can('update', Project::class)) {
             return false;
@@ -2143,17 +2136,17 @@ class ProjectController extends Controller
         return (bool) ($personId && (int) $personId === (int) $project->project_manager_id);
     }
 
-    private function canSubmitToSecretariat(Project $project): bool
+    private function canSubmitHandedToProjectManager(Project $project): bool
     {
-        if (! Project::secretariatEnabled()) {
+        if (! Project::secretariatEntryEnabled()) {
             return false;
         }
 
-        if ($project->workflow_status !== 'draft') {
+        if ($project->workflow_status !== 'draft' || $project->wasHandedToProjectManager()) {
             return false;
         }
 
-        if ($project->hasCompletedSecretariatPhase()) {
+        if (! $project->isSecretariatEntry()) {
             return false;
         }
 
@@ -2163,28 +2156,17 @@ class ProjectController extends Controller
             return false;
         }
 
-        if (! $user->super_admin) {
-            $personId = $user->person?->id;
-
-            if (! $personId || (int) $personId !== (int) $project->project_manager_id) {
-                return false;
-            }
+        if ($user->super_admin) {
+            return true;
         }
 
-        if ($project->usesPerRegionCoordinators()) {
-            return $project->hasCoordinatorAssignment();
-        }
-
-        return true;
+        return (int) $project->created_by === (int) $user->id
+            && $user->person?->role === 'project_secretariat';
     }
 
     private function canSubmitAndStartExecutions(Project $project): bool
     {
-        if (Project::secretariatEnabled()) {
-            return false;
-        }
-
-        if (! in_array($project->workflow_status, ['draft', 'pending_secretariat'], true)) {
+        if ($project->workflow_status !== 'draft') {
             return false;
         }
 
@@ -2192,6 +2174,11 @@ class ProjectController extends Controller
 
         if (! $user?->can('update', Project::class)) {
             return false;
+        }
+
+        if ($project->secretariatCanEdit()) {
+            return $project->hasCoordinatorAssignment()
+                && $project->hasCompletedSecretariatPhase();
         }
 
         if (! $user->super_admin) {
@@ -2203,6 +2190,10 @@ class ProjectController extends Controller
         }
 
         if (! $project->hasCoordinatorAssignment()) {
+            return false;
+        }
+
+        if ($project->isSecretariatEntry() && ! $project->wasHandedToProjectManager()) {
             return false;
         }
 
@@ -2364,6 +2355,12 @@ class ProjectController extends Controller
 
         if ($user->person?->role === 'monitoring_director') {
             return false;
+        }
+
+        $personId = $user->person?->id;
+
+        if ($personId && (int) $personId === (int) $project->coordinator_id) {
+            return true;
         }
 
         if ($this->userIsSelfCoordinatorProjectManager($project, $user)
@@ -2556,10 +2553,6 @@ class ProjectController extends Controller
 
     private function canEditAllocationFields(?Project $project): bool
     {
-        if (Project::secretariatEnabled()) {
-            return false;
-        }
-
         if (! $project || ! $project->exists) {
             return true;
         }
@@ -2568,17 +2561,11 @@ class ProjectController extends Controller
             return false;
         }
 
-        return in_array($project->workflow_status, ['draft', 'pending_secretariat'], true);
+        return $project->workflow_status === 'draft';
     }
 
     private function mergeAllocationFromRequest(Request $request, array $validated, ?Project $project = null): array
     {
-        if (Project::secretariatEnabled()) {
-            unset($validated['project_number_seq'], $validated['allocation_image']);
-
-            return $validated;
-        }
-
         if (! $this->canEditAllocationFields($project)) {
             unset($validated['project_number_seq'], $validated['allocation_image']);
 
@@ -2769,15 +2756,13 @@ class ProjectController extends Controller
             'execution_amount_ils' => ['nullable', 'numeric', 'min:0'],
         ];
 
-        if (! Project::secretariatEnabled()) {
-            $rules['project_number_seq'] = ['nullable', 'integer', 'min:1'];
-            $rules['allocation_image'] = [
-                'nullable',
-                'file',
-                'mimes:' . implode(',', self::ALLOCATION_ATTACHMENT_MIMES),
-                'max:10240',
-            ];
-        }
+        $rules['project_number_seq'] = ['nullable', 'integer', 'min:1'];
+        $rules['allocation_image'] = [
+            'nullable',
+            'file',
+            'mimes:' . implode(',', self::ALLOCATION_ATTACHMENT_MIMES),
+            'max:10240',
+        ];
 
         return $rules;
     }
@@ -2837,10 +2822,6 @@ class ProjectController extends Controller
         $currentPerson = auth()->user()?->person;
         $isMonitoringDirector = $currentPerson?->role === 'monitoring_director';
 
-        if ($currentPerson?->role === 'project_manager' && ! auth()->user()?->super_admin) {
-            unset($rules['project_manager_id']);
-        }
-
         if ($isMonitoringDirector && $project) {
             unset(
                 $rules['project_manager_id'],
@@ -2859,9 +2840,7 @@ class ProjectController extends Controller
                 return;
             }
 
-            $managerId = $currentPerson?->role === 'project_manager'
-                ? $currentPerson->id
-                : $request->input('project_manager_id');
+            $managerId = $request->input('project_manager_id') ?: $currentPerson?->id;
 
             $zones = (int) $request->input('execution_zones', 0);
             $associationOffices = $this->constantOptions('association_offices');
@@ -2875,7 +2854,7 @@ class ProjectController extends Controller
             $beneficiariesTotal = 0;
             $hasBeneficiaries = false;
 
-            if ($request->filled('project_number_seq') && ! Project::secretariatEnabled()) {
+            if ($request->filled('project_number_seq')) {
                 $fullNumber = Project::formatFromSequence((int) $request->input('project_number_seq'));
 
                 if (! Project::isProjectNumberAvailable($fullNumber, $project?->id)) {
@@ -2883,6 +2862,31 @@ class ProjectController extends Controller
                         'project_number_seq',
                         'رقم المشروع مستخدم مسبقاً، اختر رقماً آخر.'
                     );
+                }
+            }
+
+            if ($currentPerson?->role === 'project_secretariat' && Project::secretariatEntryEnabled()) {
+                $selectedPmId = (int) $request->input('project_manager_id');
+
+                if ($selectedPmId === (int) $currentPerson->id) {
+                    $validator->errors()->add('project_manager_id', 'لا يمكن أن تكون سكرتاريا الدائرة مدير المشروع.');
+                } else {
+                    $selectedPm = Person::find($selectedPmId);
+
+                    if (! $selectedPm || $selectedPm->role !== 'project_manager') {
+                        $validator->errors()->add('project_manager_id', 'يجب اختيار مدير مشروع صالح.');
+                    } elseif ($currentPerson->department_id
+                        && (int) $selectedPm->department_id !== (int) $currentPerson->department_id) {
+                        $validator->errors()->add('project_manager_id', 'مدير المشروع يجب أن يكون ضمن دائرتك.');
+                    }
+                }
+            }
+
+            if ($currentPerson?->role === 'project_manager') {
+                $requestedPmId = (int) $request->input('project_manager_id', 0);
+
+                if ($requestedPmId !== 0 && $requestedPmId !== (int) $currentPerson->id) {
+                    $validator->errors()->add('project_manager_id', 'لا يمكنك تعيين مدير مشروع غيرك.');
                 }
             }
 
@@ -2923,10 +2927,10 @@ class ProjectController extends Controller
                             $validator->errors()->add($fieldPrefix, 'اختر منسقاً من القائمة لمنطقة ' . ($index + 1) . '.');
                         } else {
                             $isCoordinator = Person::where('id', $region['coordinator_id'])
-                                ->where('role', 'coordinator')
+                                ->whereIn('role', Project::coordinatorEligibleRoles())
                                 ->exists();
                             if (! $isCoordinator) {
-                                $validator->errors()->add($fieldPrefix, 'الشخص المختار ليس منسقاً في منطقة ' . ($index + 1) . '.');
+                                $validator->errors()->add($fieldPrefix, 'الشخص المختار غير صالح كمنسق في منطقة ' . ($index + 1) . '.');
                             }
                         }
                     } elseif ($mode === 'external' && ! filled($region['coordinator_external_name'] ?? null)) {
@@ -3006,11 +3010,26 @@ class ProjectController extends Controller
             return (int) ($validated['project_manager_id'] ?? $request->input('project_manager_id'));
         }
 
+        if ($person?->role === 'project_secretariat') {
+            return (int) ($validated['project_manager_id'] ?? $request->input('project_manager_id'));
+        }
+
         if ($person?->role === 'project_manager') {
             return (int) $person->id;
         }
 
         return (int) ($validated['project_manager_id'] ?? $request->input('project_manager_id'));
+    }
+
+    private function resolveEntryChannel(): string
+    {
+        $role = auth()->user()?->person?->role;
+
+        if ($role === 'project_secretariat' && Project::secretariatEntryEnabled()) {
+            return Project::ENTRY_CHANNEL_SECRETARIAT;
+        }
+
+        return Project::ENTRY_CHANNEL_PROJECT_MANAGER;
     }
 
     private function normalizeCoordinatorInput(array $validated): array
@@ -3209,6 +3228,13 @@ class ProjectController extends Controller
     private function applyVisibilityScope($query)
     {
         return $query->visibleToUser(auth()->user());
+    }
+
+    private function ensureSecretariatEntryAllowed(): void
+    {
+        if (auth()->user()?->person?->role === 'project_secretariat' && ! Project::secretariatEntryEnabled()) {
+            abort(403, 'إدخال المشاريع بواسطة السكرتاريا غير مفعّل.');
+        }
     }
 
     private function ensureProjectVisible(Project $project): void

@@ -11,6 +11,7 @@ class SyncRoleAbilitiesCommand extends Command
 {
     protected $signature = 'raqib:sync-role-abilities
                             {--user= : username أو id للمستخدم}
+                            {--role= : Person.role — مزامنة كل المستخدمين بهذا الدور (مثل project_secretariat)}
                             {--all : مزامنة كل المستخدمين المرتبطين بشخص (ما عدا super_admin)}';
 
     protected $description = 'إعادة ضبط صلاحيات role_users من data/role-abilities.php حسب Person.role';
@@ -18,10 +19,11 @@ class SyncRoleAbilitiesCommand extends Command
     public function handle(UserRoleAbilitiesSync $sync): int
     {
         $userOption = $this->option('user');
+        $roleOption = $this->option('role');
         $syncAll = (bool) $this->option('all');
 
-        if (! $userOption && ! $syncAll) {
-            $this->error('حدّد --user=USERNAME أو --all');
+        if (! $userOption && ! $syncAll && ! $roleOption) {
+            $this->error('حدّد --user=USERNAME أو --role=ROLE أو --all');
 
             return self::FAILURE;
         }
@@ -43,9 +45,33 @@ class SyncRoleAbilitiesCommand extends Command
             return self::SUCCESS;
         }
 
+        if ($roleOption) {
+            if (! in_array($roleOption, Person::ROLES, true)) {
+                $this->error("دور غير معروف: {$roleOption}");
+
+                return self::FAILURE;
+            }
+
+            $count = $this->syncPeopleQuery(
+                $sync,
+                Person::query()->where('role', $roleOption)
+            );
+            $this->info("تمت مزامنة {$count} مستخدم بدور {$roleOption}.");
+
+            return self::SUCCESS;
+        }
+
+        $count = $this->syncPeopleQuery($sync, Person::query());
+
+        $this->info("تمت مزامنة {$count} مستخدم.");
+
+        return self::SUCCESS;
+    }
+
+    private function syncPeopleQuery(UserRoleAbilitiesSync $sync, $query): int
+    {
         $count = 0;
-        Person::query()
-            ->whereNotNull('user_id')
+        $query->whereNotNull('user_id')
             ->with('user')
             ->orderBy('id')
             ->chunkById(100, function ($people) use ($sync, &$count) {
@@ -57,9 +83,7 @@ class SyncRoleAbilitiesCommand extends Command
                 }
             });
 
-        $this->info("تمت مزامنة {$count} مستخدم.");
-
-        return self::SUCCESS;
+        return $count;
     }
 
     private function syncOne(UserRoleAbilitiesSync $sync, User $user, ?string $role = null): void

@@ -13,7 +13,7 @@
     $showCoordinatorColumn = ! in_array($role, ['coordinator'], true);
     $showMonitorColumn = in_array($role, ['monitor', 'monitoring_director', 'general_management', 'admin', 'super_admin'], true)
         || auth()->user()?->super_admin;
-    $isProjectSecretariat = $role === 'project_secretariat' && \App\Models\Project::secretariatEnabled();
+    $isProjectSecretariat = $role === 'project_secretariat' && \App\Models\Project::secretariatEntryEnabled();
 @endphp
 <x-front-layout>
     @include('dashboard.partials._home_datatable_assets')
@@ -43,11 +43,11 @@
                     </a>
                 @endcan
             @endif
-            @can('create', 'App\Models\Project')
+            @if(\App\Models\Project::userCanCreate())
                 <a href="{{ route('dashboard.projects.create') }}" class="btn btn-success">
                     <i class="fa-solid fa-plus me-1"></i> مشروع جديد
                 </a>
-            @endcan
+            @endif
             @can('view', 'App\Models\ProjectExecution')
                 <a href="{{ route('dashboard.project-executions.index') }}" class="btn btn-outline-primary">مسارات التنفيذ</a>
             @endcan

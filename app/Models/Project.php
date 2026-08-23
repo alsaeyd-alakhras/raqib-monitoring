@@ -13,10 +13,44 @@ class Project extends Model
 {
     use HasFactory;
 
+    public static function secretariatEntryEnabled(): bool
+    {
+        return (bool) config('raqib.projects.secretariat_entry_enabled', false);
+    }
+
+    /** Same rules as ProjectController::create() — ability + secretariat config flag. */
+    public static function userCanCreate(?\App\Models\User $user = null): bool
+    {
+        $user ??= auth()->user();
+
+        if (! $user) {
+            return false;
+        }
+
+        if ($user->super_admin) {
+            return true;
+        }
+
+        if (! $user->can('create', self::class)) {
+            return false;
+        }
+
+        if ($user->person?->role === 'project_secretariat' && ! static::secretariatEntryEnabled()) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /** @deprecated Use secretariatEntryEnabled() — old workflow stage is removed */
     public static function secretariatEnabled(): bool
     {
-        return (bool) config('raqib.projects.secretariat_enabled', false);
+        return static::secretariatEntryEnabled();
     }
+
+    public const ENTRY_CHANNEL_PROJECT_MANAGER = 'project_manager';
+
+    public const ENTRY_CHANNEL_SECRETARIAT = 'secretariat';
 
     /** @param array<string, string> $options */
     public static function filterSecretariatRejectOptions(array $options): array
@@ -99,6 +133,9 @@ class Project extends Model
         'gap_owner',
         'return_target',
         'created_by',
+        'entry_channel',
+        'handed_to_pm_at',
+        'handed_to_pm_by',
         'updated_by',
     ];
 
@@ -130,6 +167,7 @@ class Project extends Model
         'monitoring_manager_received_at' => 'datetime',
         'monitor_submitted_at' => 'datetime',
         'rejected_at' => 'datetime',
+        'handed_to_pm_at' => 'datetime',
     ];
 
     public function funder(): BelongsTo
@@ -300,6 +338,59 @@ class Project extends Model
     public function createdByUser(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    public function handedToPmByUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'handed_to_pm_by');
+    }
+
+    public function isSecretariatEntry(): bool
+    {
+        return $this->entry_channel === self::ENTRY_CHANNEL_SECRETARIAT;
+    }
+
+    public function wasHandedToProjectManager(): bool
+    {
+        return filled($this->handed_to_pm_at);
+    }
+
+    public function secretariatCanEdit(?User $user = null): bool
+    {
+        $user ??= auth()->user();
+
+        if (! $user || ! static::secretariatEntryEnabled()) {
+            return false;
+        }
+
+        if ($user->super_admin) {
+            return $this->workflow_status === 'draft' && ! $this->wasHandedToProjectManager();
+        }
+
+        $person = $user->person;
+
+        if (! $person || $person->role !== 'project_secretariat') {
+            return false;
+        }
+
+        if ($this->workflow_status !== 'draft' || $this->wasHandedToProjectManager()) {
+            return false;
+        }
+
+        return (int) $this->created_by === (int) $user->id
+            && $this->visibleToProjectSecretariat($person);
+    }
+
+    /** @return list<string> */
+    public static function coordinatorEligibleRoles(): array
+    {
+        return ['coordinator', 'project_manager'];
+    }
+
+    public static function personCanBeCoordinator(?Person $person): bool
+    {
+        return $person !== null
+            && in_array($person->role, static::coordinatorEligibleRoles(), true);
     }
 
     /**
@@ -750,13 +841,11 @@ class Project extends Model
                 $q->where('uses_execution_tracks', false)->where('monitor_person_id', $person->id)
                     ->orWhereHas('executions', fn (Builder $inner) => $inner->where('monitor_person_id', $person->id));
             }),
-            'project_secretariat' => $person->department_id
-                ? $query->whereHas('projectManager', fn (Builder $q) => $q->where('department_id', $person->department_id))
-                    ->where(function (Builder $q) {
-                        $q->where('workflow_status', 'pending_secretariat')
-                            ->orWhereNotNull('secretariat_submitted_at')
-                            ->orWhereNotNull('secretariat_filled_at');
-                    })
+            'project_secretariat' => static::secretariatEntryEnabled() && $person->department_id
+                ? $query->where(function (Builder $q) use ($user, $person) {
+                    $q->where('created_by', $user->id)
+                        ->orWhereHas('projectManager', fn (Builder $inner) => $inner->where('department_id', $person->department_id));
+                })
                 : $query->whereRaw('1 = 0'),
             'monitoring_director', 'general_management', 'admin' => $query,
             default => $query,
@@ -815,27 +904,21 @@ class Project extends Model
     }
 
     /**
-     * عرض المشروع لسكرتاريا الدائرة: قائمة الانتظار أو مشروع سبق إرساله للسكرتاريا (قراءة فقط).
+     * عرض المشروع لسكرتاريا الدائرة: مشاريع أنشأها أو مشاريع مديري مشاريع في دائرتها.
      */
     public function projectSecretariatCanView(?Person $person): bool
     {
-        if (! $this->visibleToProjectSecretariat($person)) {
+        if (! static::secretariatEntryEnabled()) {
             return false;
         }
 
-        return $this->workflow_status === 'pending_secretariat'
-            || filled($this->secretariat_submitted_at)
-            || filled($this->secretariat_filled_at);
+        return $this->visibleToProjectSecretariat($person);
     }
 
-    /** هل اكتملت مرحلة سكرتاريا المشاريع (رقم ومرفق التخصيص)؟ */
+    /** هل اكتملت بيانات التخصيص (رقم ومرفق)؟ */
     public function hasCompletedSecretariatPhase(): bool
     {
-        if (! static::secretariatEnabled()) {
-            return filled($this->project_number) && filled($this->allocation_image_path);
-        }
-
-        return filled($this->secretariat_filled_at) && filled($this->project_number);
+        return filled($this->project_number) && filled($this->allocation_image_path);
     }
 
     /**

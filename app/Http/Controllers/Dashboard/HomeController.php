@@ -353,6 +353,14 @@ class HomeController extends Controller
         $base = [
             'total' => $projects->count(),
             'draft' => $projects->where('workflow_status', 'draft')->count(),
+            'secretariat_drafts' => $projects->where('workflow_status', 'draft')
+                ->where('entry_channel', Project::ENTRY_CHANNEL_SECRETARIAT)
+                ->whereNull('handed_to_pm_at')
+                ->count(),
+            'pm_review_from_secretariat' => $projects->where('workflow_status', 'draft')
+                ->where('entry_channel', Project::ENTRY_CHANNEL_SECRETARIAT)
+                ->whereNotNull('handed_to_pm_at')
+                ->count(),
             'secretariat' => $projects->where('workflow_status', 'pending_secretariat')->count(),
             'coordinator' => $projects->whereIn('workflow_status', ['pending_coordinator', 'coordinator_filling'])->count(),
             'pending_pm' => $projects->where('workflow_status', 'pending_project_manager')->count(),
@@ -371,8 +379,8 @@ class HomeController extends Controller
                 'cards' => array_values(array_filter([
                     ['title' => 'إجمالي مشاريعي', 'value' => $base['total'], 'class' => 'primary'],
                     ['title' => 'مسودات', 'value' => $base['draft'], 'class' => 'secondary'],
-                    Project::secretariatEnabled()
-                        ? ['title' => 'عند السكرتاريا', 'value' => $base['secretariat'], 'class' => 'info']
+                    Project::secretariatEntryEnabled()
+                        ? ['title' => 'بانتظار مراجعتي (من السكرتاريا)', 'value' => $base['pm_review_from_secretariat'], 'class' => 'warning']
                         : null,
                     ['title' => 'بانتظار المنسق', 'value' => $base['coordinator'], 'class' => 'info'],
                     ['title' => 'بانتظار مراجعتي', 'value' => $base['pending_pm'], 'class' => 'warning'],
@@ -428,12 +436,12 @@ class HomeController extends Controller
                     ['title' => 'مكتملة', 'value' => $base['complete'], 'class' => 'success'],
                 ],
             ],
-            'project_secretariat' => Project::secretariatEnabled() ? [
-                'label' => 'سكرتاريا الدائرة',
+            'project_secretariat' => Project::secretariatEntryEnabled() ? [
+                'label' => 'إدخال المشاريع — سكرتاريا',
                 'cards' => [
-                    ['title' => 'بانتظار تعبئتي', 'value' => $base['secretariat'], 'class' => 'warning'],
-                    ['title' => 'بانتظار المنسق', 'value' => $base['coordinator'], 'class' => 'info'],
-                    ['title' => 'قيد الدورة', 'value' => $base['pending_pm'] + $base['pending_section'] + $base['pending_dept'] + $base['pending_monitoring'] + $base['monitoring'], 'class' => 'primary'],
+                    ['title' => 'مسودات بانتظار إرسال', 'value' => $base['secretariat_drafts'], 'class' => 'warning'],
+                    ['title' => 'عند مدير المشروع', 'value' => $base['pm_review_from_secretariat'], 'class' => 'info'],
+                    ['title' => 'قيد الدورة', 'value' => $base['coordinator'] + $base['pending_pm'] + $base['pending_section'] + $base['pending_dept'] + $base['pending_monitoring'] + $base['monitoring'], 'class' => 'primary'],
                     ['title' => 'مكتملة', 'value' => $base['complete'], 'class' => 'success'],
                 ],
             ] : [

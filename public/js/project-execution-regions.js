@@ -21,6 +21,7 @@
         const coordinators = Array.isArray(config.coordinators) ? config.coordinators : [];
         const lockTeamFields = Boolean(config.lockTeamFields);
         const defaultCoordinatorMode = config.defaultCoordinatorMode || 'person';
+        const selfCoordinatorHint = config.selfCoordinatorHint || '';
         let projectManagerId = config.projectManagerId != null ? String(config.projectManagerId) : '';
 
         function escapeHtml(value) {
@@ -179,8 +180,8 @@
                         >
                         <div class="form-text">بدون حساب — يعبّئ مدير المشروع نيابةً عنه.</div>
                     </div>
-                    <div class="region-coordinator-self-hint alert alert-info py-2 mt-2 mb-0 small${mode === 'self' ? '' : ' d-none'}" data-region-index="${index}">
-                        بعد موافقة السكرتاريا، يعبّئ مدير المشروع قائمة المنسق لهذا المسار.
+                    <div class="region-coordinator-self-hint alert alert-info py-2 mt-2 mb-0 small${mode === 'self' && selfCoordinatorHint ? '' : ' d-none'}" data-region-index="${index}">
+                        ${escapeHtml(selfCoordinatorHint)}
                     </div>
                     ${nominationFieldHtml(index, saved, false)}
                 </div>
@@ -197,7 +198,7 @@
 
             personWrap?.classList.toggle('d-none', mode !== 'person');
             externalWrap?.classList.toggle('d-none', mode !== 'external');
-            selfHint?.classList.toggle('d-none', mode !== 'self');
+            selfHint?.classList.toggle('d-none', mode !== 'self' || !selfCoordinatorHint);
 
             if (coordinatorSelect) {
                 coordinatorSelect.disabled = mode !== 'person';

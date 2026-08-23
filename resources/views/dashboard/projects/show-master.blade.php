@@ -14,13 +14,25 @@
         </div>
         <div class="d-flex gap-2 flex-wrap">
             <a href="{{ route('dashboard.projects.index') }}" class="btn btn-label-secondary">رجوع</a>
-            @can('update', 'App\Models\Project')
-                @if ($project->workflow_status === 'draft')
-                    <a href="{{ route('dashboard.projects.edit', $project) }}" class="btn btn-primary">تعديل</a>
-                @endif
-            @endcan
+            @if ($canEditProjectForm ?? false)
+                <a href="{{ route('dashboard.projects.edit', $project) }}" class="btn btn-primary">تعديل</a>
+            @endif
         </div>
     </div>
+
+    @if ($project->workflow_status === 'draft')
+        <div class="card mb-4">
+            <div class="card-header"><h5 class="mb-0">إجراءات المسودة</h5></div>
+            <div class="card-body">
+                @include('dashboard.projects._draft_workflow_actions', [
+                    'project' => $project,
+                    'canSubmitHandedToProjectManager' => $canSubmitHandedToProjectManager ?? false,
+                    'canSubmitAndStartExecutions' => $canSubmitAndStartExecutions ?? false,
+                    'canSubmitToCoordinatorFromDraft' => false,
+                ])
+            </div>
+        </div>
+    @endif
 
     <div class="card mb-4">
         <div class="card-header"><h5 class="mb-0">ملخص المشروع الأساسي</h5></div>

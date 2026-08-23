@@ -22,7 +22,7 @@ use Tests\TestCase;
 
 class ProjectsSmokeTest extends TestCase
 {
-    private function secretariatUserForDepartment(int $departmentId): User
+    protected function secretariatUserForDepartment(int $departmentId): User
     {
         $user = User::where('username', 'sec_hana')->first();
         if (! $user) {
@@ -36,12 +36,12 @@ class ProjectsSmokeTest extends TestCase
             'phone' => $user->person?->phone ?: '0599000111',
         ]);
 
-        $this->syncUserAbilities($user, ['projects.view', 'projects.fill_secretariat']);
+        $this->syncUserAbilities($user, ['projects.view', 'projects.create', 'projects.update']);
 
         return $user->fresh(['person']);
     }
 
-    private function nextProjectNumberSeq(): int
+    protected function nextProjectNumberSeq(): int
     {
         return Project::sequenceFromProjectNumber(Project::generateProjectNumber()) ?? 1;
     }
@@ -133,7 +133,7 @@ class ProjectsSmokeTest extends TestCase
     /** @param  list<string>  $abilities
      * @return array{0: User, 1: Person}
      */
-    private function createEphemeralProjectManager(array $abilities, ?string $suffix = null): array
+    protected function createEphemeralProjectManager(array $abilities, ?string $suffix = null): array
     {
         $suffix = $suffix ?? uniqid();
         $section = Section::firstOrFail();
@@ -164,7 +164,7 @@ class ProjectsSmokeTest extends TestCase
     }
 
     /** @param  list<string>  $abilities */
-    private function syncUserAbilities(User $user, array $abilities): void
+    protected function syncUserAbilities(User $user, array $abilities): void
     {
         RoleUser::where('user_id', $user->id)->delete();
 
@@ -191,7 +191,7 @@ class ProjectsSmokeTest extends TestCase
         }
     }
 
-    private function deleteEphemeralUser(User $user): void
+    protected function deleteEphemeralUser(User $user): void
     {
         $personId = Person::where('user_id', $user->id)->value('id');
 
@@ -398,11 +398,17 @@ class ProjectsSmokeTest extends TestCase
         ];
     }
 
+    private function skipIfSecretariatEntryDisabled(): void
+    {
+        if (! Project::secretariatEntryEnabled()) {
+            $this->markTestSkipped('Secretariat project entry is disabled.');
+        }
+    }
+
+    /** @deprecated use skipIfSecretariatEntryDisabled */
     private function skipIfSecretariatDisabled(): void
     {
-        if (! Project::secretariatEnabled()) {
-            $this->markTestSkipped('Secretariat workflow is disabled.');
-        }
+        $this->skipIfSecretariatEntryDisabled();
     }
 
     protected function assignProjectAllocation(Project $project, ?int $seq = null): void
@@ -423,19 +429,10 @@ class ProjectsSmokeTest extends TestCase
     {
         $seq ??= $this->nextProjectNumberSeq();
 
-        if (Project::secretariatEnabled()) {
-            $this->post(route('dashboard.projects.submit-to-secretariat', $project))->assertRedirect();
-            $project->refresh();
-            $this->assertSame('pending_secretariat', $project->workflow_status);
+        $this->assignProjectAllocation($project, $seq);
 
-            $this->post(route('dashboard.projects.fill-secretariat', $project), $this->secretariatFillData($seq))
-                ->assertRedirect();
-        } else {
-            $this->assignProjectAllocation($project, $seq);
-
-            $this->post(route('dashboard.projects.submit-and-start-executions', $project))
-                ->assertRedirect();
-        }
+        $this->post(route('dashboard.projects.submit-and-start-executions', $project))
+            ->assertRedirect();
 
         $project->refresh();
         $this->assertTrue($project->uses_execution_tracks);
@@ -985,6 +982,7 @@ class ProjectsSmokeTest extends TestCase
 
     public function test_project_number_unique_on_secretariat_fill(): void
     {
+        $this->skipLegacySecretariatWorkflowStageTests();
         $this->skipIfSecretariatDisabled();
 
         $user = User::first();
@@ -2035,6 +2033,7 @@ class ProjectsSmokeTest extends TestCase
 
     public function test_secretariat_fill_stores_allocation_under_project_number(): void
     {
+        $this->skipLegacySecretariatWorkflowStageTests();
         if (! Project::secretariatEnabled()) {
             Storage::fake('public');
 
@@ -2120,6 +2119,7 @@ class ProjectsSmokeTest extends TestCase
 
     public function test_demo_sec_sees_demo_pm_project_after_submit_to_secretariat(): void
     {
+        $this->skipLegacySecretariatWorkflowStageTests();
         $this->skipIfSecretariatDisabled();
 
         $pmUser = User::where('username', 'demo_pm')->first();
@@ -2346,6 +2346,7 @@ class ProjectsSmokeTest extends TestCase
 
     public function test_secretariat_rbac_only_fill_secretariat_can_submit(): void
     {
+        $this->skipLegacySecretariatWorkflowStageTests();
         $this->skipIfSecretariatDisabled();
 
         Storage::fake('public');
@@ -2841,6 +2842,7 @@ class ProjectsSmokeTest extends TestCase
 
     public function test_secretariat_scoped_to_project_manager_department(): void
     {
+        $this->skipLegacySecretariatWorkflowStageTests();
         $this->skipIfSecretariatDisabled();
 
         Storage::fake('public');
@@ -2889,6 +2891,7 @@ class ProjectsSmokeTest extends TestCase
 
     public function test_secretariat_fill_self_coordinator_sends_to_coordinator(): void
     {
+        $this->skipLegacySecretariatWorkflowStageTests();
         $this->skipIfSecretariatDisabled();
 
         Storage::fake('public');
@@ -2947,6 +2950,7 @@ class ProjectsSmokeTest extends TestCase
 
     public function test_self_coordinator_submits_to_secretariat_without_checklist(): void
     {
+        $this->skipLegacySecretariatWorkflowStageTests();
         Storage::fake('public');
 
         [$pmUser, $pm] = $this->createEphemeralProjectManager([
@@ -2992,6 +2996,7 @@ class ProjectsSmokeTest extends TestCase
 
     public function test_self_coordinator_fills_coordinator_after_secretariat_then_section_manager(): void
     {
+        $this->skipLegacySecretariatWorkflowStageTests();
         Storage::fake('public');
 
         [$pmUser, $pm] = $this->createEphemeralProjectManager([
@@ -3159,6 +3164,7 @@ class ProjectsSmokeTest extends TestCase
 
     public function test_pm_resubmit_after_reject_skips_secretariat_sends_to_coordinator(): void
     {
+        $this->skipLegacySecretariatWorkflowStageTests();
         Storage::fake('public');
 
         $section = Section::firstOrFail();
@@ -3291,6 +3297,7 @@ class ProjectsSmokeTest extends TestCase
 
     public function test_return_secretariat_correction_sends_self_coordinator_to_coordinator(): void
     {
+        $this->skipLegacySecretariatWorkflowStageTests();
         $this->skipIfSecretariatDisabled();
 
         Storage::fake('public');
@@ -3543,6 +3550,186 @@ class ProjectsSmokeTest extends TestCase
 
         ProjectChecklistValue::where('project_id', $project->id)->delete();
         $project->delete();
+    }
+
+    public function test_secretariat_entry_hands_off_to_project_manager_then_pm_starts_executions(): void
+    {
+        config(['raqib.projects.secretariat_entry_enabled' => true]);
+        Storage::fake('public');
+
+        [$pmUser, $pm] = $this->createEphemeralProjectManager(['projects.view', 'projects.create', 'projects.update']);
+        $secUser = $this->secretariatUserForDepartment((int) $pm->department_id);
+        $coordinator = Person::withRole('coordinator')->firstOrFail();
+        $seq = $this->nextProjectNumberSeq() + 55001;
+
+        $fields = $this->sampleProjectFields([
+            'project_manager_id' => $pm->id,
+            'execution_zones' => 1,
+            'execution_regions' => [[
+                'name' => json_decode((string) Constant::where('key', 'association_offices')->value('value'), true)[0],
+                'beneficiaries' => 100,
+                'coordinator_mode' => 'person',
+                'coordinator_id' => $coordinator->id,
+            ]],
+            'project_number_seq' => $seq,
+            'allocation_image' => UploadedFile::fake()->image('allocation.jpg'),
+        ]);
+
+        $this->actingAs($secUser);
+        $response = $this->post(route('dashboard.projects.store'), array_merge($fields, [
+            'project_name' => 'مشروع سكرتاريا ' . uniqid(),
+        ]));
+        $response->assertRedirect();
+        $project = Project::latest('id')->firstOrFail();
+
+        $this->assertSame(Project::ENTRY_CHANNEL_SECRETARIAT, $project->entry_channel);
+        $this->assertSame((int) $secUser->id, (int) $project->created_by);
+        $this->assertSame('draft', $project->workflow_status);
+
+        $this->post(route('dashboard.projects.submit-handed-to-pm', $project))->assertRedirect();
+        $project->refresh();
+        $this->assertNotNull($project->handed_to_pm_at);
+
+        $this->actingAs($pmUser);
+        $this->post(route('dashboard.projects.submit-and-start-executions', $project))->assertRedirect();
+        $project->refresh();
+        $this->assertSame('executions_in_progress', $project->workflow_status);
+
+        $project->delete();
+    }
+
+    public function test_secretariat_entry_starts_executions_directly(): void
+    {
+        config(['raqib.projects.secretariat_entry_enabled' => true]);
+        Storage::fake('public');
+
+        [$pmUser, $pm] = $this->createEphemeralProjectManager(['projects.view', 'projects.create', 'projects.update']);
+        $secUser = $this->secretariatUserForDepartment((int) $pm->department_id);
+        $coordinator = Person::withRole('coordinator')->firstOrFail();
+        $seq = $this->nextProjectNumberSeq() + 55002;
+
+        $fields = $this->sampleProjectFields([
+            'project_manager_id' => $pm->id,
+            'execution_zones' => 1,
+            'execution_regions' => [[
+                'name' => json_decode((string) Constant::where('key', 'association_offices')->value('value'), true)[0],
+                'beneficiaries' => 100,
+                'coordinator_mode' => 'person',
+                'coordinator_id' => $coordinator->id,
+            ]],
+            'project_number_seq' => $seq,
+            'allocation_image' => UploadedFile::fake()->image('allocation.jpg'),
+        ]);
+
+        $this->actingAs($secUser);
+        $this->post(route('dashboard.projects.store'), array_merge($fields, [
+            'project_name' => 'مشروع مباشر ' . uniqid(),
+        ]))->assertRedirect();
+
+        $project = Project::latest('id')->firstOrFail();
+        $this->post(route('dashboard.projects.submit-and-start-executions', $project))->assertRedirect();
+        $project->refresh();
+
+        $this->assertSame('executions_in_progress', $project->workflow_status);
+        $this->assertNull($project->handed_to_pm_at);
+
+        $project->delete();
+    }
+
+    public function test_secretariat_cannot_set_self_as_project_manager(): void
+    {
+        config(['raqib.projects.secretariat_entry_enabled' => true]);
+        Storage::fake('public');
+
+        $secUser = $this->secretariatUserForDepartment((int) Department::firstOrFail()->id);
+        $secPerson = $secUser->person;
+
+        $fields = $this->sampleProjectFields([
+            'project_manager_id' => $secPerson->id,
+            'project_number_seq' => $this->nextProjectNumberSeq() + 55003,
+            'allocation_image' => UploadedFile::fake()->image('allocation.jpg'),
+        ]);
+
+        $this->actingAs($secUser);
+        $this->from(route('dashboard.projects.create'));
+        $this->post(route('dashboard.projects.store'), array_merge($fields, [
+            'project_name' => 'فشل متوقع ' . uniqid(),
+        ]))->assertSessionHasErrors('project_manager_id');
+    }
+
+    public function test_project_manager_cannot_assign_different_project_manager_on_create(): void
+    {
+        Storage::fake('public');
+
+        [$pmAUser, $pmA] = $this->createEphemeralProjectManager(['projects.view', 'projects.create', 'projects.update']);
+        [, $pmB] = $this->createEphemeralProjectManager(['projects.view']);
+
+        $fields = $this->sampleProjectFields([
+            'project_manager_id' => $pmB->id,
+            'project_number_seq' => $this->nextProjectNumberSeq() + 55004,
+            'allocation_image' => UploadedFile::fake()->image('allocation.jpg'),
+        ]);
+
+        $this->actingAs($pmAUser);
+        $this->from(route('dashboard.projects.create'));
+        $this->post(route('dashboard.projects.store'), array_merge($fields, [
+            'project_name' => 'مدير مشروع ثابت ' . uniqid(),
+        ]))->assertSessionHasErrors('project_manager_id');
+    }
+
+    public function test_project_manager_can_be_selected_as_coordinator_for_another_pm(): void
+    {
+        config(['raqib.projects.secretariat_entry_enabled' => true]);
+        Storage::fake('public');
+
+        [$pmAUser, $pmA] = $this->createEphemeralProjectManager(['projects.view', 'projects.create', 'projects.update']);
+        [$pmBUser, $pmB] = $this->createEphemeralProjectManager(['projects.view']);
+        $secUser = $this->secretariatUserForDepartment((int) $pmB->department_id);
+        $offices = json_decode((string) Constant::where('key', 'association_offices')->value('value'), true);
+        $seq = $this->nextProjectNumberSeq() + random_int(60000, 69999);
+
+        $projectName = 'PM منسق ' . uniqid();
+        $fields = $this->sampleProjectFields([
+            'project_manager_id' => $pmB->id,
+            'execution_zones' => 1,
+            'execution_regions' => [[
+                'name' => $offices[0],
+                'beneficiaries' => 100,
+                'coordinator_mode' => 'person',
+                'coordinator_id' => $pmA->id,
+            ]],
+            'project_number_seq' => $seq,
+            'allocation_image' => UploadedFile::fake()->image('allocation.jpg'),
+        ]);
+
+        $this->actingAs($secUser);
+        $response = $this->post(route('dashboard.projects.store'), array_merge($fields, [
+            'project_name' => $projectName,
+        ]));
+        $response->assertSessionHasNoErrors();
+        $response->assertRedirect();
+
+        $project = Project::where('project_name', $projectName)->firstOrFail();
+        $this->assertSame((int) $pmB->id, (int) $project->project_manager_id);
+        $this->assertSame((int) $pmA->id, (int) $project->coordinator_id);
+
+        $this->assignProjectAllocation($project, $seq);
+        $this->actingAs($secUser);
+        $this->post(route('dashboard.projects.submit-handed-to-pm', $project))->assertRedirect();
+        $this->actingAs($pmBUser);
+        $this->post(route('dashboard.projects.submit-and-start-executions', $project))->assertRedirect();
+
+        $execution = $this->primaryExecution($project->fresh());
+        $this->assertSame((int) $pmA->id, (int) $execution->coordinator_id);
+        $this->actingAs($pmAUser);
+        $this->assertTrue($execution->isVisibleToUser($pmAUser));
+
+        $project->delete();
+    }
+
+    private function skipLegacySecretariatWorkflowStageTests(): void
+    {
+        $this->markTestSkipped('Legacy secretariat workflow stage (pending_secretariat) was removed.');
     }
 
 }
