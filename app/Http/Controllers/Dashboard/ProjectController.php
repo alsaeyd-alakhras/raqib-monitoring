@@ -1587,13 +1587,13 @@ class ProjectController extends Controller
             ? $project->coordinatorMode()
             : old('coordinator_mode', $defaultProjectManagerId && ! $isSecretariat ? 'self' : 'person');
 
-        $coordinatorCandidates = Person::whereIn('role', Project::coordinatorEligibleRoles())
+        $coordinatorCandidates = Person::hasAnyRole(Project::coordinatorEligibleRoles())
             ->orderBy('name')
-            ->get(['id', 'name', 'role'])
+            ->get(['id', 'name', 'role', 'additional_roles'])
             ->map(fn (Person $person) => [
                 'id' => $person->id,
-                'name' => $person->name . ' (' . (Person::roleLabels()[$person->role] ?? $person->role) . ')',
-                'role' => $person->role,
+                'name' => $person->name . ' (' . $person->role_label . ')',
+                'role' => $person->primaryRole(),
             ])
             ->values();
 
@@ -1610,7 +1610,7 @@ class ProjectController extends Controller
             'people' => Person::orderBy('name')->get(),
             'coordinators' => Person::withRole('coordinator')->orderBy('name')->get(),
             'coordinatorCandidates' => $coordinatorCandidates,
-            'coordinatorUserMap' => Person::whereIn('role', Project::coordinatorEligibleRoles())->get()->mapWithKeys(
+            'coordinatorUserMap' => Person::hasAnyRole(Project::coordinatorEligibleRoles())->get()->mapWithKeys(
                 fn (Person $person) => [(string) $person->id => (bool) $person->user_id]
             )->all(),
             'projectTypes' => $this->constantOptions('project_types'),
@@ -1684,7 +1684,7 @@ class ProjectController extends Controller
             return true;
         }
 
-        if ($user->person?->role !== 'project_manager') {
+        if (! $user->person?->hasRole('project_manager')) {
             return false;
         }
 
@@ -2031,7 +2031,7 @@ class ProjectController extends Controller
 
         $person = $user?->person;
 
-        abort_if(! $person || $person->role !== 'section_manager', 403);
+        abort_if(! $person || ! $person->hasRole('section_manager'), 403);
         abort_if((int) $person->section_id !== (int) $managerSectionId, 403);
     }
 
@@ -2052,7 +2052,7 @@ class ProjectController extends Controller
 
         $person = $user?->person;
 
-        abort_if(! $person || $person->role !== 'department_manager', 403);
+        abort_if(! $person || ! $person->hasRole('department_manager'), 403);
         abort_if((int) $person->department_id !== (int) $managerDepartmentId, 403);
     }
 
@@ -2927,7 +2927,7 @@ class ProjectController extends Controller
                             $validator->errors()->add($fieldPrefix, 'اختر منسقاً من القائمة لمنطقة ' . ($index + 1) . '.');
                         } else {
                             $isCoordinator = Person::where('id', $region['coordinator_id'])
-                                ->whereIn('role', Project::coordinatorEligibleRoles())
+                                ->hasAnyRole(Project::coordinatorEligibleRoles())
                                 ->exists();
                             if (! $isCoordinator) {
                                 $validator->errors()->add($fieldPrefix, 'الشخص المختار غير صالح كمنسق في منطقة ' . ($index + 1) . '.');
@@ -3010,11 +3010,11 @@ class ProjectController extends Controller
             return (int) ($validated['project_manager_id'] ?? $request->input('project_manager_id'));
         }
 
-        if ($person?->role === 'project_secretariat') {
+        if ($person?->hasRole('project_secretariat')) {
             return (int) ($validated['project_manager_id'] ?? $request->input('project_manager_id'));
         }
 
-        if ($person?->role === 'project_manager') {
+        if ($person?->hasRole('project_manager')) {
             return (int) $person->id;
         }
 
@@ -3023,10 +3023,14 @@ class ProjectController extends Controller
 
     private function resolveEntryChannel(): string
     {
-        $role = auth()->user()?->person?->role;
+        $person = auth()->user()?->person;
 
-        if ($role === 'project_secretariat' && Project::secretariatEntryEnabled()) {
+        if ($person?->hasRole('project_secretariat') && Project::secretariatEntryEnabled()) {
             return Project::ENTRY_CHANNEL_SECRETARIAT;
+        }
+
+        if ($person?->hasRole('project_manager')) {
+            return Project::ENTRY_CHANNEL_PROJECT_MANAGER;
         }
 
         return Project::ENTRY_CHANNEL_PROJECT_MANAGER;
@@ -3299,18 +3303,28 @@ class ProjectController extends Controller
             return false;
         }
 
-        return match ($person->role) {
-            'section_manager' => $project->workflow_status === 'pending_section_manager'
-                && $project->approvableBySectionManager($person),
-            'department_manager' => $project->workflow_status === 'pending_dept_manager'
-                && $project->approvableByDepartmentManager($person),
-            'monitoring_director' => in_array($project->workflow_status, [
+        if ($person->hasRole('section_manager')
+            && $project->workflow_status === 'pending_section_manager'
+            && $project->approvableBySectionManager($person)) {
+            return true;
+        }
+
+        if ($person->hasRole('department_manager')
+            && $project->workflow_status === 'pending_dept_manager'
+            && $project->approvableByDepartmentManager($person)) {
+            return true;
+        }
+
+        if ($person->hasRole('monitoring_director')
+            && in_array($project->workflow_status, [
                 'pending_monitoring_manager',
                 'monitoring_in_progress',
                 'pending_monitoring_confirmation',
-            ], true),
-            default => false,
-        };
+            ], true)) {
+            return true;
+        }
+
+        return false;
     }
 
     private function authorizeProjectReject(Project $project): void

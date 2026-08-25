@@ -626,8 +626,8 @@ trait ManagesProjectExecutions
             return false;
         }
 
-        return in_array($person->role, ['monitoring_director', 'admin'], true)
-            || ($person->role === 'project_manager' && (int) $project->project_manager_id === (int) $person->id);
+        return $person->hasAnyRole(['monitoring_director', 'admin'])
+            || ($person->hasRole('project_manager') && (int) $project->project_manager_id === (int) $person->id);
     }
 
     /** @return list<array{name: string, beneficiaries: int|null, execution_site: string|null}> */
@@ -635,7 +635,7 @@ trait ManagesProjectExecutions
     {
         $role = $user?->person?->role;
 
-        if ($project->usesExecutionTracks() && in_array($role, ['coordinator', 'monitor'], true)) {
+        if ($project->usesExecutionTracks() && $user?->person?->hasAnyRole(['coordinator', 'monitor'])) {
             return $project->executions->map(fn (ProjectExecution $execution) => [
                 'name' => $execution->region_name,
                 'beneficiaries' => $execution->region_beneficiaries,
@@ -651,7 +651,7 @@ trait ManagesProjectExecutions
     {
         $role = $user?->person?->role;
 
-        if ($project->usesExecutionTracks() && in_array($role, ['coordinator', 'monitor'], true)) {
+        if ($project->usesExecutionTracks() && $user?->person?->hasAnyRole(['coordinator', 'monitor'])) {
             $hasAny = false;
             $total = 0;
 
@@ -1452,18 +1452,28 @@ trait ManagesProjectExecutions
             return false;
         }
 
-        return match ($person->role) {
-            'section_manager' => $execution->workflow_status === 'pending_section_manager'
-                && $execution->approvableBySectionManager($person),
-            'department_manager' => $execution->workflow_status === 'pending_dept_manager'
-                && $execution->approvableByDepartmentManager($person),
-            'monitoring_director' => in_array($execution->workflow_status, [
+        if ($person->hasRole('section_manager')
+            && $execution->workflow_status === 'pending_section_manager'
+            && $execution->approvableBySectionManager($person)) {
+            return true;
+        }
+
+        if ($person->hasRole('department_manager')
+            && $execution->workflow_status === 'pending_dept_manager'
+            && $execution->approvableByDepartmentManager($person)) {
+            return true;
+        }
+
+        if ($person->hasRole('monitoring_director')
+            && in_array($execution->workflow_status, [
                 'pending_monitoring_manager',
                 'monitoring_in_progress',
                 'pending_monitoring_confirmation',
-            ], true),
-            default => false,
-        };
+            ], true)) {
+            return true;
+        }
+
+        return false;
     }
 
     private function authorizeRejectExecution(ProjectExecution $execution): void

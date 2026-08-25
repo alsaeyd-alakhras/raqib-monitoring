@@ -9,7 +9,7 @@ class PersonObserver
 {
     public function updated(Person $person): void
     {
-        if (! $person->wasChanged('role') || ! $person->user_id) {
+        if ((! $person->wasChanged('role') && ! $person->wasChanged('additional_roles')) || ! $person->user_id) {
             return;
         }
 
@@ -19,6 +19,6 @@ class PersonObserver
             return;
         }
 
-        app(UserRoleAbilitiesSync::class)->syncFromRole($user, $person->role);
+        app(UserRoleAbilitiesSync::class)->syncFromRoles($user, $person->allRoles());
     }
 }

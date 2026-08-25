@@ -71,7 +71,7 @@
                             <th>#</th>
                             <th>المنطقة</th>
                             <th>المستفيدون</th>
-                            @if (! in_array(auth()->user()?->person?->role, ['coordinator'], true))
+                            @if (! auth()->user()?->hasPersonRole('coordinator'))
                                 <th>المنسق</th>
                             @endif
                             @if ($canViewMonitorData ?? false)
@@ -101,7 +101,7 @@
                                     @endif
                                 </td>
                                 <td>{{ $execution->region_beneficiaries !== null ? number_format($execution->region_beneficiaries) : '—' }}</td>
-                                @if (! in_array(auth()->user()?->person?->role, ['coordinator'], true))
+                                @if (! auth()->user()?->hasPersonRole('coordinator'))
                                     <td>{{ $execution->coordinatorDisplayName() }}</td>
                                 @endif
                                 @if ($canViewMonitorData ?? false)
@@ -127,7 +127,7 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="{{ (($canViewMonitorData ?? false) ? 9 : 7) - (in_array(auth()->user()?->person?->role, ['coordinator'], true) ? 1 : 0) }}" class="text-center text-muted py-4">لا توجد مسارات بعد.</td>
+                                <td colspan="{{ (($canViewMonitorData ?? false) ? 9 : 7) - (auth()->user()?->hasPersonRole('coordinator') ? 1 : 0) }}" class="text-center text-muted py-4">لا توجد مسارات بعد.</td>
                             </tr>
                         @endforelse
                     </tbody>

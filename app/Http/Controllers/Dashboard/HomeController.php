@@ -23,13 +23,13 @@ class HomeController extends Controller
     {
         $user = auth()->user();
         $person = $user?->person;
-        $role = $person?->role ?? ($user?->super_admin ? 'super_admin' : 'guest');
+        $role = $person?->primaryRole() ?? ($user?->super_admin ? 'super_admin' : 'guest');
 
         $projectsQuery = Project::query()->visibleToUser($user)->with(['projectManager', 'currency']);
         $visibleProjects = (clone $projectsQuery)->get();
 
         $executionDashboardRoles = ['coordinator', 'monitor', 'section_manager', 'department_manager', 'monitoring_director'];
-        $usesExecutionDashboard = in_array($role, $executionDashboardRoles, true)
+        $usesExecutionDashboard = ($person?->hasAnyRole($executionDashboardRoles) ?? false)
             || ($user?->canOverseeExecutions() ?? false);
 
         $visibleExecutions = collect();

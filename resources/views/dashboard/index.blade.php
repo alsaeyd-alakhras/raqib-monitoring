@@ -10,10 +10,14 @@
         'admin' => 'أدمن النظام',
         'super_admin' => 'مدير النظام',
     ];
-    $showCoordinatorColumn = ! in_array($role, ['coordinator'], true);
-    $showMonitorColumn = in_array($role, ['monitor', 'monitoring_director', 'general_management', 'admin', 'super_admin'], true)
-        || auth()->user()?->super_admin;
-    $isProjectSecretariat = $role === 'project_secretariat' && \App\Models\Project::secretariatEntryEnabled();
+    $user = auth()->user();
+    $showCoordinatorColumn = ! $user?->hasPersonRole('coordinator');
+    $showMonitorColumn = $user?->hasPersonRole('monitor', 'monitoring_director', 'general_management', 'admin')
+        || $user?->super_admin;
+    if ($user?->hasPersonRole('project_manager') && ! $user?->hasPersonRole('monitor', 'monitoring_director', 'general_management', 'admin')) {
+        $showMonitorColumn = false;
+    }
+    $isProjectSecretariat = $user?->hasPersonRole('project_secretariat') && \App\Models\Project::secretariatEntryEnabled();
 @endphp
 <x-front-layout>
     @include('dashboard.partials._home_datatable_assets')

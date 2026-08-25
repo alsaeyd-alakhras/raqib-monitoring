@@ -310,7 +310,7 @@ class PersonController extends Controller
     {
         $user = auth()->user();
 
-        return $user?->person?->role === 'section_manager' && ! $user->super_admin;
+        return $user?->person?->hasRole('section_manager') && ! $user->super_admin;
     }
 
     private function sectionManagerEditingSelf(Person $person): bool

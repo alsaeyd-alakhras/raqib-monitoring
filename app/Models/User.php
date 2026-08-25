@@ -87,7 +87,13 @@ class User extends Authenticatable
 
     public function hasPersonRole(string ...$roles): bool
     {
-        return in_array($this->personRole(), $roles, true);
+        $person = $this->person;
+
+        if (! $person) {
+            return false;
+        }
+
+        return $person->hasAnyRole($roles);
     }
 
     public function hasAbility(string $ability): bool
@@ -96,13 +102,17 @@ class User extends Authenticatable
             return true;
         }
 
-        $role = $this->personRole();
+        $person = $this->person;
 
-        if (! $role) {
+        if (! $person) {
             return false;
         }
 
-        return in_array($ability, app(RoleAbilitiesService::class)->forRole($role), true);
+        return in_array(
+            $ability,
+            app(RoleAbilitiesService::class)->forRoles($person->allRoles()),
+            true
+        );
     }
 
     /** مدير الرقابة — Person.role فقط (لا abilities). */

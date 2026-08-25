@@ -25,6 +25,39 @@
         return cfg.roleAbilitiesMap[role] || [];
     }
 
+    function selectedAdditionalRoles() {
+        return $('.additional-role-checkbox:checked').map(function () {
+            return $(this).val();
+        }).get();
+    }
+
+    function abilitiesForPersonRoles(primaryRole) {
+        const roles = [primaryRole].concat(selectedAdditionalRoles()).filter(Boolean);
+        const merged = [];
+
+        roles.forEach(function (role) {
+            abilitiesForRole(role).forEach(function (ability) {
+                if (!merged.includes(ability)) {
+                    merged.push(ability);
+                }
+            });
+        });
+
+        return merged;
+    }
+
+    function syncAdditionalRolesField() {
+        const role = $('#directory-role').val();
+        const showAdditional = role === 'section_manager';
+        const field = $('#additional-roles-field');
+
+        field.toggleClass('d-none', !showAdditional);
+
+        if (!showAdditional) {
+            $('.additional-role-checkbox').prop('checked', false);
+        }
+    }
+
     function syncSingleRoleOptions() {
         const roleSelect = document.getElementById('directory-role');
         const hint = document.getElementById('monitoring-director-hint');
@@ -60,6 +93,7 @@
         $('#directory-department').closest('.col-md-4').toggle(needsDept || needsSection || !!role);
         $('#directory-section').closest('.col-md-4').toggle(needsSection);
         syncSingleRoleOptions();
+        syncAdditionalRolesField();
     }
 
     function updateRecordModeUI() {
@@ -88,21 +122,27 @@
         }
 
         updateSectionsVisibility();
-        setAbilities(abilitiesForRole($(roleSelect).val()));
+        setAbilities(abilitiesForPersonRoles($(roleSelect).val()));
+        $('#apply-role-abilities-flag').val('1');
+    });
+
+    $(document).on('change', '.additional-role-checkbox', function () {
+        setAbilities(abilitiesForPersonRoles($('#directory-role').val()));
         $('#apply-role-abilities-flag').val('1');
     });
 
     $('#btn-apply-role-abilities').on('click', function () {
         const role = $('#directory-role').val();
         const current = $('.ability-checkbox:checked').map(function () { return $(this).val(); }).get();
-        const base = abilitiesForRole(role);
-        const merged = Array.from(new Set(base.concat(current.filter(a => !abilitiesForRole(role).includes(a) && !base.includes(a)))));
-        const extras = current.filter(a => !abilitiesForRole(role).includes(a));
+        const base = abilitiesForPersonRoles(role);
+        const extras = current.filter(function (ability) {
+            return !base.includes(ability);
+        });
         setAbilities(Array.from(new Set(base.concat(extras))));
     });
 
     $('#btn-reset-role-abilities').on('click', function () {
-        setAbilities(abilitiesForRole($('#directory-role').val()));
+        setAbilities(abilitiesForPersonRoles($('#directory-role').val()));
         $('#reset-role-abilities-flag').val('1');
     });
 

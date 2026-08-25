@@ -74,6 +74,36 @@
                     </div>
 
                     @unless ($sectionManagerMode)
+                        <div class="mb-4 col-12 d-none" id="additional-roles-field">
+                            <label class="form-label d-block">أدوار إضافية (مع مدير القسم)</label>
+                            @php
+                                $selectedAdditionalRoles = old('additional_roles', $person->additional_roles ?? []);
+                                $additionalRoleOptions = [
+                                    'project_manager' => Person::roleLabels()['project_manager'],
+                                    'coordinator' => Person::roleLabels()['coordinator'],
+                                ];
+                            @endphp
+                            @foreach ($additionalRoleOptions as $roleKey => $roleLabel)
+                                <div class="form-check form-check-inline">
+                                    <input
+                                        class="form-check-input additional-role-checkbox"
+                                        type="checkbox"
+                                        name="additional_roles[]"
+                                        id="additional-role-{{ $roleKey }}"
+                                        value="{{ $roleKey }}"
+                                        @checked(in_array($roleKey, $selectedAdditionalRoles, true))
+                                    >
+                                    <label class="form-check-label" for="additional-role-{{ $roleKey }}">{{ $roleLabel }}</label>
+                                </div>
+                            @endforeach
+                            @error('additional_roles')
+                                <div class="text-danger small mt-1">{{ $message }}</div>
+                            @enderror
+                            <div class="form-text">مثال: مدير قسم يدير مشروعاً في قسمه — يبقى دوره الأساسي «مدير قسم» ويُضاف «مدير مشروع».</div>
+                        </div>
+                    @endunless
+
+                    @unless ($sectionManagerMode)
                         <div class="mb-4 col-md-4" id="center-field">
                             <x-form.select name="center_id" id="directory-center" label="المركز" :optionsId="$centers" :value="$selectedCenterId ?? ''" />
                         </div>
@@ -185,6 +215,7 @@
                 rolesRequiringDepartment: @json($rolesRequiringDepartment),
                 rolesRequiringSection: @json($rolesRequiringSection),
                 rolesLimitedToOneGlobally: @json($rolesLimitedToOneGlobally ?? []),
+                additionalRolesForSectionManager: @json(\App\Models\Person::allowedAdditionalRolesFor('section_manager')),
                 occupiedMonitoringDirector: @json($occupiedMonitoringDirector ?? null),
                 selectedAbilities: @json($selectedAbilities ?? []),
                 departmentsByCenterUrl: @json($departmentsByCenterUrl),

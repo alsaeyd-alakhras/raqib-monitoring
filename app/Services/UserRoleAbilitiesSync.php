@@ -20,11 +20,19 @@ class UserRoleAbilitiesSync
 
     public function syncFromRole(User $user, ?string $role, bool $includeLegacyEmployee = true): void
     {
+        $this->syncFromRoles($user, $role ? [$role] : [], $includeLegacyEmployee);
+    }
+
+    /**
+     * @param  array<int, string|null>  $roles
+     */
+    public function syncFromRoles(User $user, array $roles, bool $includeLegacyEmployee = true): void
+    {
         if ($user->super_admin) {
             return;
         }
 
-        $abilities = $this->roleAbilities->forRole($role);
+        $abilities = $this->roleAbilities->forRoles($roles);
 
         if ($includeLegacyEmployee && $user->user_type === 'employee') {
             $abilities = array_values(array_unique(array_merge(

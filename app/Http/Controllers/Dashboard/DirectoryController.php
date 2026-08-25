@@ -558,15 +558,23 @@ class DirectoryController extends Controller
         $newRole = $person->role;
 
         if ($request->boolean('reset_role_abilities')) {
-            $abilities = $this->roleAbilities->forRole($newRole);
+            $abilities = $this->roleAbilities->forRoles($person->allRoles());
         } elseif ($request->boolean('apply_role_abilities')) {
             $current = $user->roles()->pluck('role_name')->toArray();
             $abilities = $this->roleAbilities->mergeOnRoleChange($oldRole, $newRole, $current);
+            foreach ($person->additionalRoles() as $additionalRole) {
+                $abilities = array_values(array_unique(array_merge(
+                    $abilities,
+                    $this->roleAbilities->forRole($additionalRole)
+                )));
+            }
         } elseif ($oldRole !== $newRole && ! $request->has('abilities')) {
-            $abilities = $this->roleAbilities->resetToRole($newRole);
+            $abilities = $this->roleAbilities->forRoles($person->allRoles());
         } else {
             $abilities = is_array($submitted) ? $submitted : [];
-            if ($abilities === [] && $newRole) {
+            if ($abilities === [] && $person->allRoles() !== []) {
+                $abilities = $this->roleAbilities->forRoles($person->allRoles());
+            } elseif ($abilities === [] && $newRole) {
                 $abilities = $this->roleAbilities->forRole($newRole);
             }
         }

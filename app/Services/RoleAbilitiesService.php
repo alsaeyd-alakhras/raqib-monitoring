@@ -36,6 +36,25 @@ class RoleAbilitiesService
     }
 
     /**
+     * @param  array<int, string|null>  $roles
+     * @return array<int, string>
+     */
+    public function forRoles(array $roles): array
+    {
+        $abilities = [];
+
+        foreach ($roles as $role) {
+            if (! $role) {
+                continue;
+            }
+
+            $abilities = array_merge($abilities, $this->forRole($role));
+        }
+
+        return array_values(array_unique($abilities));
+    }
+
+    /**
      * دمج ذكي عند تغيير الدور: أساسيات الدور الجديد + أي صلاحيات إضافية خارج أساسيات الدور القديم.
      *
      * @param  array<int, string>  $currentAbilities

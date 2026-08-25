@@ -23,11 +23,18 @@ class Person extends Model
         'admin',
     ];
 
+    /** @var list<string> */
+    public const ADDITIONAL_ROLES = [
+        'project_manager',
+        'coordinator',
+    ];
+
     public const ORDINARY_STAFF_LABEL = 'موظف عادي';
 
     protected $fillable = [
         'name',
         'role',
+        'additional_roles',
         'department_id',
         'section_id',
         'user_id',
@@ -36,6 +43,13 @@ class Person extends Model
         'phone',
         'alternate_phone',
     ];
+
+    protected function casts(): array
+    {
+        return [
+            'additional_roles' => 'array',
+        ];
+    }
 
     public static function roleLabels(): array
     {
@@ -50,6 +64,14 @@ class Person extends Model
             'general_management' => 'الإدارة العامة',
             'admin' => 'أدمن النظام',
         ];
+    }
+
+    /** @return list<string> */
+    public static function allowedAdditionalRolesFor(?string $primaryRole): array
+    {
+        return $primaryRole === 'section_manager'
+            ? self::ADDITIONAL_ROLES
+            : [];
     }
 
     /** أدوار تتطلب انتماءً لدائرة عند الحفظ */
@@ -96,13 +118,78 @@ class Person extends Model
         return ['monitoring_director'];
     }
 
+    public function primaryRole(): ?string
+    {
+        $role = $this->role;
+
+        return ($role === null || $role === '') ? null : $role;
+    }
+
+    /** @return list<string> */
+    public function additionalRoles(): array
+    {
+        $roles = $this->additional_roles ?? [];
+
+        return array_values(array_filter(
+            is_array($roles) ? $roles : [],
+            fn ($role) => is_string($role) && $role !== ''
+        ));
+    }
+
+    /** @return list<string> */
+    public function allRoles(): array
+    {
+        $roles = [];
+
+        if ($primary = $this->primaryRole()) {
+            $roles[] = $primary;
+        }
+
+        foreach ($this->additionalRoles() as $role) {
+            if (! in_array($role, $roles, true)) {
+                $roles[] = $role;
+            }
+        }
+
+        return $roles;
+    }
+
+    public function hasRole(string $role): bool
+    {
+        return in_array($role, $this->allRoles(), true);
+    }
+
+    public function hasAnyRole(array $roles): bool
+    {
+        foreach ($roles as $role) {
+            if ($this->hasRole($role)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public function getRoleLabelAttribute(): string
     {
-        if ($this->role === null || $this->role === '') {
+        $labels = self::roleLabels();
+        $parts = [];
+
+        if ($primary = $this->primaryRole()) {
+            $parts[] = $labels[$primary] ?? $primary;
+        }
+
+        foreach ($this->additionalRoles() as $role) {
+            if ($role !== $primary) {
+                $parts[] = $labels[$role] ?? $role;
+            }
+        }
+
+        if ($parts === []) {
             return self::ORDINARY_STAFF_LABEL;
         }
 
-        return self::roleLabels()[$this->role] ?? $this->role;
+        return implode(' + ', $parts);
     }
 
     public function user(): BelongsTo
@@ -122,7 +209,29 @@ class Person extends Model
 
     public function scopeWithRole($query, string $role)
     {
-        return $query->where('role', $role);
+        return $query->hasRole($role);
+    }
+
+    public function scopeHasRole(Builder $query, string $role): Builder
+    {
+        return $query->where(function (Builder $inner) use ($role) {
+            $inner->where('role', $role)
+                ->orWhereJsonContains('additional_roles', $role);
+        });
+    }
+
+    public function scopeHasAnyRole(Builder $query, array $roles): Builder
+    {
+        return $query->where(function (Builder $outer) use ($roles) {
+            $outer->whereRaw('0 = 1');
+
+            foreach ($roles as $role) {
+                $outer->orWhere(function (Builder $inner) use ($role) {
+                    $inner->where('role', $role)
+                        ->orWhereJsonContains('additional_roles', $role);
+                });
+            }
+        });
     }
 
     public function scopeVisibleToUser(Builder $query, ?User $user): Builder
@@ -137,13 +246,17 @@ class Person extends Model
             return $query->whereRaw('1 = 0');
         }
 
-        return match ($person->role) {
-            'section_manager' => $person->section_id
+        if ($person->hasRole('section_manager')) {
+            return $person->section_id
                 ? $query->where('section_id', $person->section_id)
-                : $query->whereRaw('1 = 0'),
-            null, '' => $query->whereRaw('1 = 0'),
-            default => $query,
-        };
+                : $query->whereRaw('1 = 0');
+        }
+
+        if ($person->primaryRole() === null) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        return $query;
     }
 
     public function isVisibleToUser(?User $user): bool
@@ -158,12 +271,12 @@ class Person extends Model
             return false;
         }
 
-        if ($person->role === 'section_manager') {
+        if ($person->hasRole('section_manager')) {
             return $person->section_id
                 && (int) $this->section_id === (int) $person->section_id;
         }
 
-        if ($person->role === null || $person->role === '') {
+        if ($person->primaryRole() === null) {
             return (int) $this->user_id === (int) $user->id;
         }
 

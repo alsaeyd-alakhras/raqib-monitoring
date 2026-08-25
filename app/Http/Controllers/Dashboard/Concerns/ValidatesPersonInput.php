@@ -17,6 +17,8 @@ trait ValidatesPersonInput
         return [
             'name' => ['required', 'string', 'max:255'],
             'role' => ['nullable', 'string', Rule::in(Person::ROLES)],
+            'additional_roles' => ['nullable', 'array'],
+            'additional_roles.*' => ['string', Rule::in(Person::ADDITIONAL_ROLES)],
             'department_id' => ['nullable', 'exists:departments,id'],
             'section_id' => ['nullable', 'exists:sections,id'],
             'job_title' => ['nullable', 'string', 'max:255'],
@@ -133,6 +135,35 @@ trait ValidatesPersonInput
                     );
                 }
             }
+
+            $additionalRoles = array_values(array_unique(array_filter(
+                (array) $request->input('additional_roles', []),
+                fn ($value) => is_string($value) && $value !== ''
+            )));
+
+            if ($additionalRoles !== [] && $role !== 'section_manager') {
+                $validator->errors()->add(
+                    'additional_roles',
+                    'الأدوار الإضافية مسموحة فقط عندما يكون الدور الأساسي «مدير قسم».'
+                );
+            }
+
+            $allowedAdditional = Person::allowedAdditionalRolesFor($role ?: null);
+            foreach ($additionalRoles as $additionalRole) {
+                if (! in_array($additionalRole, $allowedAdditional, true)) {
+                    $validator->errors()->add(
+                        'additional_roles',
+                        'دور إضافي غير مسموح: ' . (Person::roleLabels()[$additionalRole] ?? $additionalRole) . '.'
+                    );
+                }
+            }
+
+            if ($role && in_array($role, $additionalRoles, true)) {
+                $validator->errors()->add(
+                    'additional_roles',
+                    'لا يمكن تكرار الدور الأساسي ضمن الأدوار الإضافية.'
+                );
+            }
         });
 
         if ($validator->fails()) {
@@ -164,6 +195,21 @@ trait ValidatesPersonInput
             $validated['role'] = null;
         }
 
+        $primaryRole = $validated['role'] ?? null;
+        $additionalRoles = array_values(array_unique(array_filter(
+            (array) ($request->input('additional_roles') ?? []),
+            fn ($value) => is_string($value) && $value !== ''
+        )));
+
+        if ($primaryRole === 'section_manager') {
+            $validated['additional_roles'] = array_values(array_intersect(
+                $additionalRoles,
+                Person::allowedAdditionalRolesFor('section_manager')
+            ));
+        } else {
+            $validated['additional_roles'] = [];
+        }
+
         if ($isSectionManager) {
             $validated['section_id'] = $currentPerson->section_id;
             $validated['department_id'] = $currentPerson->department_id;
@@ -176,6 +222,6 @@ trait ValidatesPersonInput
     {
         $user = auth()->user();
 
-        return $user?->person?->role === 'section_manager' && ! $user->super_admin;
+        return $user?->person?->hasRole('section_manager') && ! $user->super_admin;
     }
 }

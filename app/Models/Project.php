@@ -390,7 +390,7 @@ class Project extends Model
     public static function personCanBeCoordinator(?Person $person): bool
     {
         return $person !== null
-            && in_array($person->role, static::coordinatorEligibleRoles(), true);
+            && $person->hasAnyRole(static::coordinatorEligibleRoles());
     }
 
     /**
@@ -817,39 +817,67 @@ class Project extends Model
             return $query->whereRaw('1 = 0');
         }
 
-        return match ($person->role) {
-            'project_manager' => $query->where('project_manager_id', $person->id),
-            'section_manager' => $person->section_id
-                ? $query->where(function (Builder $q) use ($person, $user) {
+        if ($person->hasAnyRole(['monitoring_director', 'general_management', 'admin'])) {
+            return $query;
+        }
+
+        $restrictiveRoles = array_intersect($person->allRoles(), [
+            'project_manager',
+            'section_manager',
+            'department_manager',
+            'coordinator',
+            'monitor',
+            'project_secretariat',
+        ]);
+
+        if ($restrictiveRoles === []) {
+            return $query;
+        }
+
+        return $query->where(function (Builder $outer) use ($person, $user, $restrictiveRoles) {
+            $outer->whereRaw('0 = 1');
+
+            if (in_array('project_manager', $restrictiveRoles, true)) {
+                $outer->orWhere('project_manager_id', $person->id);
+            }
+
+            if (in_array('section_manager', $restrictiveRoles, true) && $person->section_id) {
+                $outer->orWhere(function (Builder $q) use ($person, $user) {
                     $q->where('uses_execution_tracks', false)
                         ->whereHas('projectManager', fn (Builder $inner) => $inner->where('section_id', $person->section_id))
                         ->orWhereHas('executions', fn (Builder $inner) => $inner->visibleToUser($user));
-                })
-                : $query->whereRaw('1 = 0'),
-            'department_manager' => $person->department_id
-                ? $query->where(function (Builder $q) use ($person, $user) {
+                });
+            }
+
+            if (in_array('department_manager', $restrictiveRoles, true) && $person->department_id) {
+                $outer->orWhere(function (Builder $q) use ($person, $user) {
                     $q->where('uses_execution_tracks', false)
                         ->whereHas('projectManager', fn (Builder $inner) => $inner->where('department_id', $person->department_id))
                         ->orWhereHas('executions', fn (Builder $inner) => $inner->visibleToUser($user));
-                })
-                : $query->whereRaw('1 = 0'),
-            'coordinator' => $query->where(function (Builder $q) use ($person) {
-                $q->where('uses_execution_tracks', false)->where('coordinator_id', $person->id)
-                    ->orWhereHas('executions', fn (Builder $inner) => $inner->where('coordinator_id', $person->id));
-            }),
-            'monitor' => $query->where(function (Builder $q) use ($person) {
-                $q->where('uses_execution_tracks', false)->where('monitor_person_id', $person->id)
-                    ->orWhereHas('executions', fn (Builder $inner) => $inner->where('monitor_person_id', $person->id));
-            }),
-            'project_secretariat' => static::secretariatEntryEnabled() && $person->department_id
-                ? $query->where(function (Builder $q) use ($user, $person) {
+                });
+            }
+
+            if (in_array('coordinator', $restrictiveRoles, true)) {
+                $outer->orWhere(function (Builder $q) use ($person) {
+                    $q->where('uses_execution_tracks', false)->where('coordinator_id', $person->id)
+                        ->orWhereHas('executions', fn (Builder $inner) => $inner->where('coordinator_id', $person->id));
+                });
+            }
+
+            if (in_array('monitor', $restrictiveRoles, true)) {
+                $outer->orWhere(function (Builder $q) use ($person) {
+                    $q->where('uses_execution_tracks', false)->where('monitor_person_id', $person->id)
+                        ->orWhereHas('executions', fn (Builder $inner) => $inner->where('monitor_person_id', $person->id));
+                });
+            }
+
+            if (in_array('project_secretariat', $restrictiveRoles, true) && static::secretariatEntryEnabled() && $person->department_id) {
+                $outer->orWhere(function (Builder $q) use ($user, $person) {
                     $q->where('created_by', $user->id)
                         ->orWhereHas('projectManager', fn (Builder $inner) => $inner->where('department_id', $person->department_id));
-                })
-                : $query->whereRaw('1 = 0'),
-            'monitoring_director', 'general_management', 'admin' => $query,
-            default => $query,
-        };
+                });
+            }
+        });
     }
 
     public function isVisibleToUser(?User $user): bool
@@ -864,29 +892,58 @@ class Project extends Model
             return false;
         }
 
-        return match ($person->role) {
-            'project_manager' => (int) $this->project_manager_id === (int) $person->id,
-            'section_manager' => $person->section_id && (
+        if ($person->hasAnyRole(['monitoring_director', 'general_management', 'admin'])) {
+            return true;
+        }
+
+        $visible = false;
+        $hasRestrictiveRole = false;
+
+        if ($person->hasRole('project_manager')) {
+            $hasRestrictiveRole = true;
+            $visible = $visible || (int) $this->project_manager_id === (int) $person->id;
+        }
+
+        if ($person->hasRole('section_manager')) {
+            $hasRestrictiveRole = true;
+            $visible = $visible || ($person->section_id && (
                 (! $this->usesExecutionTracks()
                     && (int) $this->projectManager?->section_id === (int) $person->section_id)
                 || ($this->usesExecutionTracks()
                     && $this->executions()->visibleToUser($user)->exists())
-            ),
-            'department_manager' => $person->department_id && (
+            ));
+        }
+
+        if ($person->hasRole('department_manager')) {
+            $hasRestrictiveRole = true;
+            $visible = $visible || ($person->department_id && (
                 (! $this->usesExecutionTracks()
                     && (int) $this->projectManager?->department_id === (int) $person->department_id)
                 || ($this->usesExecutionTracks()
                     && $this->executions()->visibleToUser($user)->exists())
-            ),
-            'coordinator' => (! $this->usesExecutionTracks() && (int) $this->coordinator_id === (int) $person->id)
+            ));
+        }
+
+        if ($person->hasRole('coordinator')) {
+            $hasRestrictiveRole = true;
+            $visible = $visible || ((! $this->usesExecutionTracks() && (int) $this->coordinator_id === (int) $person->id)
                 || ($this->usesExecutionTracks()
-                    && $this->executions()->where('coordinator_id', $person->id)->exists()),
-            'monitor' => (! $this->usesExecutionTracks() && (int) $this->monitor_person_id === (int) $person->id)
+                    && $this->executions()->where('coordinator_id', $person->id)->exists()));
+        }
+
+        if ($person->hasRole('monitor')) {
+            $hasRestrictiveRole = true;
+            $visible = $visible || ((! $this->usesExecutionTracks() && (int) $this->monitor_person_id === (int) $person->id)
                 || ($this->usesExecutionTracks()
-                    && $this->executions()->where('monitor_person_id', $person->id)->exists()),
-            'project_secretariat' => $this->projectSecretariatCanView($person),
-            default => true,
-        };
+                    && $this->executions()->where('monitor_person_id', $person->id)->exists()));
+        }
+
+        if ($person->hasRole('project_secretariat')) {
+            $hasRestrictiveRole = true;
+            $visible = $visible || $this->projectSecretariatCanView($person);
+        }
+
+        return $hasRestrictiveRole ? $visible : true;
     }
 
     /**
@@ -894,7 +951,7 @@ class Project extends Model
      */
     public function visibleToProjectSecretariat(?Person $person): bool
     {
-        if (! $person || $person->role !== 'project_secretariat' || ! $person->department_id) {
+        if (! $person || ! $person->hasRole('project_secretariat') || ! $person->department_id) {
             return false;
         }
 
@@ -941,7 +998,7 @@ class Project extends Model
             return false;
         }
 
-        return $person->role === 'project_manager'
+        return $person->hasRole('project_manager')
             && (int) $this->project_manager_id === (int) $person->id
             && $this->hasCoordinatorAssignment()
             && ! ($this->isSelfCoordinator() && in_array($this->workflow_status, ['draft', 'pending_secretariat'], true));
@@ -988,11 +1045,11 @@ class Project extends Model
 
         $person = $user->person;
 
-        if ($person?->role === 'monitor') {
+        if ($person?->hasRole('monitor')) {
             return false;
         }
 
-        if ($person?->role === 'project_manager') {
+        if ($person?->hasRole('project_manager')) {
             return $this->projectManagerCanViewCoordinatorData($user, $person);
         }
 
@@ -1004,17 +1061,27 @@ class Project extends Model
             return false;
         }
 
-        return match ($person->role) {
-            'coordinator' => (int) $this->coordinator_id === (int) $person->id,
-            'section_manager' => $this->approvableBySectionManager($person),
-            'department_manager' => $this->approvableByDepartmentManager($person),
-            'monitoring_director', 'general_management' => true,
-            default => $user->can('fill_coordinator', self::class)
-                || $user->can('approve_section', self::class)
-                || $user->can('approve_department', self::class)
-                || $user->can('update', self::class)
-                || $user->can('reject', self::class),
-        };
+        if ($person->hasRole('coordinator') && (int) $this->coordinator_id === (int) $person->id) {
+            return true;
+        }
+
+        if ($person->hasRole('section_manager') && $this->approvableBySectionManager($person)) {
+            return true;
+        }
+
+        if ($person->hasRole('department_manager') && $this->approvableByDepartmentManager($person)) {
+            return true;
+        }
+
+        if ($person->hasAnyRole(['monitoring_director', 'general_management'])) {
+            return true;
+        }
+
+        return $user->can('fill_coordinator', self::class)
+            || $user->can('approve_section', self::class)
+            || $user->can('approve_department', self::class)
+            || $user->can('update', self::class)
+            || $user->can('reject', self::class);
     }
 
     /**
@@ -1030,7 +1097,7 @@ class Project extends Model
             return true;
         }
 
-        return $user->person?->role === 'monitoring_director';
+        return $user->person?->hasRole('monitoring_director');
     }
 
     /**
@@ -1045,7 +1112,7 @@ class Project extends Model
         $person = $user->person;
 
         // مدير المشروع يرى عمود المنسق فقط — لا عمود المراقب (حتى مع super_admin).
-        if ($person?->role === 'project_manager') {
+        if ($person?->hasRole('project_manager') && ! $person->hasAnyRole(['monitoring_director', 'general_management', 'admin'])) {
             return false;
         }
 
@@ -1057,11 +1124,15 @@ class Project extends Model
             return false;
         }
 
-        return match ($person->role) {
-            'monitor' => (int) $this->monitor_person_id === (int) $person->id,
-            'monitoring_director', 'general_management' => true,
-            default => false,
-        };
+        if ($person->hasRole('monitor') && (int) $this->monitor_person_id === (int) $person->id) {
+            return true;
+        }
+
+        if ($person->hasAnyRole(['monitoring_director', 'general_management'])) {
+            return true;
+        }
+
+        return false;
     }
 
     /**
@@ -1090,14 +1161,22 @@ class Project extends Model
             return static::filterSecretariatRejectOptions($all);
         }
 
-        $allowedKeys = match ($person->role) {
-            'section_manager' => ['return_project_manager', 'return_coordinator', 'return_secretariat', 'reject_final'],
-            'department_manager' => ['return_project_manager', 'return_coordinator', 'return_secretariat', 'return_section_manager', 'reject_final'],
-            'monitoring_director' => ['return_project_manager', 'return_coordinator', 'return_secretariat', 'return_section_manager', 'return_department_manager', 'reject_final'],
-            default => array_keys($all),
-        };
+        $allowedKeys = [];
+        if ($person->hasRole('section_manager')) {
+            $allowedKeys = array_merge($allowedKeys, ['return_project_manager', 'return_coordinator', 'return_secretariat', 'reject_final']);
+        }
+        if ($person->hasRole('department_manager')) {
+            $allowedKeys = array_merge($allowedKeys, ['return_project_manager', 'return_coordinator', 'return_secretariat', 'return_section_manager', 'reject_final']);
+        }
+        if ($person->hasRole('monitoring_director')) {
+            $allowedKeys = array_merge($allowedKeys, ['return_project_manager', 'return_coordinator', 'return_secretariat', 'return_section_manager', 'return_department_manager', 'reject_final']);
+        }
 
-        return static::filterSecretariatRejectOptions(array_intersect_key($all, array_flip($allowedKeys)));
+        if ($allowedKeys === []) {
+            return static::filterSecretariatRejectOptions($all);
+        }
+
+        return static::filterSecretariatRejectOptions(array_intersect_key($all, array_flip(array_unique($allowedKeys))));
     }
 
     public static function returnTargetLabel(?string $key): string
@@ -1180,15 +1259,15 @@ class Project extends Model
             return true;
         }
 
-        if ($person->role === 'monitoring_director') {
+        if ($person->hasRole('monitoring_director')) {
             return true;
         }
 
-        if ($person->role === 'section_manager' && $this->approvableBySectionManager($person)) {
+        if ($person->hasRole('section_manager') && $this->approvableBySectionManager($person)) {
             return true;
         }
 
-        if ($person->role === 'department_manager' && $this->approvableByDepartmentManager($person)) {
+        if ($person->hasRole('department_manager') && $this->approvableByDepartmentManager($person)) {
             return true;
         }
 
@@ -1214,7 +1293,7 @@ class Project extends Model
 
     public function approvableBySectionManager(?Person $person): bool
     {
-        if (! $person || $person->role !== 'section_manager' || ! $person->section_id) {
+        if (! $person || ! $person->hasRole('section_manager') || ! $person->section_id) {
             return false;
         }
 
@@ -1257,7 +1336,7 @@ class Project extends Model
 
     public function approvableByDepartmentManager(?Person $person): bool
     {
-        if (! $person || $person->role !== 'department_manager' || ! $person->department_id) {
+        if (! $person || ! $person->hasRole('department_manager') || ! $person->department_id) {
             return false;
         }
 
@@ -1338,15 +1417,25 @@ class Project extends Model
             return static::filterSecretariatRejectOptions($labels);
         }
 
-        $allowedKeys = match ($person->role) {
-            'section_manager' => ['project_manager', 'coordinator', 'project_secretariat', 'other'],
-            'department_manager' => ['project_manager', 'coordinator', 'project_secretariat', 'section_manager', 'other'],
-            'monitoring_director' => ['project_manager', 'coordinator', 'project_secretariat', 'section_manager', 'department_manager', 'monitor', 'other'],
-            'monitor' => ['project_manager', 'coordinator', 'project_secretariat', 'section_manager', 'department_manager', 'other'],
-            default => array_keys($labels),
-        };
+        $allowedKeys = [];
+        if ($person->hasRole('section_manager')) {
+            $allowedKeys = array_merge($allowedKeys, ['project_manager', 'coordinator', 'project_secretariat', 'other']);
+        }
+        if ($person->hasRole('department_manager')) {
+            $allowedKeys = array_merge($allowedKeys, ['project_manager', 'coordinator', 'project_secretariat', 'section_manager', 'other']);
+        }
+        if ($person->hasRole('monitoring_director')) {
+            $allowedKeys = array_merge($allowedKeys, ['project_manager', 'coordinator', 'project_secretariat', 'section_manager', 'department_manager', 'monitor', 'other']);
+        }
+        if ($person->hasRole('monitor')) {
+            $allowedKeys = array_merge($allowedKeys, ['project_manager', 'coordinator', 'project_secretariat', 'section_manager', 'department_manager', 'other']);
+        }
 
-        return static::filterSecretariatRejectOptions(array_intersect_key($labels, array_flip($allowedKeys)));
+        if ($allowedKeys === []) {
+            return static::filterSecretariatRejectOptions($labels);
+        }
+
+        return static::filterSecretariatRejectOptions(array_intersect_key($labels, array_flip(array_unique($allowedKeys))));
     }
 
     public function currentActionLabel(): string
@@ -1377,27 +1466,53 @@ class Project extends Model
             return false;
         }
 
-        return match ($person->role) {
-            'project_manager' => (int) $this->project_manager_id === (int) $person->id
-                && in_array($this->workflow_status, ['draft', 'pending_secretariat', 'pending_coordinator', 'coordinator_filling', 'pending_project_manager'], true),
-            'project_secretariat' => static::secretariatEnabled()
-                && $this->workflow_status === 'pending_secretariat'
-                && $this->visibleToProjectSecretariat($person),
-            'coordinator' => (int) $this->coordinator_id === (int) $person->id
-                && (
-                    in_array($this->workflow_status, ['pending_coordinator', 'coordinator_filling'], true)
-                    || $this->hasPendingClosureDocs()
-                ),
-            'section_manager' => $this->workflow_status === 'pending_section_manager'
-                && $this->approvableBySectionManager($person),
-            'department_manager' => $this->workflow_status === 'pending_dept_manager'
-                && $this->approvableByDepartmentManager($person),
-            'monitoring_director' => in_array($this->workflow_status, ['pending_monitoring_manager', 'pending_monitoring_confirmation'], true),
-            'monitor' => (int) $this->monitor_person_id === (int) $person->id
-                && $this->workflow_status === 'monitoring_in_progress'
-                && $this->primaryMonitoringActivity?->workflow_status === 'in_progress',
-            default => false,
-        };
+        if ($person->hasRole('project_manager')
+            && (int) $this->project_manager_id === (int) $person->id
+            && in_array($this->workflow_status, ['draft', 'pending_secretariat', 'pending_coordinator', 'coordinator_filling', 'pending_project_manager'], true)) {
+            return true;
+        }
+
+        if ($person->hasRole('project_secretariat')
+            && static::secretariatEnabled()
+            && $this->workflow_status === 'pending_secretariat'
+            && $this->visibleToProjectSecretariat($person)) {
+            return true;
+        }
+
+        if ($person->hasRole('coordinator')
+            && (int) $this->coordinator_id === (int) $person->id
+            && (
+                in_array($this->workflow_status, ['pending_coordinator', 'coordinator_filling'], true)
+                || $this->hasPendingClosureDocs()
+            )) {
+            return true;
+        }
+
+        if ($person->hasRole('section_manager')
+            && $this->workflow_status === 'pending_section_manager'
+            && $this->approvableBySectionManager($person)) {
+            return true;
+        }
+
+        if ($person->hasRole('department_manager')
+            && $this->workflow_status === 'pending_dept_manager'
+            && $this->approvableByDepartmentManager($person)) {
+            return true;
+        }
+
+        if ($person->hasRole('monitoring_director')
+            && in_array($this->workflow_status, ['pending_monitoring_manager', 'pending_monitoring_confirmation'], true)) {
+            return true;
+        }
+
+        if ($person->hasRole('monitor')
+            && (int) $this->monitor_person_id === (int) $person->id
+            && $this->workflow_status === 'monitoring_in_progress'
+            && $this->primaryMonitoringActivity?->workflow_status === 'in_progress') {
+            return true;
+        }
+
+        return false;
     }
 
     public static function workflowStatusLabels(): array

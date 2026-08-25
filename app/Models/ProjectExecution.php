@@ -165,7 +165,7 @@ class ProjectExecution extends Model
 
     public function approvableBySectionManager(?Person $person): bool
     {
-        if (! $person || $person->role !== 'section_manager' || ! $person->section_id) {
+        if (! $person || ! $person->hasRole('section_manager') || ! $person->section_id) {
             return false;
         }
 
@@ -176,7 +176,7 @@ class ProjectExecution extends Model
 
     public function approvableByDepartmentManager(?Person $person): bool
     {
-        if (! $person || $person->role !== 'department_manager' || ! $person->department_id) {
+        if (! $person || ! $person->hasRole('department_manager') || ! $person->department_id) {
             return false;
         }
 
@@ -269,22 +269,48 @@ class ProjectExecution extends Model
             return $query->whereRaw('1 = 0');
         }
 
-        return match ($person->role) {
-            'project_manager' => $query->where(function (Builder $q) use ($person) {
-                $q->whereHas('project', fn (Builder $inner) => $inner->where('project_manager_id', $person->id))
-                    ->orWhere('coordinator_id', $person->id);
-            }),
-            'section_manager' => $person->section_id
-                ? $query->whereHas('project.projectManager', fn (Builder $q) => $q->where('section_id', $person->section_id))
-                : $query->whereRaw('1 = 0'),
-            'department_manager' => $person->department_id
-                ? $query->whereHas('project.projectManager', fn (Builder $q) => $q->where('department_id', $person->department_id))
-                : $query->whereRaw('1 = 0'),
-            'coordinator' => $query->where('coordinator_id', $person->id),
-            'monitor' => $query->where('monitor_person_id', $person->id),
-            'monitoring_director', 'general_management', 'admin' => $query,
-            default => $query->whereRaw('1 = 0'),
-        };
+        if ($person->hasAnyRole(['monitoring_director', 'general_management', 'admin'])) {
+            return $query;
+        }
+
+        $restrictiveRoles = array_intersect($person->allRoles(), [
+            'project_manager',
+            'section_manager',
+            'department_manager',
+            'coordinator',
+            'monitor',
+        ]);
+
+        if ($restrictiveRoles === []) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        return $query->where(function (Builder $outer) use ($person, $restrictiveRoles) {
+            $outer->whereRaw('0 = 1');
+
+            if (in_array('project_manager', $restrictiveRoles, true)) {
+                $outer->orWhere(function (Builder $q) use ($person) {
+                    $q->whereHas('project', fn (Builder $inner) => $inner->where('project_manager_id', $person->id))
+                        ->orWhere('coordinator_id', $person->id);
+                });
+            }
+
+            if (in_array('section_manager', $restrictiveRoles, true) && $person->section_id) {
+                $outer->orWhereHas('project.projectManager', fn (Builder $q) => $q->where('section_id', $person->section_id));
+            }
+
+            if (in_array('department_manager', $restrictiveRoles, true) && $person->department_id) {
+                $outer->orWhereHas('project.projectManager', fn (Builder $q) => $q->where('department_id', $person->department_id));
+            }
+
+            if (in_array('coordinator', $restrictiveRoles, true)) {
+                $outer->orWhere('coordinator_id', $person->id);
+            }
+
+            if (in_array('monitor', $restrictiveRoles, true)) {
+                $outer->orWhere('monitor_person_id', $person->id);
+            }
+        });
     }
 
     public function isVisibleToUser(?User $user): bool
@@ -301,18 +327,37 @@ class ProjectExecution extends Model
 
         $this->loadMissing('project.projectManager');
 
-        return match ($person->role) {
-            'project_manager' => (int) $this->project?->project_manager_id === (int) $person->id
-                || (int) $this->coordinator_id === (int) $person->id,
-            'section_manager' => $person->section_id
-                && (int) $this->project?->projectManager?->section_id === (int) $person->section_id,
-            'department_manager' => $person->department_id
-                && (int) $this->project?->projectManager?->department_id === (int) $person->department_id,
-            'coordinator' => (int) $this->coordinator_id === (int) $person->id,
-            'monitor' => (int) $this->monitor_person_id === (int) $person->id,
-            'monitoring_director', 'general_management', 'admin' => true,
-            default => false,
-        };
+        if ($person->hasAnyRole(['monitoring_director', 'general_management', 'admin'])) {
+            return true;
+        }
+
+        $visible = false;
+
+        if ($person->hasRole('project_manager')) {
+            $visible = $visible
+                || (int) $this->project?->project_manager_id === (int) $person->id
+                || (int) $this->coordinator_id === (int) $person->id;
+        }
+
+        if ($person->hasRole('section_manager')) {
+            $visible = $visible || ($person->section_id
+                && (int) $this->project?->projectManager?->section_id === (int) $person->section_id);
+        }
+
+        if ($person->hasRole('department_manager')) {
+            $visible = $visible || ($person->department_id
+                && (int) $this->project?->projectManager?->department_id === (int) $person->department_id);
+        }
+
+        if ($person->hasRole('coordinator')) {
+            $visible = $visible || (int) $this->coordinator_id === (int) $person->id;
+        }
+
+        if ($person->hasRole('monitor')) {
+            $visible = $visible || (int) $this->monitor_person_id === (int) $person->id;
+        }
+
+        return $visible;
     }
 
     public function coordinatorHasUserAccount(): bool
@@ -358,11 +403,11 @@ class ProjectExecution extends Model
 
         $person = $user->person;
 
-        if ($person?->role === 'monitor') {
+        if ($person?->hasRole('monitor')) {
             return false;
         }
 
-        if ($person?->role === 'project_manager') {
+        if ($person?->hasRole('project_manager')) {
             $this->loadMissing('project.projectManager');
 
             return $this->projectManagerCanViewCoordinatorData($user, $person);
@@ -378,18 +423,27 @@ class ProjectExecution extends Model
 
         $this->loadMissing('project.projectManager');
 
-        return match ($person->role) {
-            'coordinator' => (int) $this->coordinator_id === (int) $person->id,
-            'project_manager' => (int) $this->coordinator_id === (int) $person->id,
-            'section_manager' => $this->approvableBySectionManager($person),
-            'department_manager' => $this->approvableByDepartmentManager($person),
-            'monitoring_director', 'general_management', 'admin' => true,
-            default => $user->can('fill_coordinator', self::class)
-                || $user->can('approve_section', self::class)
-                || $user->can('approve_department', self::class)
-                || $user->can('update', self::class)
-                || $user->can('reject', self::class),
-        };
+        if ($person->hasRole('coordinator') && (int) $this->coordinator_id === (int) $person->id) {
+            return true;
+        }
+
+        if ($person->hasRole('section_manager') && $this->approvableBySectionManager($person)) {
+            return true;
+        }
+
+        if ($person->hasRole('department_manager') && $this->approvableByDepartmentManager($person)) {
+            return true;
+        }
+
+        if ($person->hasAnyRole(['monitoring_director', 'general_management', 'admin'])) {
+            return true;
+        }
+
+        return $user->can('fill_coordinator', self::class)
+            || $user->can('approve_section', self::class)
+            || $user->can('approve_department', self::class)
+            || $user->can('update', self::class)
+            || $user->can('reject', self::class);
     }
 
     public function showsMonitorDataTo(?User $user): bool
@@ -400,7 +454,7 @@ class ProjectExecution extends Model
 
         $person = $user->person;
 
-        if ($person?->role === 'project_manager') {
+        if ($person?->hasRole('project_manager') && ! $person->hasAnyRole(['monitoring_director', 'general_management', 'admin'])) {
             return false;
         }
 
@@ -412,11 +466,15 @@ class ProjectExecution extends Model
             return false;
         }
 
-        return match ($person->role) {
-            'monitor' => (int) $this->monitor_person_id === (int) $person->id,
-            'monitoring_director', 'general_management' => true,
-            default => false,
-        };
+        if ($person->hasRole('monitor') && (int) $this->monitor_person_id === (int) $person->id) {
+            return true;
+        }
+
+        if ($person->hasAnyRole(['monitoring_director', 'general_management'])) {
+            return true;
+        }
+
+        return false;
     }
 
     /**
@@ -478,27 +536,50 @@ class ProjectExecution extends Model
             return false;
         }
 
-        return match ($person->role) {
-            'project_manager' => (
-                (int) $this->project?->project_manager_id === (int) $person->id
+        if ($person->hasRole('project_manager')) {
+            if ((int) $this->project?->project_manager_id === (int) $person->id
                 && $this->isSelfCoordinator()
-                && in_array($this->workflow_status, ['pending_coordinator', 'coordinator_filling'], true)
-            ) || (
-                (int) $this->coordinator_id === (int) $person->id
-                && in_array($this->workflow_status, ['pending_coordinator', 'coordinator_filling'], true)
-            ),
-            'coordinator' => (int) $this->coordinator_id === (int) $person->id
-                && in_array($this->workflow_status, ['pending_coordinator', 'coordinator_filling'], true),
-            'section_manager' => $this->workflow_status === 'pending_section_manager'
-                && $this->approvableBySectionManager($person),
-            'department_manager' => $this->workflow_status === 'pending_dept_manager'
-                && $this->approvableByDepartmentManager($person),
-            'monitoring_director' => in_array($this->workflow_status, ['pending_monitoring_manager', 'pending_monitoring_confirmation'], true),
-            'monitor' => (int) $this->monitor_person_id === (int) $person->id
-                && $this->workflow_status === 'monitoring_in_progress'
-                && $this->primaryMonitoringActivity?->workflow_status === 'in_progress',
-            default => false,
-        };
+                && in_array($this->workflow_status, ['pending_coordinator', 'coordinator_filling'], true)) {
+                return true;
+            }
+
+            if ((int) $this->coordinator_id === (int) $person->id
+                && in_array($this->workflow_status, ['pending_coordinator', 'coordinator_filling'], true)) {
+                return true;
+            }
+        }
+
+        if ($person->hasRole('coordinator')
+            && (int) $this->coordinator_id === (int) $person->id
+            && in_array($this->workflow_status, ['pending_coordinator', 'coordinator_filling'], true)) {
+            return true;
+        }
+
+        if ($person->hasRole('section_manager')
+            && $this->workflow_status === 'pending_section_manager'
+            && $this->approvableBySectionManager($person)) {
+            return true;
+        }
+
+        if ($person->hasRole('department_manager')
+            && $this->workflow_status === 'pending_dept_manager'
+            && $this->approvableByDepartmentManager($person)) {
+            return true;
+        }
+
+        if ($person->hasRole('monitoring_director')
+            && in_array($this->workflow_status, ['pending_monitoring_manager', 'pending_monitoring_confirmation'], true)) {
+            return true;
+        }
+
+        if ($person->hasRole('monitor')
+            && (int) $this->monitor_person_id === (int) $person->id
+            && $this->workflow_status === 'monitoring_in_progress'
+            && $this->primaryMonitoringActivity?->workflow_status === 'in_progress') {
+            return true;
+        }
+
+        return false;
     }
 
     public static function workflowStatusForReturnTarget(string $returnTarget): ?string
@@ -521,14 +602,22 @@ class ProjectExecution extends Model
             return Project::filterSecretariatRejectOptions($all);
         }
 
-        $allowedKeys = match ($person->role) {
-            'section_manager' => ['return_project_manager', 'return_coordinator', 'return_secretariat', 'reject_final'],
-            'department_manager' => ['return_project_manager', 'return_coordinator', 'return_secretariat', 'return_section_manager', 'reject_final'],
-            'monitoring_director' => array_keys($all),
-            default => array_keys($all),
-        };
+        $allowedKeys = [];
+        if ($person->hasRole('section_manager')) {
+            $allowedKeys = array_merge($allowedKeys, ['return_project_manager', 'return_coordinator', 'return_secretariat', 'reject_final']);
+        }
+        if ($person->hasRole('department_manager')) {
+            $allowedKeys = array_merge($allowedKeys, ['return_project_manager', 'return_coordinator', 'return_secretariat', 'return_section_manager', 'reject_final']);
+        }
+        if ($person->hasRole('monitoring_director')) {
+            return Project::filterSecretariatRejectOptions($all);
+        }
 
-        return Project::filterSecretariatRejectOptions(array_intersect_key($all, array_flip($allowedKeys)));
+        if ($allowedKeys === []) {
+            return Project::filterSecretariatRejectOptions($all);
+        }
+
+        return Project::filterSecretariatRejectOptions(array_intersect_key($all, array_flip(array_unique($allowedKeys))));
     }
 
     public static function gapOwnerOptionsForRejector(?Person $person, bool $superAdmin = false): array
@@ -572,7 +661,7 @@ class ProjectExecution extends Model
             return true;
         }
 
-        return $user->person?->role === 'monitoring_director';
+        return $user->person?->hasRole('monitoring_director');
     }
 
     public function canUserViewRejectionHistory(?User $user): bool
@@ -597,15 +686,15 @@ class ProjectExecution extends Model
             return true;
         }
 
-        if ($person->role === 'monitoring_director') {
+        if ($person->hasRole('monitoring_director')) {
             return true;
         }
 
-        if ($person->role === 'section_manager' && $this->approvableBySectionManager($person)) {
+        if ($person->hasRole('section_manager') && $this->approvableBySectionManager($person)) {
             return true;
         }
 
-        if ($person->role === 'department_manager' && $this->approvableByDepartmentManager($person)) {
+        if ($person->hasRole('department_manager') && $this->approvableByDepartmentManager($person)) {
             return true;
         }
 
