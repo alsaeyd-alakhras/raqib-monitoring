@@ -2882,7 +2882,7 @@ class ProjectController extends Controller
                 } else {
                     $selectedPm = Person::find($selectedPmId);
 
-                    if (! $selectedPm || $selectedPm->role !== 'project_manager') {
+                    if (! $selectedPm || ! $selectedPm->hasRole('project_manager')) {
                         $validator->errors()->add('project_manager_id', 'يجب اختيار مدير مشروع صالح.');
                     } elseif ($currentPerson->department_id
                         && (int) $selectedPm->department_id !== (int) $currentPerson->department_id) {
@@ -2891,7 +2891,7 @@ class ProjectController extends Controller
                 }
             }
 
-            if ($currentPerson?->role === 'project_manager') {
+            if ($currentPerson?->hasRole('project_manager')) {
                 $requestedPmId = (int) $request->input('project_manager_id', 0);
 
                 if ($requestedPmId !== 0 && $requestedPmId !== (int) $currentPerson->id) {

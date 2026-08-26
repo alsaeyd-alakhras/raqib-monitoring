@@ -298,4 +298,28 @@ class SectionManagerAdditionalRolesTest extends TestCase
         $this->assertTrue($user->can('create', Project::class));
         $this->assertSame((int) $person->id, (int) $user->person->id);
     }
+
+    public function test_enable_pm_command_grants_additional_role_to_section_managers(): void
+    {
+        ['department' => $department, 'section' => $section] = $this->createOrg();
+
+        $person = Person::create([
+            'name' => 'مدير قسم بدون PM',
+            'role' => 'section_manager',
+            'department_id' => $department->id,
+            'section_id' => $section->id,
+        ]);
+
+        $this->assertFalse($person->fresh()->hasRole('project_manager'));
+
+        $this->artisan('raqib:section-managers-enable-pm')
+            ->assertSuccessful();
+
+        $person->refresh();
+
+        $this->assertTrue($person->hasRole('project_manager'));
+        $this->assertTrue(
+            Person::eligibleAsProjectManager()->whereKey($person->id)->exists()
+        );
+    }
 }
