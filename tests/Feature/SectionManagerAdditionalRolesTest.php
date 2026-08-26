@@ -3,7 +3,9 @@
 namespace Tests\Feature;
 
 use App\Models\Center;
+use App\Models\Currency;
 use App\Models\Department;
+use App\Models\Funder;
 use App\Models\Person;
 use App\Models\Project;
 use App\Models\RoleUser;
@@ -321,5 +323,65 @@ class SectionManagerAdditionalRolesTest extends TestCase
         $this->assertTrue(
             Person::eligibleAsProjectManager()->whereKey($person->id)->exists()
         );
+    }
+
+    public function test_section_manager_appears_in_project_create_form_after_enable_pm_command(): void
+    {
+        config(['raqib.projects.secretariat_entry_enabled' => true]);
+
+        ['center' => $center, 'department' => $department, 'section' => $section] = $this->createOrg();
+
+        Funder::create(['name' => 'ممول تجريبي']);
+
+        $secUser = User::create([
+            'name' => 'سكرتاريا الدائرة',
+            'username' => 'sec_sm_pm_test',
+            'email' => 'sec-sm-pm@test.local',
+            'password' => 'password',
+            'user_type' => 'employee',
+            'is_active' => true,
+            'super_admin' => false,
+        ]);
+
+        Person::create([
+            'user_id' => $secUser->id,
+            'name' => $secUser->name,
+            'role' => 'project_secretariat',
+            'department_id' => $department->id,
+            'phone' => '0599000111',
+        ]);
+
+        Currency::withoutEvents(fn () => Currency::create([
+            'name' => 'دولار',
+            'code' => 'USD',
+            'value' => 1,
+            'value_to_ils' => 3.7,
+        ]));
+
+        $sectionManager = Person::create([
+            'name' => 'خالد مدير القسم',
+            'role' => 'section_manager',
+            'department_id' => $department->id,
+            'section_id' => $section->id,
+        ]);
+
+        foreach (['projects.view', 'projects.create', 'projects.update'] as $ability) {
+            RoleUser::create([
+                'role_name' => $ability,
+                'user_id' => $secUser->id,
+                'ability' => 'allow',
+            ]);
+        }
+
+        $this->artisan('raqib:section-managers-enable-pm')->assertSuccessful();
+
+        $sectionManager->refresh();
+        $this->assertTrue($sectionManager->hasRole('project_manager'));
+
+        $this->actingAs($secUser)
+            ->get(route('dashboard.projects.create'))
+            ->assertOk()
+            ->assertSee('خالد مدير القسم', false)
+            ->assertSee('مدير قسم + مدير مشروع', false);
     }
 }

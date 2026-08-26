@@ -8,17 +8,23 @@ use Illuminate\Console\Command;
 class EnableSectionManagerProjectManagerRoleCommand extends Command
 {
     protected $signature = 'raqib:section-managers-enable-pm
-                            {--dry-run : معاينة بدون حفظ}';
+                            {--dry-run : معاينة بدون حفظ — لا يغيّر قاعدة البيانات}
+                            {--force : تنفيذ على الإنتاج بدون تأكيد تفاعلي}';
 
     protected $description = 'إضافة دور «مدير مشروع» الإضافي لكل مدير/ة قسم (ليظهر في قائمة مديري المشاريع)';
 
     public function handle(): int
     {
         $dryRun = (bool) $this->option('dry-run');
+        $force = (bool) $this->option('force');
 
         if ($dryRun) {
-            $this->warn('وضع المعاينة — لن يتم حفظ أي بيانات.');
-        } elseif (app()->environment('production')) {
+            $this->warn('⚠️  وضع المعاينة فقط — لن يُحفظ أي شيء في قاعدة البيانات.');
+        } elseif (app()->environment('production') && ! $force && ! $this->input->isInteractive()) {
+            $this->error('على الإنتاج استخدم --force أو شغّل الأمر من طرفية تفاعلية.');
+
+            return self::FAILURE;
+        } elseif (app()->environment('production') && ! $force) {
             if (! $this->confirm('هل تريد تفعيل «مدير مشروع» لجميع مديري الأقسام على بيئة الإنتاج؟')) {
                 $this->info('تم الإلغاء.');
 
@@ -66,7 +72,25 @@ class EnableSectionManagerProjectManagerRoleCommand extends Command
         $prefix = $dryRun ? '[dry-run] ' : '';
         $this->info("{$prefix}تم: {$granted} | كان مفعّلاً مسبقاً: {$already} | الإجمالي: {$people->count()}");
 
-        if (! $dryRun && $granted > 0) {
+        if ($dryRun) {
+            $this->newLine();
+            $this->warn('⚠️  لم يُحفظ شيء! لتطبيق التغييرات على القائمة شغّل:');
+            $this->line('   php artisan raqib:section-managers-enable-pm --force');
+            $this->line('   php artisan raqib:sync-role-abilities --section-managers');
+
+            return self::SUCCESS;
+        }
+
+        $sectionManagersInDropdown = Person::query()
+            ->eligibleAsProjectManager()
+            ->where('role', 'section_manager')
+            ->count();
+        $totalInDropdown = Person::query()->eligibleAsProjectManager()->count();
+
+        $this->newLine();
+        $this->info("التحقق: {$sectionManagersInDropdown} مدير/ة قسم + {$totalInDropdown} إجمالاً في قائمة «مدير المشروع».");
+
+        if ($granted > 0) {
             $this->info('→ يُنصح بتشغيل: php artisan raqib:sync-role-abilities --section-managers');
         }
 
