@@ -1587,7 +1587,7 @@ class ProjectController extends Controller
             ? $project->coordinatorMode()
             : old('coordinator_mode', $defaultProjectManagerId && ! $isSecretariat ? 'self' : 'person');
 
-        $coordinatorCandidates = Person::hasAnyRole(Project::coordinatorEligibleRoles())
+        $coordinatorCandidates = Person::query()->hasAnyRole(Project::coordinatorEligibleRoles())
             ->orderBy('name')
             ->get(['id', 'name', 'role', 'additional_roles'])
             ->map(fn (Person $person) => [
@@ -1610,7 +1610,7 @@ class ProjectController extends Controller
             'people' => Person::orderBy('name')->get(),
             'coordinators' => Person::withRole('coordinator')->orderBy('name')->get(),
             'coordinatorCandidates' => $coordinatorCandidates,
-            'coordinatorUserMap' => Person::hasAnyRole(Project::coordinatorEligibleRoles())->get()->mapWithKeys(
+            'coordinatorUserMap' => Person::query()->hasAnyRole(Project::coordinatorEligibleRoles())->get()->mapWithKeys(
                 fn (Person $person) => [(string) $person->id => (bool) $person->user_id]
             )->all(),
             'projectTypes' => $this->constantOptions('project_types'),
