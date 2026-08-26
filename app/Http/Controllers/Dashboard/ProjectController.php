@@ -1579,8 +1579,9 @@ class ProjectController extends Controller
     {
         $currentPerson = auth()->user()?->person;
         $isSecretariat = $currentPerson?->role === 'project_secretariat';
-        $lockProjectManager = $currentPerson?->role === 'project_manager';
-        $defaultProjectManagerId = $currentPerson?->role === 'project_manager'
+        $isProjectManagerActor = $currentPerson?->hasRole('project_manager') ?? false;
+        $lockProjectManager = $isProjectManagerActor;
+        $defaultProjectManagerId = $isProjectManagerActor
             ? $currentPerson->id
             : null;
         $coordinatorMode = $project && $project->exists
@@ -1606,7 +1607,15 @@ class ProjectController extends Controller
         return [
             'centers' => Center::orderBy('name')->get(),
             'funders' => Funder::orderBy('name')->get(),
-            'projectManagers' => Person::withRole('project_manager')->orderBy('name')->get(),
+            'projectManagers' => Person::query()
+                ->eligibleAsProjectManager()
+                ->orderBy('name')
+                ->get(['id', 'name', 'role', 'additional_roles'])
+                ->map(function (Person $person) {
+                    $person->setAttribute('name', $person->name . ' (' . $person->role_label . ')');
+
+                    return $person;
+                }),
             'people' => Person::orderBy('name')->get(),
             'coordinators' => Person::withRole('coordinator')->orderBy('name')->get(),
             'coordinatorCandidates' => $coordinatorCandidates,

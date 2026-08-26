@@ -209,14 +209,31 @@ class Person extends Model
 
     public function scopeWithRole($query, string $role)
     {
-        return $query->hasRole($role);
+        return static::applyRoleFilter($query, $role);
     }
 
     public function scopeHasRole(Builder $query, string $role): Builder
     {
+        return static::applyRoleFilter($query, $role);
+    }
+
+    public function scopeEligibleAsProjectManager(Builder $query): Builder
+    {
+        return static::applyRoleFilter($query, 'project_manager');
+    }
+
+    /**
+     * @param  \Illuminate\Database\Eloquent\Builder<Person>|Builder  $query
+     * @return Builder
+     */
+    protected static function applyRoleFilter($query, string $role): Builder
+    {
         return $query->where(function (Builder $inner) use ($role) {
             $inner->where('role', $role)
-                ->orWhereJsonContains('additional_roles', $role);
+                ->orWhere(function (Builder $json) use ($role) {
+                    $json->whereNotNull('additional_roles')
+                        ->whereJsonContains('additional_roles', $role);
+                });
         });
     }
 
@@ -228,7 +245,10 @@ class Person extends Model
             foreach ($roles as $role) {
                 $outer->orWhere(function (Builder $inner) use ($role) {
                     $inner->where('role', $role)
-                        ->orWhereJsonContains('additional_roles', $role);
+                        ->orWhere(function (Builder $json) use ($role) {
+                            $json->whereNotNull('additional_roles')
+                                ->whereJsonContains('additional_roles', $role);
+                        });
                 });
             }
         });

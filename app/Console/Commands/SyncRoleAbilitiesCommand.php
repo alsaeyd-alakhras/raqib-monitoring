@@ -48,11 +48,35 @@ class SyncRoleAbilitiesCommand extends Command
         }
 
         if ($sectionManagers) {
+            $people = Person::query()
+                ->where('role', 'section_manager')
+                ->whereNotNull('user_id')
+                ->with('user')
+                ->orderBy('id')
+                ->get();
+
+            $withPmRole = $people->filter(
+                fn (Person $person) => $person->hasRole('project_manager')
+            );
+            $withoutPmRole = $people->reject(
+                fn (Person $person) => $person->hasRole('project_manager')
+            );
+
             $count = $this->syncPeopleQuery(
                 $sync,
                 Person::query()->where('role', 'section_manager')
             );
+
             $this->info("تمت مزامنة {$count} مدير/ة قسم (مع الأدوار الإضافية إن وُجدت).");
+
+            if ($withPmRole->isNotEmpty()) {
+                $this->line('  ↳ يظهرون كمدير مشروع في قائمة المشاريع: ' . $withPmRole->pluck('name')->implode('، '));
+            }
+
+            if ($withoutPmRole->isNotEmpty()) {
+                $this->warn('  ↳ بدون دور «مدير مشروع» إضافي (لن يظهروا في قائمة مديري المشاريع): ' . $withoutPmRole->pluck('name')->implode('، '));
+                $this->warn('     فعّل «مدير مشروع» من دليل الأشخاص ← تعديل ← أدوار إضافية.');
+            }
 
             return self::SUCCESS;
         }

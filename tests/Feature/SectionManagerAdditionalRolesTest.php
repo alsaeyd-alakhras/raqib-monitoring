@@ -253,6 +253,9 @@ class SectionManagerAdditionalRolesTest extends TestCase
             Person::query()->whereKey($person->id)->hasRole('project_manager')->exists()
         );
         $this->assertTrue(
+            Person::eligibleAsProjectManager()->whereKey($person->id)->exists()
+        );
+        $this->assertTrue(
             Person::query()->whereKey($person->id)->hasAnyRole(Project::coordinatorEligibleRoles())->exists()
         );
         $this->assertTrue(Project::personCanBeCoordinator($person));
